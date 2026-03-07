@@ -2,33 +2,93 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-// HashRouter é necessário para GitHub Pages (não suporta roteamento do servidor)
-import { HashRouter, Routes, Route, useLocation } from "react-router-dom";
+import { HashRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
+import { LogOut } from "lucide-react";
 import Dashboard from "./pages/Dashboard";
 import Attendance from "./pages/Attendance";
 import Students from "./pages/Students";
 import Reports from "./pages/Reports";
 import Justification from "./pages/Justification";
+import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import BottomNav from "./components/BottomNav";
+import ProtectedRoute from "./components/ProtectedRoute";
+import { AuthProvider, useAuth } from "./contexts/AuthContext";
 
 const queryClient = new QueryClient();
 
+const PUBLIC_PATHS = ["/justificativa", "/login"];
+
 function AppLayout() {
   const location = useLocation();
-  const showNav = !["/justificativa"].includes(location.pathname);
+  const { isAuthenticated, logout } = useAuth();
+  const isPublicPage = PUBLIC_PATHS.includes(location.pathname);
 
   return (
     <>
+      {/* Botão de logout — visível apenas em páginas protegidas */}
+      {isAuthenticated && !isPublicPage && (
+        <button
+          onClick={logout}
+          className="fixed top-3 right-3 z-50 flex items-center gap-1.5 rounded-full bg-muted/90 backdrop-blur-sm border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors shadow-sm"
+          title="Sair da conta"
+        >
+          <LogOut className="h-3.5 w-3.5" />
+          Sair
+        </button>
+      )}
+
       <Routes>
-        <Route path="/" element={<Dashboard />} />
-        <Route path="/chamada" element={<Attendance />} />
-        <Route path="/alunos" element={<Students />} />
-        <Route path="/relatorios" element={<Reports />} />
+        {/* Página pública dos pais — sem login */}
         <Route path="/justificativa" element={<Justification />} />
+
+        {/* Página de login */}
+        <Route
+          path="/login"
+          element={
+            isAuthenticated ? <Navigate to="/" replace /> : <Login />
+          }
+        />
+
+        {/* Páginas protegidas — exigem login */}
+        <Route
+          path="/"
+          element={
+            <ProtectedRoute>
+              <Dashboard />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/chamada"
+          element={
+            <ProtectedRoute>
+              <Attendance />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/alunos"
+          element={
+            <ProtectedRoute>
+              <Students />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/relatorios"
+          element={
+            <ProtectedRoute>
+              <Reports />
+            </ProtectedRoute>
+          }
+        />
+
         <Route path="*" element={<NotFound />} />
       </Routes>
-      {showNav && <BottomNav />}
+
+      {/* Menu inferior — apenas em páginas protegidas autenticadas */}
+      {isAuthenticated && !isPublicPage && <BottomNav />}
     </>
   );
 }
@@ -39,7 +99,9 @@ const App = () => (
       <Toaster />
       <Sonner />
       <HashRouter>
-        <AppLayout />
+        <AuthProvider>
+          <AppLayout />
+        </AuthProvider>
       </HashRouter>
     </TooltipProvider>
   </QueryClientProvider>
