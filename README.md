@@ -1,73 +1,61 @@
-# Welcome to your Lovable project
+# ⛪ Catequese Bom Pastor — Sistema de Chamada
 
-## Project info
+App web para controle de presença de catequizandos da Paróquia Bom Pastor.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Funcionalidades
 
-## How can I edit this code?
+- 🗓️ **Chamada diária** — registre presença, falta ou falta justificada por data
+- 👥 **Gerenciar alunos** — cadastrar, editar, remover e ver histórico por aluno
+- 📊 **Dashboard** — painel com estatísticas e alerta de alunos com 3+ faltas
+- 📄 **Relatórios** — histórico filtrado por turma com exportação em CSV
+- 📝 **Portal de justificativa** — página externa para pais enviarem justificativas
 
-There are several ways of editing your application.
+## Tecnologias
 
-**Use Lovable**
+- [React 18](https://react.dev) + [TypeScript](https://typescriptlang.org)
+- [Vite](https://vitejs.dev) (bundler)
+- [Tailwind CSS](https://tailwindcss.com) + [shadcn/ui](https://ui.shadcn.com)
+- [Supabase](https://supabase.com) (banco de dados PostgreSQL + API)
+- [TanStack Query](https://tanstack.com/query) (cache e gerenciamento de estado)
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Configuração
 
-Changes made via Lovable will be committed automatically to this repo.
+Veja o arquivo **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)** para instruções completas de:
+- Como criar sua conta gratuita no Supabase
+- Como criar as tabelas no banco de dados
+- Como configurar o deploy no GitHub Pages
 
-**Use your preferred IDE**
+## Rodando localmente
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+```bash
+# 1. Instalar dependências
+npm install
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+# 2. Copiar o arquivo de variáveis de ambiente
+cp .env.example .env
+# Edite o .env com suas credenciais do Supabase
 
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+# 3. Iniciar o servidor de desenvolvimento
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Acesse `http://localhost:8080`
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+## Deploy
 
-**Use GitHub Codespaces**
+O deploy é feito automaticamente via **GitHub Actions** toda vez que você fizer push na branch `main`.
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+App em produção: `https://rmlinxic.github.io/bom-pastor-chamada/`
 
-## What technologies are used for this project?
+## Estrutura do projeto
 
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+```
+src/
+├── components/     # Componentes reutilizáveis (NavBar, Cards...)
+├── hooks/          # Lógica de dados (useStudents, useAttendance...)
+├── integrations/   # Cliente Supabase + tipos TypeScript
+├── pages/          # Páginas da aplicação
+└── lib/            # Utilitários
+supabase/
+└── migrations/     # Scripts SQL para criar o banco
+```
