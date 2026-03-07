@@ -1,0 +1,41 @@
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { supabase } from "@/integrations/supabase/client";
+import { toast } from "sonner";
+
+export function useStudents() {
+  return useQuery({
+    queryKey: ["students"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("students")
+        .select("*")
+        .eq("active", true)
+        .order("name");
+      if (error) throw error;
+      return data;
+    },
+  });
+}
+
+export function useAddStudent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (student: {
+      name: string;
+      class: string;
+      guardian_name: string;
+      guardian_contact: string;
+    }) => {
+      const { data, error } = await supabase.from("students").insert(student).select().single();
+      if (error) throw error;
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      toast.success("Aluno cadastrado com sucesso!");
+    },
+    onError: () => {
+      toast.error("Erro ao cadastrar aluno.");
+    },
+  });
+}
