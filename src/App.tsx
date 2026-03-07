@@ -2,7 +2,8 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route, useLocation } from "react-router-dom";
+// HashRouter é necessário para GitHub Pages (não suporta roteamento do servidor)
+import { HashRouter, Routes, Route, useLocation } from "react-router-dom";
 import Dashboard from "./pages/Dashboard";
 import Attendance from "./pages/Attendance";
 import Students from "./pages/Students";
@@ -37,9 +38,9 @@ const App = () => (
     <TooltipProvider>
       <Toaster />
       <Sonner />
-      <BrowserRouter>
+      <HashRouter>
         <AppLayout />
-      </BrowserRouter>
+      </HashRouter>
     </TooltipProvider>
   </QueryClientProvider>
 );
