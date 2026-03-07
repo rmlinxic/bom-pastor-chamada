@@ -26,7 +26,11 @@ export function useAddStudent() {
       parent_name: string;
       phone: string;
     }) => {
-      const { data, error } = await supabase.from("students").insert(student).select().single();
+      const { data, error } = await supabase
+        .from("students")
+        .insert(student)
+        .select()
+        .single();
       if (error) throw error;
       return data;
     },
@@ -53,7 +57,10 @@ export function useUpdateStudent() {
       parent_name?: string;
       phone?: string;
     }) => {
-      const { error } = await supabase.from("students").update(updates).eq("id", id);
+      const { error } = await supabase
+        .from("students")
+        .update(updates)
+        .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -62,6 +69,28 @@ export function useUpdateStudent() {
     },
     onError: () => {
       toast.error("Erro ao atualizar aluno.");
+    },
+  });
+}
+
+export function useDeleteStudent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      // Soft delete: set active = false to preserve attendance history
+      const { error } = await supabase
+        .from("students")
+        .update({ active: false })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      toast.success("Aluno removido com sucesso!");
+    },
+    onError: () => {
+      toast.error("Erro ao remover aluno.");
     },
   });
 }

@@ -72,12 +72,14 @@ export function useSubmitJustification() {
         .select("id")
         .ilike("name", studentName.trim());
       if (findError) throw findError;
-      if (!students || students.length === 0) throw new Error("Aluno não encontrado.");
+      if (!students || students.length === 0)
+        throw new Error("Aluno n\u00e3o encontrado. Verifique o nome digitado.");
 
       const studentId = students[0].id;
 
-      // Update attendance record from falta_nao_justificada to falta_justificada
-      const { error, count } = await supabase
+      // Update attendance record: falta_nao_justificada -> falta_justificada
+      // Using .select() to verify that a row was actually updated (count would be null without {count:'exact'})
+      const { data: updated, error } = await supabase
         .from("attendance")
         .update({
           status: "falta_justificada",
@@ -85,12 +87,18 @@ export function useSubmitJustification() {
         })
         .eq("student_id", studentId)
         .eq("date", date)
-        .eq("status", "falta_nao_justificada");
+        .eq("status", "falta_nao_justificada")
+        .select();
+
       if (error) throw error;
-      if (count === 0) throw new Error("Nenhum registro de falta não justificada encontrado para essa data.");
+      if (!updated || updated.length === 0)
+        throw new Error(
+          "Nenhum registro de falta n\u00e3o justificada encontrado para essa data. Verifique se a chamada foi registrada."
+        );
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attendance-all"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
       toast.success("Justificativa enviada com sucesso!");
     },
     onError: (err: Error) => {
