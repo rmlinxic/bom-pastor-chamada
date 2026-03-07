@@ -2,6 +2,9 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
+// Helper para acessar tabelas fora do schema de tipos gerado
+const db = supabase as any;
+
 export function useAttendanceByDate(date: string) {
   return useQuery({
     queryKey: ["attendance", date],
@@ -37,16 +40,59 @@ export function useSaveAttendance() {
     mutationFn: async (
       records: { student_id: string; date: string; status: string }[]
     ) => {
+      // 1. Salva a chamada normalmente
       const { error } = await supabase.from("attendance").upsert(records, {
         onConflict: "student_id,date",
       });
       if (error) throw error;
+
+      // 2. Verifica se há justificativas pendentes para as faltas registradas
+      const absences = records.filter(
+        (r) => r.status === "falta_nao_justificada"
+      );
+      if (absences.length === 0) return 0;
+
+      const date = records[0].date;
+      const studentIds = absences.map((r) => r.student_id);
+
+      const { data: pending } = await db
+        .from("pending_justifications")
+        .select("*")
+        .in("student_id", studentIds)
+        .eq("date", date);
+
+      if (!pending || pending.length === 0) return 0;
+
+      // 3. Aplica cada justificativa pendente automaticamente
+      for (const pj of pending) {
+        await supabase
+          .from("attendance")
+          .update({
+            status: "falta_justificada",
+            justification_reason: pj.reason,
+          })
+          .eq("student_id", pj.student_id)
+          .eq("date", pj.date);
+
+        await db
+          .from("pending_justifications")
+          .delete()
+          .eq("id", pj.id);
+      }
+
+      return pending.length;
     },
-    onSuccess: () => {
+    onSuccess: (autoJustified: number) => {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
       queryClient.invalidateQueries({ queryKey: ["attendance-all"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-      toast.success("Chamada salva com sucesso!");
+      if (autoJustified > 0) {
+        toast.success(
+          `Chamada salva! ${autoJustified} falta(s) justificada(s) automaticamente.`
+        );
+      } else {
+        toast.success("Chamada salva com sucesso!");
+      }
     },
     onError: () => toast.error("Erro ao salvar chamada."),
   });
@@ -84,28 +130,57 @@ export function useSubmitJustification() {
       studentId: string;
       date: string;
       reason: string;
-    }) => {
-      const { data: updated, error } = await supabase
+    }): Promise<{ pending: boolean }> => {
+      // Verifica se já existe registro de chamada para esse aluno nessa data
+      const { data: existing, error: fetchError } = await supabase
         .from("attendance")
-        .update({
-          status: "falta_justificada",
-          justification_reason: reason,
-        })
+        .select("id, status")
         .eq("student_id", studentId)
         .eq("date", date)
-        .eq("status", "falta_nao_justificada")
-        .select();
+        .maybeSingle();
 
-      if (error) throw error;
-      if (!updated || updated.length === 0)
-        throw new Error(
-          "Nenhum registro de falta n\u00e3o justificada encontrado para essa data. Verifique se a chamada foi registrada pelo catequista."
-        );
+      if (fetchError) throw fetchError;
+
+      if (existing) {
+        // Registro existe: verifica o status
+        if (existing.status === "presente") {
+          throw new Error("O aluno estava presente nessa data.");
+        }
+        if (existing.status === "falta_justificada") {
+          throw new Error("Essa falta já está justificada.");
+        }
+        // É falta_nao_justificada: justificar agora
+        const { error } = await supabase
+          .from("attendance")
+          .update({
+            status: "falta_justificada",
+            justification_reason: reason,
+          })
+          .eq("id", existing.id);
+        if (error) throw error;
+        return { pending: false };
+      } else {
+        // Chamada ainda não foi registrada: salvar no buffer
+        const { error } = await db
+          .from("pending_justifications")
+          .upsert(
+            { student_id: studentId, date, reason },
+            { onConflict: "student_id,date" }
+          );
+        if (error) throw error;
+        return { pending: true };
+      }
     },
-    onSuccess: () => {
+    onSuccess: (result: { pending: boolean }) => {
       queryClient.invalidateQueries({ queryKey: ["attendance-all"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-      toast.success("Justificativa enviada com sucesso!");
+      if (result.pending) {
+        toast.success(
+          "Justificativa registrada! Será aplicada automaticamente quando a chamada for marcada."
+        );
+      } else {
+        toast.success("Falta justificada com sucesso!");
+      }
     },
     onError: (err: Error) => {
       toast.error(err.message || "Erro ao enviar justificativa.");

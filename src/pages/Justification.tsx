@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { CalendarIcon, Church, CheckCircle2 } from "lucide-react";
+import { CalendarIcon, Church, CheckCircle2, Clock } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
@@ -23,11 +23,11 @@ export default function Justification() {
   const [date, setDate] = useState<Date | undefined>();
   const [reason, setReason] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [wasPending, setWasPending] = useState(false);
 
   const mutation = useSubmitJustification();
   const { data: students = [], isLoading: loadingStudents } = useStudents();
 
-  // Alunos ordenados por turma e depois por nome
   const sortedStudents = [...students].sort((a, b) =>
     a.class_name !== b.class_name
       ? a.class_name.localeCompare(b.class_name)
@@ -42,7 +42,8 @@ export default function Justification() {
     mutation.mutate(
       { studentId, date: format(date!, "yyyy-MM-dd"), reason },
       {
-        onSuccess: () => {
+        onSuccess: (result) => {
+          setWasPending(result.pending);
           setSubmitted(true);
           setStudentId("");
           setDate(undefined);
@@ -69,25 +70,45 @@ export default function Justification() {
         </div>
 
         {submitted ? (
-          /* Estado de sucesso */
-          <div className="rounded-lg border border-success/30 bg-success/10 p-6 text-center animate-fade-in">
-            <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-3" />
-            <p className="text-lg font-semibold text-success">
-              Justificativa enviada!
-            </p>
-            <p className="text-sm text-muted-foreground mt-2">
-              O status da falta foi atualizado automaticamente no sistema.
-            </p>
-            <Button
-              onClick={() => setSubmitted(false)}
-              className="mt-5 w-full"
-            >
-              Enviar outra justificativa
-            </Button>
-          </div>
+          // Estado de sucesso — dois tipos
+          wasPending ? (
+            <div className="rounded-lg border border-warning/30 bg-warning/10 p-6 text-center animate-fade-in">
+              <Clock className="h-12 w-12 text-warning mx-auto mb-3" />
+              <p className="text-lg font-semibold text-warning">
+                Justificativa registrada!
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                A chamada desse dia ainda não foi registrada. Sua justificativa
+                foi salva e <strong>será aplicada automaticamente</strong> assim
+                que o catequista marcar a presença.
+              </p>
+              <Button onClick={() => setSubmitted(false)} className="mt-5 w-full">
+                Enviar outra justificativa
+              </Button>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-success/30 bg-success/10 p-6 text-center animate-fade-in">
+              <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-3" />
+              <p className="text-lg font-semibold text-success">
+                Falta justificada!
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                O status foi atualizado automaticamente no sistema.
+              </p>
+              <Button onClick={() => setSubmitted(false)} className="mt-5 w-full">
+                Enviar outra justificativa
+              </Button>
+            </div>
+          )
         ) : (
-          /* Formulário */
           <form onSubmit={handleSubmit} className="space-y-5 animate-fade-in">
+            {/* Aviso sobre justificativa prévia */}
+            <div className="rounded-lg bg-muted/50 border border-border p-3 text-xs text-muted-foreground">
+              <strong className="text-foreground">Dica:</strong> Você pode enviar
+              a justificativa mesmo <strong>antes da aula</strong>. Ela será
+              registrada automaticamente quando o catequista marcar a chamada.
+            </div>
+
             {/* Seletor de aluno */}
             <div className="space-y-1.5">
               <Label>Nome do Catequizando</Label>
@@ -148,7 +169,6 @@ export default function Justification() {
                     onSelect={setDate}
                     initialFocus
                     className="p-3 pointer-events-auto"
-                    disabled={(d) => d > new Date()}
                   />
                 </PopoverContent>
               </Popover>
@@ -161,7 +181,7 @@ export default function Justification() {
                 id="reason"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Descreva o motivo da falta (ex: doença, consulta médica, viagem familiar...)"
+                placeholder="Descreva o motivo da falta (ex: doen\u00e7a, consulta médica, viagem familiar...)"
                 rows={4}
                 required
               />
@@ -174,11 +194,6 @@ export default function Justification() {
             >
               {mutation.isPending ? "Enviando..." : "Enviar Justificativa"}
             </Button>
-
-            <p className="text-xs text-center text-muted-foreground">
-              A falta precisa ter sido registrada pelo catequista para que a
-              justificativa seja aceita.
-            </p>
           </form>
         )}
       </div>
