@@ -23,7 +23,7 @@ import {
 const statusLabels: Record<string, string> = {
   presente: "Presente",
   falta_justificada: "Falta Justificada",
-  falta_nao_justificada: "Falta N\u00e3o Justificada",
+  falta_nao_justificada: "Falta Não Justificada",
 };
 
 const statusColors: Record<string, string> = {
@@ -66,7 +66,7 @@ export default function Students() {
   const handleDelete = (id: string, name: string) => {
     if (
       window.confirm(
-        `Deseja remover o aluno "${name}"?\nO hist\u00f3rico de presen\u00e7a ser\u00e1 preservado.`
+        `Deseja remover o aluno "${name}"?\nO histórico de presença será preservado.`
       )
     ) {
       deleteMutation.mutate(id);
@@ -125,7 +125,7 @@ export default function Students() {
             <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
           </Button>
           <h1 className="text-2xl font-bold text-foreground">{student?.name}</h1>
-          <p className="text-sm text-muted-foreground">Hist\u00f3rico de presen\u00e7a</p>
+          <p className="text-sm text-muted-foreground">Histórico de presença</p>
         </div>
         <div className="px-4 space-y-2">
           {history.map((h) => (
@@ -198,7 +198,7 @@ export default function Students() {
                 />
               </div>
               <div>
-                <Label htmlFor="parent_name">Nome do Respons\u00e1vel</Label>
+                <Label htmlFor="parent_name">Nome do Responsável</Label>
                 <Input
                   id="parent_name"
                   value={form.parent_name}
@@ -281,7 +281,7 @@ export default function Students() {
                 <Button
                   variant="ghost"
                   size="icon"
-                  title="Hist\u00f3rico"
+                  title="Histórico"
                   onClick={() => setHistoryStudentId(s.id)}
                 >
                   <History className="h-4 w-4" />
