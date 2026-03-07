@@ -55,32 +55,32 @@ export type Database = {
       students: {
         Row: {
           active: boolean
-          class: string
+          class_name: string
           created_at: string
-          guardian_contact: string
-          guardian_name: string
           id: string
           name: string
+          parent_name: string
+          phone: string
           updated_at: string
         }
         Insert: {
           active?: boolean
-          class: string
+          class_name: string
           created_at?: string
-          guardian_contact: string
-          guardian_name: string
           id?: string
           name: string
+          parent_name: string
+          phone: string
           updated_at?: string
         }
         Update: {
           active?: boolean
-          class?: string
+          class_name?: string
           created_at?: string
-          guardian_contact?: string
-          guardian_name?: string
           id?: string
           name?: string
+          parent_name?: string
+          phone?: string
           updated_at?: string
         }
         Relationships: []
