@@ -8,31 +8,29 @@ export default function Reports() {
   const { data: students = [] } = useStudents();
   const { data: attendance = [] } = useAllAttendance();
 
-  // Count unjustified absences per student
   const unjustifiedCounts: Record<string, number> = {};
   attendance.forEach((a) => {
-    if (a.status === "unjustified_absence") {
+    if (a.status === "falta_nao_justificada") {
       unjustifiedCounts[a.student_id] = (unjustifiedCounts[a.student_id] || 0) + 1;
     }
   });
 
   const statusLabels: Record<string, string> = {
-    present: "Presente",
-    justified_absence: "Falta Justificada",
-    unjustified_absence: "Falta Injustificada",
+    presente: "Presente",
+    falta_justificada: "Falta Justificada",
+    falta_nao_justificada: "Falta Não Justificada",
   };
 
   const statusColors: Record<string, string> = {
-    present: "text-success",
-    justified_absence: "text-warning",
-    unjustified_absence: "text-destructive",
+    presente: "text-success",
+    falta_justificada: "text-warning",
+    falta_nao_justificada: "text-destructive",
   };
 
   return (
     <div className="pb-24">
       <PageHeader title="Relatórios" subtitle="Histórico detalhado de presenças" />
 
-      {/* Alert students */}
       {students.filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3).length > 0 && (
         <div className="mx-4 mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
           <div className="flex items-center gap-2 mb-2">
@@ -44,7 +42,7 @@ export default function Reports() {
               .filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3)
               .map((s) => (
                 <p key={s.id} className="text-sm text-destructive">
-                  {s.name} — {unjustifiedCounts[s.id]} faltas injustificadas
+                  {s.name} — {unjustifiedCounts[s.id]} faltas não justificadas
                 </p>
               ))}
           </div>

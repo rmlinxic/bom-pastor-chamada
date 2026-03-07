@@ -22,9 +22,9 @@ export function useAddStudent() {
   return useMutation({
     mutationFn: async (student: {
       name: string;
-      class: string;
-      guardian_name: string;
-      guardian_contact: string;
+      class_name: string;
+      parent_name: string;
+      phone: string;
     }) => {
       const { data, error } = await supabase.from("students").insert(student).select().single();
       if (error) throw error;
@@ -37,5 +37,47 @@ export function useAddStudent() {
     onError: () => {
       toast.error("Erro ao cadastrar aluno.");
     },
+  });
+}
+
+export function useUpdateStudent() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      ...updates
+    }: {
+      id: string;
+      name?: string;
+      class_name?: string;
+      parent_name?: string;
+      phone?: string;
+    }) => {
+      const { error } = await supabase.from("students").update(updates).eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      toast.success("Aluno atualizado com sucesso!");
+    },
+    onError: () => {
+      toast.error("Erro ao atualizar aluno.");
+    },
+  });
+}
+
+export function useStudentAttendanceHistory(studentId: string | null) {
+  return useQuery({
+    queryKey: ["student-history", studentId],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("attendance")
+        .select("*")
+        .eq("student_id", studentId!)
+        .order("date", { ascending: false });
+      if (error) throw error;
+      return data;
+    },
+    enabled: !!studentId,
   });
 }
