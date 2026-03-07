@@ -1,43 +1,29 @@
-# ⚙️ Configuração do Supabase — Catequese Bom Pastor
+# 🚀 Guia Completo: Supabase + Deploy no GitHub Pages
 
-Este guia explica como configurar o banco de dados Supabase para que o app funcione completamente.
+Este guia cobre tudo que você precisa fazer para colocar o app **100% funcional** hospedado em `https://rmlinxic.github.io/bom-pastor-chamada/`.
 
-> **Boas notícias:** o arquivo `.env` do projeto já tem as credenciais preenchidas (URL e chave anon do projeto Supabase). Você só precisa **criar as tabelas no banco de dados** rodando as migrations.
-
----
-
-## Pré-requisitos
-
-- Conta no [Supabase](https://supabase.com) (gratuita)
-- O projeto Supabase já foi criado automaticamente pelo Lovable
-- Credenciais já estão no arquivo `.env`:
-  ```
-  VITE_SUPABASE_URL="https://solqfhhkgrkxkfrqpftb.supabase.co"
-  VITE_SUPABASE_PUBLISHABLE_KEY="eyJ..."
-  ```
+> ⚠️ **Importante:** As credenciais que estão no `.env` do projeto foram geradas automaticamente pelo **Lovable** e pertencem à conta deles. Você precisa criar o seu **próprio** projeto Supabase gratuito.
 
 ---
 
-## Opção 1 — Via Dashboard (mais fácil, sem instalar nada)
+## Etapa 1 — Criar sua conta e projeto no Supabase
 
-### Passo 1: Acessar o projeto no Supabase
-
-1. Acesse [supabase.com](https://supabase.com) e faça login
-2. No painel, localize o projeto **`solqfhhkgrkxkfrqpftb`** (ou pelo nome que aparece)
-3. Clique no projeto para abri-lo
-
-### Passo 2: Abrir o SQL Editor
-
-1. No menu lateral esquerdo, clique em **"SQL Editor"**
-2. Clique em **"New query"** (botão verde ou `+`)
-
-### Passo 3: Rodar as migrations na ordem
-
-Copie e cole cada bloco SQL abaixo e clique em **"Run"** (ou `Ctrl+Enter`) após cada um.
+1. Acesse [supabase.com](https://supabase.com) e clique em **"Start your project"**
+2. Crie uma conta (pode usar login com GitHub — mais rápido)
+3. Clique em **"New project"**
+4. Preencha:
+   - **Name:** `bom-pastor-chamada` (ou qualquer nome)
+   - **Database Password:** escolha uma senha forte e **guarde em local seguro**
+   - **Region:** `South America (São Paulo)` — menor latência no Brasil
+5. Clique em **"Create new project"** e aguarde ~2 minutos
 
 ---
 
-#### 🟦 Migration 1 — Criar as tabelas
+## Etapa 2 — Criar as tabelas (rodar migrations)
+
+1. No painel do Supabase, clique em **"SQL Editor"** no menu lateral
+2. Clique em **"New query"**
+3. Copie e cole o SQL abaixo e clique em **"Run"** (ou `Ctrl+Enter`)
 
 ```sql
 -- Função para atualizar timestamp automático
@@ -53,16 +39,15 @@ $$ LANGUAGE plpgsql SET search_path = public;
 CREATE TABLE public.students (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   name TEXT NOT NULL,
-  class TEXT NOT NULL,
-  guardian_name TEXT NOT NULL,
-  guardian_contact TEXT NOT NULL,
+  class_name TEXT NOT NULL,
+  parent_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
   active BOOLEAN NOT NULL DEFAULT true,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
 );
 
 ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Anyone can view students" ON public.students FOR SELECT USING (true);
 CREATE POLICY "Anyone can insert students" ON public.students FOR INSERT WITH CHECK (true);
 CREATE POLICY "Anyone can update students" ON public.students FOR UPDATE USING (true);
@@ -77,7 +62,7 @@ CREATE TABLE public.attendance (
   id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
   student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
   date DATE NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('present', 'justified_absence', 'unjustified_absence')),
+  status TEXT NOT NULL CHECK (status IN ('presente', 'falta_justificada', 'falta_nao_justificada')),
   justification_reason TEXT,
   created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
   updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
@@ -85,7 +70,6 @@ CREATE TABLE public.attendance (
 );
 
 ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
-
 CREATE POLICY "Anyone can view attendance" ON public.attendance FOR SELECT USING (true);
 CREATE POLICY "Anyone can insert attendance" ON public.attendance FOR INSERT WITH CHECK (true);
 CREATE POLICY "Anyone can update attendance" ON public.attendance FOR UPDATE USING (true);
@@ -98,79 +82,61 @@ CREATE TRIGGER update_attendance_updated_at
 -- Índices
 CREATE INDEX idx_attendance_student_id ON public.attendance(student_id);
 CREATE INDEX idx_attendance_date ON public.attendance(date);
-CREATE INDEX idx_attendance_status ON public.attendance(status);
-CREATE INDEX idx_students_class ON public.students(class);
+CREATE INDEX idx_students_class_name ON public.students(class_name);
 ```
+
+Se aparecer **"Success. No rows returned"**, as tabelas foram criadas. Confirme em **Table Editor** — você deve ver `students` e `attendance`.
 
 ---
 
-#### 🟦 Migration 2 — Renomear colunas e atualizar status
+## Etapa 3 — Copiar suas credenciais
 
-```sql
--- Renomear colunas para o padrão do app
-ALTER TABLE public.students RENAME COLUMN "class" TO class_name;
-ALTER TABLE public.students RENAME COLUMN guardian_name TO parent_name;
-ALTER TABLE public.students RENAME COLUMN guardian_contact TO phone;
-```
+1. No painel do Supabase, clique em **⚙️ Project Settings** (engrenagem no menu lateral)
+2. Clique em **"API"**
+3. Copie os dois valores:
 
----
-
-#### 🟦 Migration 3 — Corrigir constraint de status (IMPORTANTE)
-
-```sql
--- Atualizar constraint para usar os valores em português
-ALTER TABLE public.attendance DROP CONSTRAINT IF EXISTS attendance_status_check;
-ALTER TABLE public.attendance ADD CONSTRAINT attendance_status_check
-  CHECK (status IN ('presente', 'falta_justificada', 'falta_nao_justificada'));
-
--- Corrigir índice renomeado
-DROP INDEX IF EXISTS idx_students_class;
-CREATE INDEX IF NOT EXISTS idx_students_class_name ON public.students(class_name);
-```
+| Campo | Onde usar |
+|---|---|
+| **Project URL** | `VITE_SUPABASE_URL` |
+| **anon public** (em "Project API keys") | `VITE_SUPABASE_PUBLISHABLE_KEY` |
 
 ---
 
-### Passo 4: Verificar se as tabelas foram criadas
+## Etapa 4 — Adicionar as credenciais ao GitHub (Secrets)
 
-1. No menu lateral, clique em **"Table Editor"**
-2. Você deve ver duas tabelas: **`students`** e **`attendance`**
-3. Se aparecerem, está tudo certo! ✅
+As credenciais **não devem ficar no código** (o `.env` atual é do Lovable). Vamos guardar como segredos do GitHub:
 
----
+1. No seu repositório do GitHub, clique em **Settings**
+2. No menu lateral esquerdo, vá em **Secrets and variables → Actions**
+3. Clique em **"New repository secret"** e adicione os dois:
 
-## Opção 2 — Via Supabase CLI (para devs)
-
-Se preferir usar o terminal:
-
-```bash
-# 1. Instalar a CLI (caso não tenha)
-npm install -g supabase
-
-# 2. Fazer login
-supabase login
-
-# 3. Linkar ao projeto (use o Project ID do .env)
-supabase link --project-ref solqfhhkgrkxkfrqpftb
-
-# 4. Rodar todas as migrations automaticamente
-supabase db push
-```
+| Nome do Secret | Valor |
+|---|---|
+| `VITE_SUPABASE_URL` | Cole o Project URL |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | Cole a chave anon public |
 
 ---
 
-## Rodando o projeto localmente
+## Etapa 5 — Ativar o GitHub Pages
 
-Após configurar o banco de dados:
+1. No repositório do GitHub, clique em **Settings**
+2. No menu lateral, clique em **Pages**
+3. Em **"Source"**, selecione **"GitHub Actions"**
+4. Clique em **Save**
 
-```bash
-# 1. Instalar dependências
-npm install
+---
 
-# 2. Iniciar o servidor de desenvolvimento
-npm run dev
+## Etapa 6 — Fazer o primeiro deploy
+
+Após fazer o merge do PR com todas as correções, o GitHub Actions vai disparar automaticamente e publicar o site.
+
+Você pode acompanhar em **Actions** no seu repositório. Quando o job terminar (geralmente 2–3 min), o app estará disponível em:
+
+```
+https://rmlinxic.github.io/bom-pastor-chamada/
 ```
 
-Acesse `http://localhost:5173` no navegador.
+Para disparar manualmente sem precisar de um novo commit: **Actions → "Deploy to GitHub Pages" → "Run workflow"**.
 
 ---
 
@@ -186,8 +152,6 @@ Acesse `http://localhost:5173` no navegador.
 | `parent_name` | TEXT | Nome do responsável |
 | `phone` | TEXT | Telefone do responsável |
 | `active` | BOOLEAN | `true` = ativo, `false` = removido |
-| `created_at` | TIMESTAMP | Data de cadastro |
-| `updated_at` | TIMESTAMP | Última atualização |
 
 ### Tabela `attendance`
 
@@ -198,31 +162,19 @@ Acesse `http://localhost:5173` no navegador.
 | `date` | DATE | Data da aula (`YYYY-MM-DD`) |
 | `status` | TEXT | `'presente'`, `'falta_justificada'` ou `'falta_nao_justificada'` |
 | `justification_reason` | TEXT | Motivo da justificativa (opcional) |
-| `created_at` | TIMESTAMP | Data do registro |
-| `updated_at` | TIMESTAMP | Última atualização |
-
----
-
-## Segurança (Row Level Security)
-
-O banco usa **RLS (Row Level Security)** ativado, mas com políticas abertas (`USING (true)`) para facilitar o uso sem autenticação. Isso significa que **qualquer pessoa com a URL do app pode ler e escrever dados**.
-
-Se quiser restringir o acesso no futuro, você precisará:
-1. Adicionar autenticação no app (ex: login com e-mail/senha via Supabase Auth)
-2. Atualizar as políticas RLS para exigir `auth.uid() IS NOT NULL`
 
 ---
 
 ## Problemas comuns
 
-**Erro: "relation students does not exist"**
-→ As migrations não foram rodadas. Siga o Passo 3 acima.
+**Build falhou no GitHub Actions com erro de credenciais**
+→ Verifique se os dois Secrets foram criados corretamente (Etapa 4). Os nomes devem ser exatos: `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`.
 
-**Erro: "new row violates check constraint"**
-→ A Migration 3 não foi rodada. Execute o SQL da Migration 3.
+**App abre mas dados não carregam**
+→ As tabelas não foram criadas. Execute o SQL da Etapa 2.
 
-**Dados não aparecem no app**
-→ Verifique se o arquivo `.env` existe na raiz do projeto com as três variáveis preenchidas.
+**Página em branco após deploy**
+→ Verifique no GitHub Actions se o build passou sem erros.
 
-**Erro de CORS ou "Invalid API key"**
-→ Confirme que `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` no `.env` são os mesmos do seu projeto Supabase (Settings → API).
+**Erro "relation does not exist" no console do navegador**
+→ Execute o SQL da Etapa 2 no Supabase.
