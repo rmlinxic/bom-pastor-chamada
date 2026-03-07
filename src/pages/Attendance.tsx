@@ -110,7 +110,7 @@ export default function Attendance() {
           <X className="h-3 w-3 text-destructive" /> Falta
         </span>
         <span className="flex items-center gap-1">
-          <AlertTriangle className="h-3 w-3 text-warning" /> Justif.
+          <AlertTriangle className="h-3 w-3 text-warning" /> Justificada
         </span>
       </div>
 

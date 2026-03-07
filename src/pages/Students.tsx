@@ -98,10 +98,27 @@ function parseStudentsCSV(raw: string): {
   return students;
 }
 
+function decodeCsvFileContent(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer);
+  const utf8Text = new TextDecoder("utf-8").decode(bytes);
+
+  // Se houver muitos caracteres de substituição, tentar fallback para Windows-1252
+  const replacementChars = (utf8Text.match(/\uFFFD/g) ?? []).length;
+  if (replacementChars > 0) {
+    try {
+      return new TextDecoder("windows-1252").decode(bytes);
+    } catch {
+      return utf8Text;
+    }
+  }
+
+  return utf8Text;
+}
+
 // Gera e faz download do modelo CSV
 function downloadTemplate() {
   const rows = [
-    ["Nome", "Turma", "Responsavel", "Telefone"],
+    ["Nome", "Turma", "Responsável", "Telefone"],
     ["João Silva", "Crisma 2025", "Maria Silva", "(41) 99999-0001"],
     ["Ana Souza", "Crisma 2025", "Carlos Souza", "(41) 99999-0002"],
     ["Pedro Lima", "Crisma 2026", "Fátima Lima", "(41) 99999-0003"],
@@ -196,7 +213,12 @@ export default function Students() {
     const reader = new FileReader();
     reader.onload = (evt) => {
       try {
-        const text = evt.target?.result as string;
+        const fileBuffer = evt.target?.result;
+        if (!(fileBuffer instanceof ArrayBuffer)) {
+          throw new Error("Não foi possível ler o arquivo CSV.");
+        }
+
+        const text = decodeCsvFileContent(fileBuffer);
         const parsed = parseStudentsCSV(text);
 
         if (
@@ -211,7 +233,7 @@ export default function Students() {
         toast.error(msg);
       }
     };
-    reader.readAsText(file, "UTF-8");
+    reader.readAsArrayBuffer(file);
   };
 
   const isPending = addMutation.isPending || updateMutation.isPending;
