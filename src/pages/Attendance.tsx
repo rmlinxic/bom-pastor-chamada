@@ -10,7 +10,7 @@ import PageHeader from "@/components/PageHeader";
 import { useStudents } from "@/hooks/useStudents";
 import { useAttendanceByDate, useSaveAttendance } from "@/hooks/useAttendance";
 
-type Status = "present" | "justified_absence" | "unjustified_absence";
+type Status = "presente" | "falta_justificada" | "falta_nao_justificada";
 
 export default function Attendance() {
   const [date, setDate] = useState<Date>(new Date());
@@ -21,21 +21,20 @@ export default function Attendance() {
 
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
 
-  // Merge existing attendance
   const getStatus = (studentId: string): Status => {
     if (statuses[studentId]) return statuses[studentId];
     const existing = existingAttendance.find((a) => a.student_id === studentId);
-    return (existing?.status as Status) ?? "present";
+    return (existing?.status as Status) ?? "presente";
   };
 
   const toggleStatus = (studentId: string) => {
     const current = getStatus(studentId);
     const next: Status =
-      current === "present"
-        ? "unjustified_absence"
-        : current === "unjustified_absence"
-        ? "justified_absence"
-        : "present";
+      current === "presente"
+        ? "falta_nao_justificada"
+        : current === "falta_nao_justificada"
+        ? "falta_justificada"
+        : "presente";
     setStatuses((prev) => ({ ...prev, [studentId]: next }));
   };
 
@@ -49,9 +48,9 @@ export default function Attendance() {
   };
 
   const statusConfig: Record<Status, { icon: typeof Check; label: string; className: string }> = {
-    present: { icon: Check, label: "Presente", className: "bg-success text-success-foreground" },
-    unjustified_absence: { icon: X, label: "Falta", className: "bg-destructive text-destructive-foreground" },
-    justified_absence: { icon: AlertTriangle, label: "Justificada", className: "bg-warning text-warning-foreground" },
+    presente: { icon: Check, label: "Presente", className: "bg-success text-success-foreground" },
+    falta_nao_justificada: { icon: X, label: "Falta", className: "bg-destructive text-destructive-foreground" },
+    falta_justificada: { icon: AlertTriangle, label: "Justificada", className: "bg-warning text-warning-foreground" },
   };
 
   return (
@@ -92,7 +91,7 @@ export default function Attendance() {
             >
               <div className="text-left">
                 <p className="font-semibold text-foreground">{student.name}</p>
-                <p className="text-xs text-muted-foreground">{student.class}</p>
+                <p className="text-xs text-muted-foreground">{student.class_name}</p>
               </div>
               <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold", config.className)}>
                 <Icon className="h-3.5 w-3.5" />

@@ -10,17 +10,30 @@ export default function Dashboard() {
     queryKey: ["dashboard-stats"],
     queryFn: async () => {
       const [studentsRes, attendanceRes] = await Promise.all([
-        supabase.from("students").select("id", { count: "exact" }).eq("active", true),
+        supabase.from("students").select("id, name", { count: "exact" }).eq("active", true),
         supabase.from("attendance").select("*"),
       ]);
 
       const totalStudents = studentsRes.count ?? 0;
+      const allStudents = studentsRes.data ?? [];
       const records = attendanceRes.data ?? [];
-      const present = records.filter((r) => r.status === "present").length;
-      const justified = records.filter((r) => r.status === "justified_absence").length;
-      const unjustified = records.filter((r) => r.status === "unjustified_absence").length;
+      const present = records.filter((r) => r.status === "presente").length;
+      const justified = records.filter((r) => r.status === "falta_justificada").length;
+      const unjustified = records.filter((r) => r.status === "falta_nao_justificada").length;
 
-      // Weekly chart: last 4 weeks
+      // Alert: students with 3+ unjustified absences
+      const unjustifiedCounts: Record<string, number> = {};
+      records.forEach((r) => {
+        if (r.status === "falta_nao_justificada") {
+          unjustifiedCounts[r.student_id] = (unjustifiedCounts[r.student_id] || 0) + 1;
+        }
+      });
+      const alertStudents = allStudents.filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3).map((s) => ({
+        name: s.name,
+        count: unjustifiedCounts[s.id],
+      }));
+
+      // Weekly chart
       const now = new Date();
       const weeks: { name: string; presença: number }[] = [];
       for (let i = 3; i >= 0; i--) {
@@ -30,12 +43,12 @@ export default function Dashboard() {
         weekStart.setDate(weekEnd.getDate() - 7);
         const count = records.filter((r) => {
           const d = new Date(r.date);
-          return d >= weekStart && d <= weekEnd && r.status === "present";
+          return d >= weekStart && d <= weekEnd && r.status === "presente";
         }).length;
         weeks.push({ name: `Sem ${4 - i}`, presença: count });
       }
 
-      return { totalStudents, present, justified, unjustified, weeks };
+      return { totalStudents, present, justified, unjustified, weeks, alertStudents };
     },
   });
 
@@ -46,8 +59,26 @@ export default function Dashboard() {
         <StatCard label="Total de Alunos" value={stats?.totalStudents ?? 0} icon={Users} />
         <StatCard label="Presenças" value={stats?.present ?? 0} icon={CheckCircle} variant="success" />
         <StatCard label="Faltas Justificadas" value={stats?.justified ?? 0} icon={AlertTriangle} variant="warning" />
-        <StatCard label="Faltas Injustificadas" value={stats?.unjustified ?? 0} icon={XCircle} variant="destructive" />
+        <StatCard label="Faltas Não Justificadas" value={stats?.unjustified ?? 0} icon={XCircle} variant="destructive" />
       </div>
+
+      {/* Alert component */}
+      {(stats?.alertStudents?.length ?? 0) > 0 && (
+        <div className="mx-4 mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <AlertTriangle className="h-5 w-5 text-destructive" />
+            <span className="font-bold text-destructive">Alunos em Alerta</span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-2">Alunos com 3 ou mais faltas não justificadas:</p>
+          <div className="space-y-1">
+            {stats!.alertStudents.map((s) => (
+              <p key={s.name} className="text-sm font-medium text-destructive">
+                {s.name} — {s.count} faltas
+              </p>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="mt-6 px-4">
         <h2 className="mb-3 text-lg font-semibold text-foreground">Frequência Semanal</h2>

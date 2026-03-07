@@ -8,7 +8,7 @@ export function useAttendanceByDate(date: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("attendance")
-        .select("*, students(name, class)")
+        .select("*, students(name, class_name)")
         .eq("date", date);
       if (error) throw error;
       return data;
@@ -23,7 +23,7 @@ export function useAllAttendance() {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("attendance")
-        .select("*, students(name, class)")
+        .select("*, students(name, class_name)")
         .order("date", { ascending: false });
       if (error) throw error;
       return data;
@@ -76,16 +76,18 @@ export function useSubmitJustification() {
 
       const studentId = students[0].id;
 
-      // Update attendance record
-      const { error } = await supabase
+      // Update attendance record from falta_nao_justificada to falta_justificada
+      const { error, count } = await supabase
         .from("attendance")
         .update({
-          status: "justified_absence",
+          status: "falta_justificada",
           justification_reason: reason,
         })
         .eq("student_id", studentId)
-        .eq("date", date);
+        .eq("date", date)
+        .eq("status", "falta_nao_justificada");
       if (error) throw error;
+      if (count === 0) throw new Error("Nenhum registro de falta não justificada encontrado para essa data.");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["attendance-all"] });
