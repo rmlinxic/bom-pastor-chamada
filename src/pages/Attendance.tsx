@@ -75,7 +75,7 @@ export default function Attendance() {
 
   return (
     <div className="pb-24">
-      <PageHeader title="Chamada" subtitle="Registre a presen\u00e7a dos catequizandos" />
+      <PageHeader title="Chamada" subtitle="Registre a presença dos catequizandos" />
 
       <div className="px-4 mb-4">
         <Popover>
@@ -147,7 +147,7 @@ export default function Attendance() {
 
         {students.length === 0 && (
           <p className="py-8 text-center text-muted-foreground">
-            Nenhum aluno cadastrado. Cadastre alunos na aba \"Alunos\".
+            Nenhum aluno cadastrado. Cadastre alunos na aba "Alunos".
           </p>
         )}
       </div>

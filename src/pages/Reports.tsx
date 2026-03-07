@@ -9,7 +9,7 @@ import { useStudents } from "@/hooks/useStudents";
 const STATUS_LABELS: Record<string, string> = {
   presente: "Presente",
   falta_justificada: "Falta Justificada",
-  falta_nao_justificada: "Falta N\u00e3o Justificada",
+  falta_nao_justificada: "Falta Não Justificada",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -23,7 +23,7 @@ export default function Reports() {
   const { data: attendance = [] } = useAllAttendance();
   const [selectedClass, setSelectedClass] = useState<string>("all");
 
-  // Contagem de faltas n\u00e3o justificadas por aluno
+  // Contagem de faltas não justificadas por aluno
   const unjustifiedCounts: Record<string, number> = {};
   attendance.forEach((a) => {
     if (a.status === "falta_nao_justificada") {
@@ -32,7 +32,7 @@ export default function Reports() {
     }
   });
 
-  // Turmas \u00fanicas para filtro
+  // Turmas únicas para filtro
   const classes = [
     "all",
     ...Array.from(new Set(students.map((s) => s.class_name))).sort(),
@@ -52,12 +52,12 @@ export default function Reports() {
 
   // --- Exportar CSV em formato de matriz ---
   const handleExportCSV = () => {
-    // Todas as datas \u00fanicas ordenadas
+    // Todas as datas únicas ordenadas
     const allDates = [
       ...new Set(filteredAttendance.map((a) => a.date)),
     ].sort();
 
-    // Mapa de informa\u00e7\u00f5es dos alunos (inclui removidos via join)
+    // Mapa de informações dos alunos (inclui removidos via join)
     const studentMap: Record<string, { name: string; class_name: string }> = {};
     students.forEach((s) => {
       studentMap[s.id] = { name: s.name, class_name: s.class_name };
@@ -68,7 +68,7 @@ export default function Reports() {
         if (aAny.students?.name) {
           studentMap[a.student_id] = {
             name: aAny.students.name,
-            class_name: aAny.students.class_name ?? "\u2014",
+            class_name: aAny.students.class_name ?? "—",
           };
         }
       }
@@ -81,7 +81,7 @@ export default function Reports() {
       lookup[a.student_id][a.date] = a.status;
     });
 
-    // S\u00edmbolos no CSV
+    // Símbolos no CSV
     const SYM: Record<string, string> = {
       presente: "P",
       falta_justificada: "FJ",
@@ -100,19 +100,19 @@ export default function Reports() {
 
     const pad = (n: number) => Array(n).fill("");
 
-    // Linha de cabe\u00e7alho
+    // Linha de cabeçalho
     const header = [
       "Aluno",
       "Turma",
       ...allDates,
-      "Presen\u00e7as",
+      "Presenças",
       "Faltas NJ",
       "Faltas Justif.",
       "Total Aulas",
-      "% Presen\u00e7a",
+      "% Presença",
     ];
 
-    // Linhas de dados + c\u00e1lculo de totais por aluno
+    // Linhas de dados + cálculo de totais por aluno
     let sumPresencas = 0;
     let sumFNJ = 0;
     let sumFJ = 0;
@@ -150,13 +150,13 @@ export default function Reports() {
     const summaryRows = [
       pad(header.length),
       ["RESUMO GERAL", ...pad(header.length - 1)],
-      ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta N\u00e3o Justificada", ...pad(header.length - 1)],
+      ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta Não Justificada", ...pad(header.length - 1)],
       pad(header.length),
       ["Total de alunos", relevantStudents.length, ...pad(extraCols)],
-      ["Total de presen\u00e7as", sumPresencas, ...pad(extraCols)],
-      ["Total de faltas n\u00e3o justificadas", sumFNJ, ...pad(extraCols)],
+      ["Total de presenças", sumPresencas, ...pad(extraCols)],
+      ["Total de faltas não justificadas", sumFNJ, ...pad(extraCols)],
       ["Total de faltas justificadas", sumFJ, ...pad(extraCols)],
-      ["M\u00e9dia geral de presen\u00e7a", media, ...pad(extraCols)],
+      ["Média geral de presença", media, ...pad(extraCols)],
     ];
 
     const rows = [header, ...dataRows, ...summaryRows];
@@ -178,8 +178,8 @@ export default function Reports() {
   return (
     <div className="pb-24">
       <PageHeader
-        title="Relat\u00f3rios"
-        subtitle="Hist\u00f3rico detalhado de presen\u00e7as"
+        title="Relatórios"
+        subtitle="Histórico detalhado de presenças"
       />
 
       {/* Alerta: alunos com 3+ faltas */}
@@ -189,7 +189,7 @@ export default function Reports() {
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
             <span className="font-semibold text-destructive">
-              Alunos em Alerta (3+ faltas n\u00e3o justificadas)
+              Alunos em Alerta (3+ faltas não justificadas)
             </span>
           </div>
           <div className="space-y-1">
@@ -197,14 +197,14 @@ export default function Reports() {
               .filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3)
               .map((s) => (
                 <p key={s.id} className="text-sm text-destructive">
-                  {s.name} \u2014 {unjustifiedCounts[s.id]} faltas
+                  {s.name} — {unjustifiedCounts[s.id]} faltas
                 </p>
               ))}
           </div>
         </div>
       )}
 
-      {/* Filtro por turma + bot\u00e3o exportar */}
+      {/* Filtro por turma + botão exportar */}
       <div className="px-4 mb-4 flex items-center gap-3">
         <div className="flex gap-2 overflow-x-auto pb-1 flex-1">
           {classes.map((c) => (
@@ -235,7 +235,7 @@ export default function Reports() {
         </Button>
       </div>
 
-      {/* Tabela de presen\u00e7as */}
+      {/* Tabela de presenças */}
       <div className="px-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
@@ -252,7 +252,7 @@ export default function Reports() {
               const isAlert = (unjustifiedCounts[a.student_id] ?? 0) >= 3;
               const studentInfo =
                 students.find((s) => s.id === a.student_id) ??
-                { name: aAny.students?.name ?? "\u2014", class_name: aAny.students?.class_name ?? "\u2014" };
+                { name: aAny.students?.name ?? "—", class_name: aAny.students?.class_name ?? "—" };
               return (
                 <tr
                   key={a.id}
@@ -272,7 +272,7 @@ export default function Reports() {
                           isAlert && "text-destructive"
                         )}
                       >
-                        {aAny.students?.name ?? "\u2014"}
+                        {aAny.students?.name ?? "—"}
                       </span>
                     </div>
                   </td>
@@ -297,7 +297,7 @@ export default function Reports() {
                   colSpan={4}
                   className="py-8 text-center text-muted-foreground"
                 >
-                  Nenhum registro de presen\u00e7a.
+                  Nenhum registro de presença.
                 </td>
               </tr>
             )}

@@ -161,7 +161,7 @@ export default function Justification() {
                 id="reason"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Descreva o motivo da falta (ex: doen\u00e7a, consulta m\u00e9dica, viagem familiar...)"
+                placeholder="Descreva o motivo da falta (ex: doença, consulta médica, viagem familiar...)"
                 rows={4}
                 required
               />

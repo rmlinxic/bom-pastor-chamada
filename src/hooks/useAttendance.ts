@@ -81,7 +81,7 @@ export function useSubmitJustification() {
       if (error) throw error;
       if (!updated || updated.length === 0)
         throw new Error(
-          "Nenhum registro de falta n\u00e3o justificada encontrado para essa data. Verifique se a chamada foi registrada pelo catequista."
+          "Nenhum registro de falta não justificada encontrado para essa data. Verifique se a chamada foi registrada pelo catequista."
         );
     },
     onSuccess: () => {
