@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 
 const tabs = [
-  { path: "/", icon: Home, label: "Home" },
+  { path: "/", icon: Home, label: "Início" },
   { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
   { path: "/alunos", icon: Users, label: "Alunos" },
   { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
