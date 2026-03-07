@@ -9,7 +9,7 @@ import { useStudents } from "@/hooks/useStudents";
 const STATUS_LABELS: Record<string, string> = {
   presente: "Presente",
   falta_justificada: "Falta Justificada",
-  falta_nao_justificada: "Falta N\u00e3o Justificada",
+  falta_nao_justificada: "Falta Não Justificada",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -51,7 +51,7 @@ export default function Reports() {
   const handleDelete = (id: string, studentName: string, date: string) => {
     if (
       window.confirm(
-        `Apagar o registro de "${studentName}" no dia ${date}?\n\nEssa a\u00e7\u00e3o n\u00e3o pode ser desfeita.`
+        `Apagar o registro de "${studentName}" no dia ${date}?\n\nEssa ação não pode ser desfeita.`
       )
     ) {
       deleteMutation.mutate(id);
@@ -73,7 +73,7 @@ export default function Reports() {
         if (aAny.students?.name) {
           studentMap[a.student_id] = {
             name: aAny.students.name,
-            class_name: aAny.students.class_name ?? "\u2014",
+            class_name: aAny.students.class_name ?? "—",
           };
         }
       }
@@ -107,11 +107,11 @@ export default function Reports() {
       "Aluno",
       "Turma",
       ...allDates,
-      "Presen\u00e7as",
+      "Presenças",
       "Faltas NJ",
       "Faltas Justif.",
       "Total Aulas",
-      "% Presen\u00e7a",
+      "% Presença",
     ];
 
     let sumPresencas = 0, sumFNJ = 0, sumFJ = 0, sumTotal = 0;
@@ -136,13 +136,13 @@ export default function Reports() {
       ...dataRows,
       pad(header.length),
       ["RESUMO GERAL", ...pad(header.length - 1)],
-      ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta N\u00e3o Justificada", ...pad(header.length - 1)],
+      ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta Não Justificada", ...pad(header.length - 1)],
       pad(header.length),
       ["Total de alunos", relevantStudents.length, ...pad(extraCols)],
-      ["Total de presen\u00e7as", sumPresencas, ...pad(extraCols)],
-      ["Total de faltas n\u00e3o justificadas", sumFNJ, ...pad(extraCols)],
+      ["Total de presenças", sumPresencas, ...pad(extraCols)],
+      ["Total de faltas não justificadas", sumFNJ, ...pad(extraCols)],
       ["Total de faltas justificadas", sumFJ, ...pad(extraCols)],
-      ["M\u00e9dia geral de presen\u00e7a", media, ...pad(extraCols)],
+      ["Média geral de presença", media, ...pad(extraCols)],
     ];
 
     const csv = rows.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
@@ -157,7 +157,7 @@ export default function Reports() {
 
   return (
     <div className="pb-24">
-      <PageHeader title="Relat\u00f3rios" subtitle="Hist\u00f3rico detalhado de presen\u00e7as" />
+      <PageHeader title="Relatórios" subtitle="Histórico detalhado de presenças" />
 
       {/* Alerta: alunos com 3+ faltas */}
       {students.filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3).length > 0 && (
@@ -165,7 +165,7 @@ export default function Reports() {
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
             <span className="font-semibold text-destructive">
-              Alunos em Alerta (3+ faltas n\u00e3o justificadas)
+              Alunos em Alerta (3+ faltas não justificadas)
             </span>
           </div>
           <div className="space-y-1">
@@ -173,14 +173,14 @@ export default function Reports() {
               .filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3)
               .map((s) => (
                 <p key={s.id} className="text-sm text-destructive">
-                  {s.name} \u2014 {unjustifiedCounts[s.id]} faltas
+                  {s.name} — {unjustifiedCounts[s.id]} faltas
                 </p>
               ))}
           </div>
         </div>
       )}
 
-      {/* Filtro por turma + bot\u00e3o exportar */}
+      {/* Filtro por turma + botão exportar */}
       <div className="px-4 mb-4 flex items-center gap-3">
         <div className="flex gap-2 overflow-x-auto pb-1 flex-1">
           {classes.map((c) => (
@@ -226,8 +226,8 @@ export default function Reports() {
             {filteredAttendance.map((a) => {
               const aAny = a as any;
               const isAlert = (unjustifiedCounts[a.student_id] ?? 0) >= 3;
-              const studentName = aAny.students?.name ?? students.find((s) => s.id === a.student_id)?.name ?? "\u2014";
-              const studentClass = aAny.students?.class_name ?? students.find((s) => s.id === a.student_id)?.class_name ?? "\u2014";
+              const studentName = aAny.students?.name ?? students.find((s) => s.id === a.student_id)?.name ?? "—";
+              const studentClass = aAny.students?.class_name ?? students.find((s) => s.id === a.student_id)?.class_name ?? "—";
               return (
                 <tr
                   key={a.id}
@@ -269,7 +269,7 @@ export default function Reports() {
             {filteredAttendance.length === 0 && (
               <tr>
                 <td colSpan={5} className="py-8 text-center text-muted-foreground">
-                  Nenhum registro de presen\u00e7a.
+                  Nenhum registro de presença.
                 </td>
               </tr>
             )}
