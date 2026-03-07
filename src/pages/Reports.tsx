@@ -23,7 +23,7 @@ export default function Reports() {
   const { data: attendance = [] } = useAllAttendance();
   const [selectedClass, setSelectedClass] = useState<string>("all");
 
-  // Count unjustified absences per student
+  // Contagem de faltas n\u00e3o justificadas por aluno
   const unjustifiedCounts: Record<string, number> = {};
   attendance.forEach((a) => {
     if (a.status === "falta_nao_justificada") {
@@ -32,58 +32,164 @@ export default function Reports() {
     }
   });
 
-  // Unique sorted class names for filter
+  // Turmas \u00fanicas para filtro
   const classes = [
     "all",
     ...Array.from(new Set(students.map((s) => s.class_name))).sort(),
   ];
 
-  // Filter attendance records by selected class
+  // Registros filtrados pela turma selecionada
   const filteredAttendance =
     selectedClass === "all"
       ? attendance
       : attendance.filter((a) => {
-          const student = students.find((s) => s.id === a.student_id);
-          return student?.class_name === selectedClass;
+          const aAny = a as any;
+          const turma =
+            students.find((s) => s.id === a.student_id)?.class_name ??
+            aAny.students?.class_name;
+          return turma === selectedClass;
         });
 
-  // Export filtered data as UTF-8 CSV
+  // --- Exportar CSV em formato de matriz ---
   const handleExportCSV = () => {
-    const rows = [
-      ["Nome do Aluno", "Turma", "Data", "Status"],
-      ...filteredAttendance.map((a) => {
-        const student = students.find((s) => s.id === a.student_id);
+    // Todas as datas \u00fanicas ordenadas
+    const allDates = [
+      ...new Set(filteredAttendance.map((a) => a.date)),
+    ].sort();
+
+    // Mapa de informa\u00e7\u00f5es dos alunos (inclui removidos via join)
+    const studentMap: Record<string, { name: string; class_name: string }> = {};
+    students.forEach((s) => {
+      studentMap[s.id] = { name: s.name, class_name: s.class_name };
+    });
+    filteredAttendance.forEach((a) => {
+      if (!studentMap[a.student_id]) {
         const aAny = a as any;
-        return [
-          student?.name ?? aAny.students?.name ?? "\u2014",
-          student?.class_name ?? aAny.students?.class_name ?? "\u2014",
-          a.date,
-          STATUS_LABELS[a.status] ?? a.status,
-        ];
-      }),
+        if (aAny.students?.name) {
+          studentMap[a.student_id] = {
+            name: aAny.students.name,
+            class_name: aAny.students.class_name ?? "\u2014",
+          };
+        }
+      }
+    });
+
+    // Lookup: studentId -> date -> status
+    const lookup: Record<string, Record<string, string>> = {};
+    filteredAttendance.forEach((a) => {
+      if (!lookup[a.student_id]) lookup[a.student_id] = {};
+      lookup[a.student_id][a.date] = a.status;
+    });
+
+    // S\u00edmbolos no CSV
+    const SYM: Record<string, string> = {
+      presente: "P",
+      falta_justificada: "FJ",
+      falta_nao_justificada: "FN",
+    };
+
+    const relevantIds = Object.keys(lookup);
+    const relevantStudents = relevantIds
+      .map((id) => ({ id, ...studentMap[id] }))
+      .filter((s) => s.name)
+      .sort((a, b) =>
+        a.class_name !== b.class_name
+          ? a.class_name.localeCompare(b.class_name)
+          : a.name.localeCompare(b.name)
+      );
+
+    const pad = (n: number) => Array(n).fill("");
+
+    // Linha de cabe\u00e7alho
+    const header = [
+      "Aluno",
+      "Turma",
+      ...allDates,
+      "Presen\u00e7as",
+      "Faltas NJ",
+      "Faltas Justif.",
+      "Total Aulas",
+      "% Presen\u00e7a",
     ];
-    const csv = rows.map((r) => r.map((c) => `"${c}"`).join(",")).join("\n");
+
+    // Linhas de dados + c\u00e1lculo de totais por aluno
+    let sumPresencas = 0;
+    let sumFNJ = 0;
+    let sumFJ = 0;
+    let sumTotal = 0;
+
+    const dataRows = relevantStudents.map((s) => {
+      const rec = lookup[s.id] ?? {};
+      const dateCells = allDates.map((d) => SYM[rec[d]] ?? "-");
+      const presencas = allDates.filter((d) => rec[d] === "presente").length;
+      const fnj = allDates.filter(
+        (d) => rec[d] === "falta_nao_justificada"
+      ).length;
+      const fj = allDates.filter(
+        (d) => rec[d] === "falta_justificada"
+      ).length;
+      const total = allDates.filter((d) => !!rec[d]).length;
+      const pct =
+        total > 0 ? `${((presencas / total) * 100).toFixed(1)}%` : "-";
+
+      sumPresencas += presencas;
+      sumFNJ += fnj;
+      sumFJ += fj;
+      sumTotal += total;
+
+      return [s.name, s.class_name, ...dateCells, presencas, fnj, fj, total, pct];
+    });
+
+    const media =
+      sumTotal > 0
+        ? `${((sumPresencas / sumTotal) * 100).toFixed(1)}%`
+        : "-";
+
+    // Linhas de resumo
+    const extraCols = header.length - 2;
+    const summaryRows = [
+      pad(header.length),
+      ["RESUMO GERAL", ...pad(header.length - 1)],
+      ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta N\u00e3o Justificada", ...pad(header.length - 1)],
+      pad(header.length),
+      ["Total de alunos", relevantStudents.length, ...pad(extraCols)],
+      ["Total de presen\u00e7as", sumPresencas, ...pad(extraCols)],
+      ["Total de faltas n\u00e3o justificadas", sumFNJ, ...pad(extraCols)],
+      ["Total de faltas justificadas", sumFJ, ...pad(extraCols)],
+      ["M\u00e9dia geral de presen\u00e7a", media, ...pad(extraCols)],
+    ];
+
+    const rows = [header, ...dataRows, ...summaryRows];
+    const csv = rows
+      .map((r) => r.map((c) => `"${c}"`).join(","))
+      .join("\n");
+
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `chamada-bom-pastor-${new Date().toISOString().slice(0, 10)}.csv`;
+    link.download = `chamada-bom-pastor-${new Date()
+      .toISOString()
+      .slice(0, 10)}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   };
 
   return (
     <div className="pb-24">
-      <PageHeader title="Relat\u00f3rios" subtitle="Hist\u00f3rico detalhado de presen\u00e7as" />
+      <PageHeader
+        title="Relat\u00f3rios"
+        subtitle="Hist\u00f3rico detalhado de presen\u00e7as"
+      />
 
-      {/* Alert: students with 3+ unjustified absences */}
+      {/* Alerta: alunos com 3+ faltas */}
       {students.filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3).length >
         0 && (
         <div className="mx-4 mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
             <span className="font-semibold text-destructive">
-              Alunos em Alerta (3+ faltas)
+              Alunos em Alerta (3+ faltas n\u00e3o justificadas)
             </span>
           </div>
           <div className="space-y-1">
@@ -91,17 +197,16 @@ export default function Reports() {
               .filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3)
               .map((s) => (
                 <p key={s.id} className="text-sm text-destructive">
-                  {s.name} \u2014 {unjustifiedCounts[s.id]} faltas n\u00e3o
-                  justificadas
+                  {s.name} \u2014 {unjustifiedCounts[s.id]} faltas
                 </p>
               ))}
           </div>
         </div>
       )}
 
-      {/* Filter tabs + CSV export button */}
+      {/* Filtro por turma + bot\u00e3o exportar */}
       <div className="px-4 mb-4 flex items-center gap-3">
-        <div className="flex gap-2 overflow-x-auto pb-1 flex-1 scrollbar-hide">
+        <div className="flex gap-2 overflow-x-auto pb-1 flex-1">
           {classes.map((c) => (
             <button
               key={c}
@@ -123,26 +228,31 @@ export default function Reports() {
           onClick={handleExportCSV}
           className="shrink-0"
           disabled={filteredAttendance.length === 0}
+          title="Exportar planilha em formato de matriz (alunos x datas)"
         >
           <Download className="h-4 w-4 mr-1.5" />
           CSV
         </Button>
       </div>
 
-      {/* Attendance table */}
+      {/* Tabela de presen\u00e7as */}
       <div className="px-4 overflow-x-auto">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-border text-left">
               <th className="pb-2 font-semibold text-foreground">Aluno</th>
+              <th className="pb-2 font-semibold text-foreground">Turma</th>
               <th className="pb-2 font-semibold text-foreground">Data</th>
               <th className="pb-2 font-semibold text-foreground">Status</th>
             </tr>
           </thead>
           <tbody>
             {filteredAttendance.map((a) => {
-              const isAlert = (unjustifiedCounts[a.student_id] ?? 0) >= 3;
               const aAny = a as any;
+              const isAlert = (unjustifiedCounts[a.student_id] ?? 0) >= 3;
+              const studentInfo =
+                students.find((s) => s.id === a.student_id) ??
+                { name: aAny.students?.name ?? "\u2014", class_name: aAny.students?.class_name ?? "\u2014" };
               return (
                 <tr
                   key={a.id}
@@ -166,6 +276,9 @@ export default function Reports() {
                       </span>
                     </div>
                   </td>
+                  <td className="py-3 pr-2 text-muted-foreground text-xs">
+                    {studentInfo.class_name}
+                  </td>
                   <td className="py-3 pr-2 text-muted-foreground">{a.date}</td>
                   <td
                     className={cn(
@@ -181,7 +294,7 @@ export default function Reports() {
             {filteredAttendance.length === 0 && (
               <tr>
                 <td
-                  colSpan={3}
+                  colSpan={4}
                   className="py-8 text-center text-muted-foreground"
                 >
                   Nenhum registro de presen\u00e7a.

@@ -54,31 +54,19 @@ export function useSaveAttendance() {
   });
 }
 
+// Aceita studentId diretamente (selecionado pelo pai via dropdown)
 export function useSubmitJustification() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async ({
-      studentName,
+      studentId,
       date,
       reason,
     }: {
-      studentName: string;
+      studentId: string;
       date: string;
       reason: string;
     }) => {
-      // Find student by name
-      const { data: students, error: findError } = await supabase
-        .from("students")
-        .select("id")
-        .ilike("name", studentName.trim());
-      if (findError) throw findError;
-      if (!students || students.length === 0)
-        throw new Error("Aluno n\u00e3o encontrado. Verifique o nome digitado.");
-
-      const studentId = students[0].id;
-
-      // Update attendance record: falta_nao_justificada -> falta_justificada
-      // Using .select() to verify that a row was actually updated (count would be null without {count:'exact'})
       const { data: updated, error } = await supabase
         .from("attendance")
         .update({
@@ -93,7 +81,7 @@ export function useSubmitJustification() {
       if (error) throw error;
       if (!updated || updated.length === 0)
         throw new Error(
-          "Nenhum registro de falta n\u00e3o justificada encontrado para essa data. Verifique se a chamada foi registrada."
+          "Nenhum registro de falta n\u00e3o justificada encontrado para essa data. Verifique se a chamada foi registrada pelo catequista."
         );
     },
     onSuccess: () => {

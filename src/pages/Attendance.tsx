@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarIcon, Check, AlertTriangle, X } from "lucide-react";
@@ -20,6 +20,11 @@ export default function Attendance() {
   const saveMutation = useSaveAttendance();
 
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
+
+  // BUGFIX: resetar marcações manuais ao trocar de data
+  useEffect(() => {
+    setStatuses({});
+  }, [dateStr]);
 
   const getStatus = (studentId: string): Status => {
     if (statuses[studentId]) return statuses[studentId];
@@ -47,20 +52,38 @@ export default function Attendance() {
     saveMutation.mutate(records);
   };
 
-  const statusConfig: Record<Status, { icon: typeof Check; label: string; className: string }> = {
-    presente: { icon: Check, label: "Presente", className: "bg-success text-success-foreground" },
-    falta_nao_justificada: { icon: X, label: "Falta", className: "bg-destructive text-destructive-foreground" },
-    falta_justificada: { icon: AlertTriangle, label: "Justificada", className: "bg-warning text-warning-foreground" },
+  const statusConfig: Record<
+    Status,
+    { icon: typeof Check; label: string; className: string }
+  > = {
+    presente: {
+      icon: Check,
+      label: "Presente",
+      className: "bg-success text-success-foreground",
+    },
+    falta_nao_justificada: {
+      icon: X,
+      label: "Falta",
+      className: "bg-destructive text-destructive-foreground",
+    },
+    falta_justificada: {
+      icon: AlertTriangle,
+      label: "Justificada",
+      className: "bg-warning text-warning-foreground",
+    },
   };
 
   return (
     <div className="pb-24">
-      <PageHeader title="Chamada" subtitle="Registre a presença dos catequizandos" />
+      <PageHeader title="Chamada" subtitle="Registre a presen\u00e7a dos catequizandos" />
 
       <div className="px-4 mb-4">
         <Popover>
           <PopoverTrigger asChild>
-            <Button variant="outline" className="w-full justify-start text-left font-normal">
+            <Button
+              variant="outline"
+              className="w-full justify-start text-left font-normal"
+            >
               <CalendarIcon className="mr-2 h-4 w-4" />
               {format(date, "PPP", { locale: ptBR })}
             </Button>
@@ -77,6 +100,20 @@ export default function Attendance() {
         </Popover>
       </div>
 
+      {/* Legenda */}
+      <div className="px-4 mb-3 flex items-center gap-4 text-xs text-muted-foreground">
+        <span>Toque para alternar:</span>
+        <span className="flex items-center gap-1">
+          <Check className="h-3 w-3 text-success" /> Presente
+        </span>
+        <span className="flex items-center gap-1">
+          <X className="h-3 w-3 text-destructive" /> Falta
+        </span>
+        <span className="flex items-center gap-1">
+          <AlertTriangle className="h-3 w-3 text-warning" /> Justif.
+        </span>
+      </div>
+
       <div className="space-y-2 px-4">
         {students.map((student) => {
           const status = getStatus(student.id);
@@ -91,9 +128,16 @@ export default function Attendance() {
             >
               <div className="text-left">
                 <p className="font-semibold text-foreground">{student.name}</p>
-                <p className="text-xs text-muted-foreground">{student.class_name}</p>
+                <p className="text-xs text-muted-foreground">
+                  {student.class_name}
+                </p>
               </div>
-              <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold", config.className)}>
+              <span
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold",
+                  config.className
+                )}
+              >
                 <Icon className="h-3.5 w-3.5" />
                 {config.label}
               </span>
@@ -103,7 +147,7 @@ export default function Attendance() {
 
         {students.length === 0 && (
           <p className="py-8 text-center text-muted-foreground">
-            Nenhum aluno cadastrado. Cadastre alunos na aba "Alunos".
+            Nenhum aluno cadastrado. Cadastre alunos na aba \"Alunos\".
           </p>
         )}
       </div>
