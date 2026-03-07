@@ -10,7 +10,8 @@ export function useStudents() {
         .from("students")
         .select("*")
         .eq("active", true)
-        .order("name");
+        .order("class_name", { ascending: true })
+        .order("name", { ascending: true });
       if (error) throw error;
       return data;
     },
@@ -26,50 +27,43 @@ export function useAddStudent() {
       parent_name: string;
       phone: string;
     }) => {
-      const { data, error } = await supabase
-        .from("students")
-        .insert(student)
-        .select()
-        .single();
+      const { error } = await supabase.from("students").insert(student);
       if (error) throw error;
-      return data;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
       toast.success("Aluno cadastrado com sucesso!");
     },
-    onError: () => {
-      toast.error("Erro ao cadastrar aluno.");
-    },
+    onError: () => toast.error("Erro ao cadastrar aluno."),
   });
 }
 
 export function useUpdateStudent() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({
-      id,
-      ...updates
-    }: {
+    mutationFn: async (student: {
       id: string;
-      name?: string;
-      class_name?: string;
-      parent_name?: string;
-      phone?: string;
+      name: string;
+      class_name: string;
+      parent_name: string;
+      phone: string;
     }) => {
       const { error } = await supabase
         .from("students")
-        .update(updates)
-        .eq("id", id);
+        .update({
+          name: student.name,
+          class_name: student.class_name,
+          parent_name: student.parent_name,
+          phone: student.phone,
+        })
+        .eq("id", student.id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
       toast.success("Aluno atualizado com sucesso!");
     },
-    onError: () => {
-      toast.error("Erro ao atualizar aluno.");
-    },
+    onError: () => toast.error("Erro ao atualizar aluno."),
   });
 }
 
@@ -77,7 +71,6 @@ export function useDeleteStudent() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      // Soft delete: set active = false to preserve attendance history
       const { error } = await supabase
         .from("students")
         .update({ active: false })
@@ -86,12 +79,9 @@ export function useDeleteStudent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
-      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
-      toast.success("Aluno removido com sucesso!");
+      toast.success("Aluno removido.");
     },
-    onError: () => {
-      toast.error("Erro ao remover aluno.");
-    },
+    onError: () => toast.error("Erro ao remover aluno."),
   });
 }
 
@@ -108,5 +98,31 @@ export function useStudentAttendanceHistory(studentId: string | null) {
       return data;
     },
     enabled: !!studentId,
+  });
+}
+
+// Importação em lote via CSV
+export function useImportStudents() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (
+      students: {
+        name: string;
+        class_name: string;
+        parent_name: string;
+        phone: string;
+      }[]
+    ) => {
+      const { error } = await supabase.from("students").insert(students);
+      if (error) throw error;
+      return students.length;
+    },
+    onSuccess: (count) => {
+      queryClient.invalidateQueries({ queryKey: ["students"] });
+      toast.success(`${count} aluno(s) importado(s) com sucesso!`);
+    },
+    onError: (err: Error) => {
+      toast.error(`Erro ao importar: ${err.message}`);
+    },
   });
 }

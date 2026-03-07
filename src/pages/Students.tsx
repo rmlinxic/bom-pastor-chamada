@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { UserPlus, Pencil, History, ArrowLeft, Trash2 } from "lucide-react";
+import { useState, useRef } from "react";
+import { UserPlus, Pencil, History, ArrowLeft, Trash2, Upload, FileDown } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -18,7 +18,9 @@ import {
   useUpdateStudent,
   useDeleteStudent,
   useStudentAttendanceHistory,
+  useImportStudents,
 } from "@/hooks/useStudents";
+import { toast } from "sonner";
 
 const statusLabels: Record<string, string> = {
   presente: "Presente",
@@ -32,16 +34,103 @@ const statusColors: Record<string, string> = {
   falta_nao_justificada: "text-destructive",
 };
 
+// ---------------------------------------------------------------------------
+// Parser de CSV
+// Detecta separador automático (vírgula ou ponto e vírgula)
+// Colunas aceitas (case-insensitive): Nome, Turma, Responsavel, Telefone
+// ---------------------------------------------------------------------------
+function parseStudentsCSV(raw: string): {
+  name: string;
+  class_name: string;
+  parent_name: string;
+  phone: string;
+}[] {
+  const lines = raw.trim().split(/\r?\n/).filter((l) => l.trim());
+  if (lines.length < 2) throw new Error("O arquivo está vazio ou não tem dados.");
+
+  // Detectar separador pela primeira linha
+  const firstLine = lines[0];
+  const sep = (firstLine.match(/;/g) ?? []).length >= (firstLine.match(/,/g) ?? []).length ? ";" : ",";
+
+  const splitLine = (line: string) =>
+    line.split(sep).map((c) => c.trim().replace(/^["']|["']$/g, "").trim());
+
+  const headers = splitLine(firstLine).map((h) => h.toLowerCase());
+
+  // Mapeamento flexível de colunas
+  const ALIASES: Record<string, string> = {
+    nome: "name", name: "name",
+    turma: "class_name", class: "class_name", classe: "class_name", "class_name": "class_name",
+    responsavel: "parent_name", "responsável": "parent_name",
+    parent: "parent_name", "parent_name": "parent_name",
+    mae: "parent_name", mãe: "parent_name", pai: "parent_name",
+    telefone: "phone", phone: "phone", tel: "phone", celular: "phone", fone: "phone",
+  };
+
+  const idx = (field: string) =>
+    headers.findIndex((h) => ALIASES[h] === field);
+
+  const nameIdx = idx("name");
+  const classIdx = idx("class_name");
+  const parentIdx = idx("parent_name");
+  const phoneIdx = idx("phone");
+
+  if (nameIdx === -1) throw new Error('Coluna "Nome" não encontrada. Verifique o cabeçalho do CSV.');
+  if (classIdx === -1) throw new Error('Coluna "Turma" não encontrada. Verifique o cabeçalho do CSV.');
+
+  const students = [];
+  for (let i = 1; i < lines.length; i++) {
+    const cols = splitLine(lines[i]);
+    const name = cols[nameIdx] ?? "";
+    const class_name = cols[classIdx] ?? "";
+    if (!name || !class_name) continue; // pular linhas incompletas
+    students.push({
+      name,
+      class_name,
+      parent_name: parentIdx >= 0 ? (cols[parentIdx] ?? "") : "",
+      phone: phoneIdx >= 0 ? (cols[phoneIdx] ?? "") : "",
+    });
+  }
+
+  if (students.length === 0)
+    throw new Error("Nenhum aluno válido encontrado no arquivo.");
+
+  return students;
+}
+
+// Gera e faz download do modelo CSV
+function downloadTemplate() {
+  const rows = [
+    ["Nome", "Turma", "Responsavel", "Telefone"],
+    ["João Silva", "Crisma 2025", "Maria Silva", "(41) 99999-0001"],
+    ["Ana Souza", "Crisma 2025", "Carlos Souza", "(41) 99999-0002"],
+    ["Pedro Lima", "Crisma 2026", "Fátima Lima", "(41) 99999-0003"],
+  ];
+  const csv = rows.map((r) => r.join(",")).join("\n");
+  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "modelo-alunos.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+// ---------------------------------------------------------------------------
+
 export default function Students() {
   const { data: students = [] } = useStudents();
   const addMutation = useAddStudent();
   const updateMutation = useUpdateStudent();
   const deleteMutation = useDeleteStudent();
+  const importMutation = useImportStudents();
+
   const [open, setOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<string | null>(null);
   const [historyStudentId, setHistoryStudentId] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<string>("all");
   const { data: history = [] } = useStudentAttendanceHistory(historyStudentId);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const emptyForm = { name: "", class_name: "", parent_name: "", phone: "" };
   const [form, setForm] = useState(emptyForm);
@@ -52,7 +141,7 @@ export default function Students() {
     setOpen(true);
   };
 
-  const openEdit = (s: typeof students[0]) => {
+  const openEdit = (s: (typeof students)[0]) => {
     setEditingStudent(s.id);
     setForm({
       name: s.name,
@@ -97,9 +186,36 @@ export default function Students() {
     }
   };
 
+  // Leitura do arquivo CSV
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!fileInputRef.current) return;
+    fileInputRef.current.value = ""; // permite reimportar o mesmo arquivo
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target?.result as string;
+        const parsed = parseStudentsCSV(text);
+
+        if (
+          window.confirm(
+            `${parsed.length} aluno(s) encontrado(s) no arquivo.\n\nDeseja importar todos?`
+          )
+        ) {
+          importMutation.mutate(parsed);
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Erro ao ler o arquivo.";
+        toast.error(msg);
+      }
+    };
+    reader.readAsText(file, "UTF-8");
+  };
+
   const isPending = addMutation.isPending || updateMutation.isPending;
 
-  // Get unique sorted class names for filter tabs
   const classes = [
     "all",
     ...Array.from(new Set(students.map((s) => s.class_name))).sort(),
@@ -110,7 +226,7 @@ export default function Students() {
       ? students
       : students.filter((s) => s.class_name === selectedClass);
 
-  // History sub-view
+  // Sub-view: histórico do aluno
   if (historyStudentId) {
     const student = students.find((s) => s.id === historyStudentId);
     return (
@@ -134,12 +250,7 @@ export default function Students() {
               className="flex items-center justify-between rounded-lg border border-border bg-card p-4 shadow-sm"
             >
               <span className="text-sm font-medium text-foreground">{h.date}</span>
-              <span
-                className={cn(
-                  "text-sm font-semibold",
-                  statusColors[h.status]
-                )}
-              >
+              <span className={cn("text-sm font-semibold", statusColors[h.status])}>
                 {statusLabels[h.status] ?? h.status}
               </span>
             </div>
@@ -158,7 +269,9 @@ export default function Students() {
     <div className="pb-24">
       <PageHeader title="Alunos" subtitle="Gerencie os catequizandos" />
 
-      <div className="px-4 mb-4">
+      {/* Ações principais */}
+      <div className="px-4 mb-4 space-y-2">
+        {/* Adicionar aluno manual */}
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button
@@ -190,9 +303,7 @@ export default function Students() {
                 <Input
                   id="class_name"
                   value={form.class_name}
-                  onChange={(e) =>
-                    setForm({ ...form, class_name: e.target.value })
-                  }
+                  onChange={(e) => setForm({ ...form, class_name: e.target.value })}
                   placeholder="Ex: Crisma 2025"
                   required
                 />
@@ -202,10 +313,7 @@ export default function Students() {
                 <Input
                   id="parent_name"
                   value={form.parent_name}
-                  onChange={(e) =>
-                    setForm({ ...form, parent_name: e.target.value })
-                  }
-                  required
+                  onChange={(e) => setForm({ ...form, parent_name: e.target.value })}
                 />
               </div>
               <div>
@@ -215,14 +323,9 @@ export default function Students() {
                   value={form.phone}
                   onChange={(e) => setForm({ ...form, phone: e.target.value })}
                   placeholder="(99) 99999-9999"
-                  required
                 />
               </div>
-              <Button
-                type="submit"
-                className="w-full h-12"
-                disabled={isPending}
-              >
+              <Button type="submit" className="w-full h-12" disabled={isPending}>
                 {isPending
                   ? "Salvando..."
                   : editingStudent
@@ -232,11 +335,47 @@ export default function Students() {
             </form>
           </DialogContent>
         </Dialog>
+
+        {/* Importar / Baixar modelo */}
+        <div className="flex gap-2">
+          {/* Input oculto para seleção de arquivo */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept=".csv,text/csv"
+            className="hidden"
+            onChange={handleFileChange}
+          />
+          <Button
+            variant="outline"
+            className="flex-1 h-11"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={importMutation.isPending}
+          >
+            <Upload className="mr-2 h-4 w-4" />
+            {importMutation.isPending ? "Importando..." : "Importar CSV"}
+          </Button>
+          <Button
+            variant="outline"
+            className="flex-1 h-11"
+            onClick={downloadTemplate}
+            title="Baixar planilha modelo para preencher e importar"
+          >
+            <FileDown className="mr-2 h-4 w-4" />
+            Modelo
+          </Button>
+        </div>
+
+        {/* Instruções rápidas */}
+        <p className="text-xs text-muted-foreground text-center">
+          CSV aceita colunas: <strong>Nome</strong>, <strong>Turma</strong>,
+          Responsavel, Telefone — separador por vírgula ou ponto e vírgula
+        </p>
       </div>
 
-      {/* Class filter tabs — only show when there are multiple classes */}
+      {/* Filtro por turma */}
       {classes.length > 2 && (
-        <div className="px-4 mb-4 flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        <div className="px-4 mb-4 flex gap-2 overflow-x-auto pb-1">
           {classes.map((c) => (
             <button
               key={c}
@@ -254,6 +393,7 @@ export default function Students() {
         </div>
       )}
 
+      {/* Lista de alunos */}
       <div className="space-y-2 px-4">
         {filteredStudents.map((s) => (
           <div
@@ -308,7 +448,9 @@ export default function Students() {
         )}
         {students.length === 0 && (
           <p className="py-8 text-center text-muted-foreground">
-            Nenhum aluno cadastrado ainda.
+            Nenhum aluno cadastrado ainda.{" "}
+            <br />
+            Cadastre manualmente ou importe um CSV.
           </p>
         )}
       </div>
