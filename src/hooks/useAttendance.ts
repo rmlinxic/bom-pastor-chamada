@@ -48,13 +48,31 @@ export function useSaveAttendance() {
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
       toast.success("Chamada salva com sucesso!");
     },
-    onError: () => {
-      toast.error("Erro ao salvar chamada.");
-    },
+    onError: () => toast.error("Erro ao salvar chamada."),
   });
 }
 
-// Aceita studentId diretamente (selecionado pelo pai via dropdown)
+export function useDeleteAttendance() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase
+        .from("attendance")
+        .delete()
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance-all"] });
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["student-history"] });
+      toast.success("Registro apagado.");
+    },
+    onError: () => toast.error("Erro ao apagar registro."),
+  });
+}
+
 export function useSubmitJustification() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -81,7 +99,7 @@ export function useSubmitJustification() {
       if (error) throw error;
       if (!updated || updated.length === 0)
         throw new Error(
-          "Nenhum registro de falta não justificada encontrado para essa data. Verifique se a chamada foi registrada pelo catequista."
+          "Nenhum registro de falta n\u00e3o justificada encontrado para essa data. Verifique se a chamada foi registrada pelo catequista."
         );
     },
     onSuccess: () => {
