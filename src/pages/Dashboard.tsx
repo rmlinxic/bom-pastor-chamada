@@ -1,6 +1,7 @@
-import { Clock, Users, CheckCircle, AlertTriangle, XCircle } from "lucide-react";
+import { Clock, Users, CheckCircle, AlertTriangle, XCircle, BookOpen } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
 import {
@@ -15,48 +16,75 @@ import {
 const db = supabase as any;
 
 export default function Dashboard() {
-  const { data: stats } = useQuery({
-    queryKey: ["dashboard-stats"],
-    queryFn: async () => {
-      const [studentsRes, attendanceRes, pendingRes] = await Promise.all([
-        supabase
-          .from("students")
-          .select("id, name", { count: "exact" })
-          .eq("active", true),
-        supabase.from("attendance").select("*"),
-        db
-          .from("pending_justifications")
-          .select("id, date, students(name)"),
-      ]);
+  const { user, isAdmin } = useAuth();
 
+  const { data: stats } = useQuery({
+    queryKey: ["dashboard-stats", user?.id, user?.etapa],
+    queryFn: async () => {
+      // 1. Alunos — filtrados pela etapa do catequista (admin vê todos)
+      let studentsQuery = supabase
+        .from("students")
+        .select("id, name", { count: "exact" })
+        .eq("active", true);
+
+      if (!isAdmin && user?.etapa) {
+        studentsQuery = studentsQuery.eq("class_name", user.etapa);
+      }
+
+      const studentsRes = await studentsQuery;
       const totalStudents = studentsRes.count ?? 0;
       const allStudents = studentsRes.data ?? [];
-      const records = attendanceRes.data ?? [];
-      const pendingList: {
-        id: string;
-        date: string;
-        students: { name: string };
-      }[] = pendingRes.data ?? [];
+      const studentIds = allStudents.map((s) => s.id);
 
+      // Sem alunos na etapa: retorna vazio sem mais queries
+      if (!isAdmin && studentIds.length === 0) {
+        return {
+          totalStudents: 0,
+          present: 0,
+          justified: 0,
+          unjustified: 0,
+          weeks: Array.from({ length: 4 }, (_, i) => ({ name: `Sem ${i + 1}`, presenca: 0 })),
+          alertStudents: [],
+          pendingList: [],
+        };
+      }
+
+      // 2. Presenças — filtradas pelos alunos da etapa
+      let attendanceQuery = supabase.from("attendance").select("*");
+      if (!isAdmin) {
+        attendanceQuery = attendanceQuery.in("student_id", studentIds);
+      }
+      const attendanceRes = await attendanceQuery;
+      const records = attendanceRes.data ?? [];
+
+      // 3. Justificativas pendentes — filtradas pelos alunos da etapa
+      let pendingQuery = db
+        .from("pending_justifications")
+        .select("id, date, students(name)");
+      if (!isAdmin) {
+        pendingQuery = pendingQuery.in("student_id", studentIds);
+      }
+      const pendingRes = await pendingQuery;
+      const pendingList: { id: string; date: string; students: { name: string } }[] =
+        pendingRes.data ?? [];
+
+      // 4. Cálculo de estatísticas
       const present = records.filter((r) => r.status === "presente").length;
-      const justified = records.filter(
-        (r) => r.status === "falta_justificada"
-      ).length;
-      const unjustified = records.filter(
-        (r) => r.status === "falta_nao_justificada"
-      ).length;
+      const justified = records.filter((r) => r.status === "falta_justificada").length;
+      const unjustified = records.filter((r) => r.status === "falta_nao_justificada").length;
 
       const unjustifiedCounts: Record<string, number> = {};
       records.forEach((r) => {
         if (r.status === "falta_nao_justificada") {
-          unjustifiedCounts[r.student_id] =
-            (unjustifiedCounts[r.student_id] || 0) + 1;
+          unjustifiedCounts[r.student_id] = (unjustifiedCounts[r.student_id] || 0) + 1;
         }
       });
+
       const alertStudents = allStudents
         .filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3)
         .map((s) => ({ name: s.name, count: unjustifiedCounts[s.id] }));
 
+      // 5. Gráfico de frequência — últimas 4 semanas
       const now = new Date();
       const weeks: { name: string; presenca: number }[] = [];
       for (let i = 3; i >= 0; i--) {
@@ -71,16 +99,9 @@ export default function Dashboard() {
         weeks.push({ name: `Sem ${4 - i}`, presenca: count });
       }
 
-      return {
-        totalStudents,
-        present,
-        justified,
-        unjustified,
-        weeks,
-        alertStudents,
-        pendingList,
-      };
+      return { totalStudents, present, justified, unjustified, weeks, alertStudents, pendingList };
     },
+    enabled: !!user,
   });
 
   const pendingCount = stats?.pendingList?.length ?? 0;
@@ -89,9 +110,35 @@ export default function Dashboard() {
     <div className="pb-24">
       <PageHeader
         title="Catequese Bom Pastor"
-        subtitle="Painel de controle de presença"
+        subtitle={isAdmin ? "Painel geral — todas as turmas" : (user?.etapa ?? "Sem etapa atribuída")}
       />
 
+      {/* Boas-vindas */}
+      <div className="px-4 mb-5">
+        <p className="text-xl font-bold text-foreground">
+          Bem-vindo, {user?.name}!
+        </p>
+        <div className="flex items-center gap-1.5 mt-1">
+          {isAdmin ? (
+            <p className="text-sm text-muted-foreground">
+              Você está vendo dados de <span className="font-medium text-foreground">todas as turmas</span>.
+            </p>
+          ) : user?.etapa ? (
+            <>
+              <BookOpen className="h-3.5 w-3.5 text-primary" />
+              <p className="text-sm text-muted-foreground">
+                Etapa: <span className="font-semibold text-primary">{user.etapa}</span>
+              </p>
+            </>
+          ) : (
+            <p className="text-sm text-warning">
+              Você ainda não tem uma etapa atribuída.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Cards de estatísticas */}
       <div className="grid grid-cols-2 gap-3 px-4">
         <StatCard
           label="Total de Alunos"
@@ -118,6 +165,7 @@ export default function Dashboard() {
         />
       </div>
 
+      {/* Justificativas pendentes */}
       {pendingCount > 0 && (
         <div className="mx-4 mt-4 rounded-lg border border-warning/40 bg-warning/10 p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -134,15 +182,14 @@ export default function Dashboard() {
             {stats!.pendingList.map((p) => (
               <p key={p.id} className="text-sm font-medium text-foreground">
                 {(p.students as any)?.name ?? "Aluno"}{" "}
-                <span className="text-muted-foreground font-normal">
-                  — {p.date}
-                </span>
+                <span className="text-muted-foreground font-normal">— {p.date}</span>
               </p>
             ))}
           </div>
         </div>
       )}
 
+      {/* Alunos em alerta (3+ faltas não justificadas) */}
       {(stats?.alertStudents?.length ?? 0) > 0 && (
         <div className="mx-4 mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -162,6 +209,7 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Gráfico de frequência semanal */}
       <div className="mt-6 px-4">
         <h2 className="mb-3 text-lg font-semibold text-foreground">
           Frequência Semanal
