@@ -3,7 +3,14 @@ import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Tooltip,
+} from "recharts";
 
 const db = supabase as any;
 
@@ -25,16 +32,20 @@ export default function Dashboard() {
       const totalStudents = studentsRes.count ?? 0;
       const allStudents = studentsRes.data ?? [];
       const records = attendanceRes.data ?? [];
-      const pendingList: { id: string; date: string; students: { name: string } }[] =
-        pendingRes.data ?? [];
+      const pendingList: {
+        id: string;
+        date: string;
+        students: { name: string };
+      }[] = pendingRes.data ?? [];
 
       const present = records.filter((r) => r.status === "presente").length;
-      const justified = records.filter((r) => r.status === "falta_justificada").length;
+      const justified = records.filter(
+        (r) => r.status === "falta_justificada"
+      ).length;
       const unjustified = records.filter(
         (r) => r.status === "falta_nao_justificada"
       ).length;
 
-      // Alunos com 3+ faltas não justificadas
       const unjustifiedCounts: Record<string, number> = {};
       records.forEach((r) => {
         if (r.status === "falta_nao_justificada") {
@@ -46,9 +57,8 @@ export default function Dashboard() {
         .filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3)
         .map((s) => ({ name: s.name, count: unjustifiedCounts[s.id] }));
 
-      // Gráfico semanal
       const now = new Date();
-      const weeks: { name: string; presença: number }[] = [];
+      const weeks: { name: string; presenca: number }[] = [];
       for (let i = 3; i >= 0; i--) {
         const weekEnd = new Date(now);
         weekEnd.setDate(now.getDate() - i * 7);
@@ -58,7 +68,7 @@ export default function Dashboard() {
           const d = new Date(r.date);
           return d >= weekStart && d <= weekEnd && r.status === "presente";
         }).length;
-        weeks.push({ name: `Sem ${4 - i}`, presença: count });
+        weeks.push({ name: `Sem ${4 - i}`, presenca: count });
       }
 
       return {
@@ -83,7 +93,11 @@ export default function Dashboard() {
       />
 
       <div className="grid grid-cols-2 gap-3 px-4">
-        <StatCard label="Total de Alunos" value={stats?.totalStudents ?? 0} icon={Users} />
+        <StatCard
+          label="Total de Alunos"
+          value={stats?.totalStudents ?? 0}
+          icon={Users}
+        />
         <StatCard
           label="Presenças"
           value={stats?.present ?? 0}
@@ -104,7 +118,6 @@ export default function Dashboard() {
         />
       </div>
 
-      {/* Justificativas pendentes (enviadas antes da chamada) */}
       {pendingCount > 0 && (
         <div className="mx-4 mt-4 rounded-lg border border-warning/40 bg-warning/10 p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -121,14 +134,15 @@ export default function Dashboard() {
             {stats!.pendingList.map((p) => (
               <p key={p.id} className="text-sm font-medium text-foreground">
                 {(p.students as any)?.name ?? "Aluno"}{" "}
-                <span className="text-muted-foreground font-normal">— {p.date}</span>
+                <span className="text-muted-foreground font-normal">
+                  — {p.date}
+                </span>
               </p>
             ))}
           </div>
         </div>
       )}
 
-      {/* Alerta: alunos com 3+ faltas */}
       {(stats?.alertStudents?.length ?? 0) > 0 && (
         <div className="mx-4 mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -148,7 +162,6 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Gráfico semanal */}
       <div className="mt-6 px-4">
         <h2 className="mb-3 text-lg font-semibold text-foreground">
           Frequência Semanal
@@ -167,7 +180,7 @@ export default function Dashboard() {
               />
               <Tooltip />
               <Bar
-                dataKey="presença"
+                dataKey="presenca"
                 fill="hsl(213, 70%, 45%)"
                 radius={[6, 6, 0, 0]}
               />

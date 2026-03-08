@@ -101,7 +101,6 @@ export function useStudentAttendanceHistory(studentId: string | null) {
   });
 }
 
-// Importação em lote via CSV
 export function useImportStudents() {
   const queryClient = useQueryClient();
   return useMutation({

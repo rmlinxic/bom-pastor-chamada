@@ -56,7 +56,6 @@ export default function Justification() {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8">
       <div className="w-full max-w-md">
-        {/* Cabeçalho */}
         <div className="flex flex-col items-center mb-8">
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-3">
             <Church className="h-8 w-8 text-primary" />
@@ -70,7 +69,6 @@ export default function Justification() {
         </div>
 
         {submitted ? (
-          // Estado de sucesso — dois tipos
           wasPending ? (
             <div className="rounded-lg border border-warning/30 bg-warning/10 p-6 text-center animate-fade-in">
               <Clock className="h-12 w-12 text-warning mx-auto mb-3" />
@@ -102,14 +100,12 @@ export default function Justification() {
           )
         ) : (
           <form onSubmit={handleSubmit} className="space-y-5 animate-fade-in">
-            {/* Aviso sobre justificativa prévia */}
             <div className="rounded-lg bg-muted/50 border border-border p-3 text-xs text-muted-foreground">
               <strong className="text-foreground">Dica:</strong> Você pode enviar
               a justificativa mesmo <strong>antes da aula</strong>. Ela será
               registrada automaticamente quando o catequista marcar a chamada.
             </div>
 
-            {/* Seletor de aluno */}
             <div className="space-y-1.5">
               <Label>Nome do Catequizando</Label>
               <Select
@@ -144,7 +140,6 @@ export default function Justification() {
               </Select>
             </div>
 
-            {/* Seletor de data */}
             <div className="space-y-1.5">
               <Label>Data da Falta</Label>
               <Popover>
@@ -174,14 +169,13 @@ export default function Justification() {
               </Popover>
             </div>
 
-            {/* Motivo */}
             <div className="space-y-1.5">
               <Label htmlFor="reason">Motivo da Falta</Label>
               <Textarea
                 id="reason"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
-                placeholder="Descreva o motivo da falta (ex: doen\u00e7a, consulta médica, viagem familiar...)"
+                placeholder="Descreva o motivo da falta (ex: doença, consulta médica, viagem familiar...)"
                 rows={4}
                 required
               />
