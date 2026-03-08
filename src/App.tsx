@@ -14,6 +14,7 @@ import Dashboard from "./pages/Dashboard";
 import Attendance from "./pages/Attendance";
 import Students from "./pages/Students";
 import Reports from "./pages/Reports";
+import Admin from "./pages/Admin";
 import Justification from "./pages/Justification";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
@@ -25,25 +26,34 @@ const queryClient = new QueryClient();
 
 const PUBLIC_PATHS = ["/justificativa", "/login"];
 
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isAdmin } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isAdmin) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
 function AppLayout() {
   const location = useLocation();
-  const { isAuthenticated, loading, logout } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
   const isPublicPage = PUBLIC_PATHS.includes(location.pathname);
 
   return (
     <>
-      {/* Botão de logout — visível apenas em páginas protegidas */}
-      {!loading && isAuthenticated && !isPublicPage && (
-        <button
-          onClick={() => {
-            void logout();
-          }}
-          className="fixed top-3 right-3 z-50 flex items-center gap-1.5 rounded-full bg-muted/90 backdrop-blur-sm border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors shadow-sm"
-          title="Sair da conta"
-        >
-          <LogOut className="h-3.5 w-3.5" />
-          Sair
-        </button>
+      {isAuthenticated && !isPublicPage && (
+        <div className="fixed top-3 right-3 z-50 flex items-center gap-2">
+          <span className="hidden sm:block text-xs text-muted-foreground bg-muted/90 rounded-full px-2 py-1 border border-border">
+            {user?.name}
+          </span>
+          <button
+            onClick={logout}
+            className="flex items-center gap-1.5 rounded-full bg-muted/90 backdrop-blur-sm border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors shadow-sm"
+            title="Sair da conta"
+          >
+            <LogOut className="h-3.5 w-3.5" />
+            Sair
+          </button>
+        </div>
       )}
 
       <Routes>
@@ -53,16 +63,10 @@ function AppLayout() {
         {/* Login */}
         <Route
           path="/login"
-          element={
-            !loading && isAuthenticated ? (
-              <Navigate to="/" replace />
-            ) : (
-              <Login />
-            )
-          }
+          element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
         />
 
-        {/* Páginas protegidas */}
+        {/* Páginas protegidas — qualquer catequista autenticado */}
         <Route
           path="/"
           element={
@@ -96,11 +100,20 @@ function AppLayout() {
           }
         />
 
+        {/* Página exclusiva do administrador */}
+        <Route
+          path="/admin"
+          element={
+            <AdminRoute>
+              <Admin />
+            </AdminRoute>
+          }
+        />
+
         <Route path="*" element={<NotFound />} />
       </Routes>
 
-      {/* Menu inferior */}
-      {!loading && isAuthenticated && !isPublicPage && <BottomNav />}
+      {isAuthenticated && !isPublicPage && <BottomNav />}
     </>
   );
 }

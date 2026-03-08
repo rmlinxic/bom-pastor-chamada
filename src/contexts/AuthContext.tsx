@@ -1,77 +1,107 @@
-import { createContext, useContext, useState, useEffect } from "react";
+import { createContext, useContext, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import type { User, Session } from "@supabase/supabase-js";
+
+// Salt interno — não exposto como variável de ambiente
+const SALT = "bom_pastor_catequese";
+const SESSION_KEY = "bom_pastor_session_v2";
+const db = supabase as any;
+
+async function hashPassword(password: string): Promise<string> {
+  const enc = new TextEncoder();
+  const buf = await crypto.subtle.digest("SHA-256", enc.encode(SALT + password));
+  return Array.from(new Uint8Array(buf))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+export interface CatequistaUser {
+  id: string;
+  name: string;
+  email: string;
+  role: "admin" | "catequista";
+  etapa: string | null; // turma que este catequista gerencia (null = admin)
+}
 
 interface AuthContextType {
+  user: CatequistaUser | null;
   isAuthenticated: boolean;
-  user: User | null;
-  loading: boolean;
+  isAdmin: boolean;
   login: (email: string, password: string) => Promise<{ error: string | null }>;
-  logout: () => Promise<void>;
+  logout: () => void;
 }
 
 const AuthContext = createContext<AuthContextType>({
-  isAuthenticated: false,
   user: null,
-  loading: true,
+  isAuthenticated: false,
+  isAdmin: false,
   login: async () => ({ error: null }),
-  logout: async () => {},
+  logout: () => {},
 });
 
+function loadSession(): CatequistaUser | null {
+  try {
+    const raw = localStorage.getItem(SESSION_KEY);
+    return raw ? (JSON.parse(raw) as CatequistaUser) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<CatequistaUser | null>(loadSession);
 
-  useEffect(() => {
-    // Recupera sessão existente ao carregar o app
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setLoading(false);
-    });
+  const login = useCallback(
+    async (email: string, password: string): Promise<{ error: string | null }> => {
+      const hash = await hashPassword(password);
 
-    // Escuta mudanças de estado (login, logout, refresh de token)
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
-      setSession(session);
-    });
+      const { data, error } = await db
+        .from("catequistas")
+        .select("id, name, email, role, etapa")
+        .eq("email", email.toLowerCase().trim())
+        .eq("password_hash", hash)
+        .eq("active", true)
+        .maybeSingle();
 
-    return () => subscription.unsubscribe();
-  }, []);
+      if (error) {
+        if (error.code === "42P01") {
+          return {
+            error:
+              "Sistema não configurado. Execute a migração SQL no Supabase (veja SUPABASE_MIGRATION.md).",
+          };
+        }
+        return { error: "Erro ao acessar o banco de dados." };
+      }
 
-  const login = async (
-    email: string,
-    password: string
-  ): Promise<{ error: string | null }> => {
-    const { error } = await supabase.auth.signInWithPassword({
-      email,
-      password,
-    });
-    if (error) {
-      if (
-        error.message.includes("Invalid login credentials") ||
-        error.message.includes("invalid_credentials")
-      ) {
+      if (!data) {
         return { error: "E-mail ou senha incorretos." };
       }
-      if (error.message.includes("Email not confirmed")) {
-        return { error: "Confirme seu e-mail antes de entrar." };
-      }
-      return { error: "Erro ao fazer login. Tente novamente." };
-    }
-    return { error: null };
-  };
 
-  const logout = async () => {
-    await supabase.auth.signOut();
-  };
+      const sessionUser: CatequistaUser = {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        role: data.role,
+        etapa: data.etapa ?? null,
+      };
+
+      localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
+      setUser(sessionUser);
+      return { error: null };
+    },
+    []
+  );
+
+  const logout = useCallback(() => {
+    localStorage.removeItem(SESSION_KEY);
+    setUser(null);
+  }, []);
 
   return (
     <AuthContext.Provider
       value={{
-        isAuthenticated: !!session,
-        user: session?.user ?? null,
-        loading,
+        user,
+        isAuthenticated: !!user,
+        isAdmin: user?.role === "admin",
         login,
         logout,
       }}
