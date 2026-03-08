@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 const db = supabase as any;
 
@@ -20,29 +21,45 @@ export function useAttendanceByDate(date: string) {
 }
 
 export function useAllAttendance() {
+  const { user, isAdmin } = useAuth();
+
   return useQuery({
-    queryKey: ["attendance-all"],
+    queryKey: ["attendance-all", user?.id, user?.etapa],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("attendance")
         .select("*, students(name, class_name)")
         .order("date", { ascending: false });
       if (error) throw error;
-      return data;
+
+      const records = data ?? [];
+
+      // Catequistas só vêem as presenças da sua etapa
+      if (!isAdmin && user?.etapa) {
+        return records.filter(
+          (a: any) => a.students?.class_name === user.etapa
+        );
+      }
+
+      return records;
     },
+    enabled: !!user,
   });
 }
 
 export function usePendingJustifications() {
+  const { user, isAdmin } = useAuth();
+
   return useQuery({
-    queryKey: ["pending-justifications"],
+    queryKey: ["pending-justifications", user?.id, user?.etapa],
     queryFn: async () => {
       const { data, error } = await db
         .from("pending_justifications")
         .select("*, students(name, class_name)")
         .order("date", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as {
+
+      const records = (data ?? []) as {
         id: string;
         student_id: string;
         date: string;
@@ -50,7 +67,16 @@ export function usePendingJustifications() {
         created_at: string;
         students: { name: string; class_name: string } | null;
       }[];
+
+      if (!isAdmin && user?.etapa) {
+        return records.filter(
+          (p) => p.students?.class_name === user.etapa
+        );
+      }
+
+      return records;
     },
+    enabled: !!user,
   });
 }
 

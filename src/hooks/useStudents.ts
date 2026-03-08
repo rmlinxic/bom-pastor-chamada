@@ -1,20 +1,31 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 export function useStudents() {
+  const { user, isAdmin } = useAuth();
+
   return useQuery({
-    queryKey: ["students"],
+    queryKey: ["students", user?.id, user?.etapa],
     queryFn: async () => {
-      const { data, error } = await supabase
+      let query = supabase
         .from("students")
         .select("*")
         .eq("active", true)
         .order("class_name", { ascending: true })
         .order("name", { ascending: true });
+
+      // Catequistas só vêem seus próprios alunos
+      if (!isAdmin && user?.etapa) {
+        query = query.eq("class_name", user.etapa);
+      }
+
+      const { data, error } = await query;
       if (error) throw error;
-      return data;
+      return data ?? [];
     },
+    enabled: !!user,
   });
 }
 
