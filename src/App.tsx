@@ -2,7 +2,13 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { HashRouter, Routes, Route, useLocation, Navigate } from "react-router-dom";
+import {
+  HashRouter,
+  Routes,
+  Route,
+  useLocation,
+  Navigate,
+} from "react-router-dom";
 import { LogOut } from "lucide-react";
 import Dashboard from "./pages/Dashboard";
 import Attendance from "./pages/Attendance";
@@ -21,15 +27,17 @@ const PUBLIC_PATHS = ["/justificativa", "/login"];
 
 function AppLayout() {
   const location = useLocation();
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, loading, logout } = useAuth();
   const isPublicPage = PUBLIC_PATHS.includes(location.pathname);
 
   return (
     <>
       {/* Botão de logout — visível apenas em páginas protegidas */}
-      {isAuthenticated && !isPublicPage && (
+      {!loading && isAuthenticated && !isPublicPage && (
         <button
-          onClick={logout}
+          onClick={() => {
+            void logout();
+          }}
           className="fixed top-3 right-3 z-50 flex items-center gap-1.5 rounded-full bg-muted/90 backdrop-blur-sm border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors shadow-sm"
           title="Sair da conta"
         >
@@ -39,18 +47,22 @@ function AppLayout() {
       )}
 
       <Routes>
-        {/* Página pública dos pais — sem login */}
+        {/* Página pública dos pais */}
         <Route path="/justificativa" element={<Justification />} />
 
-        {/* Página de login */}
+        {/* Login */}
         <Route
           path="/login"
           element={
-            isAuthenticated ? <Navigate to="/" replace /> : <Login />
+            !loading && isAuthenticated ? (
+              <Navigate to="/" replace />
+            ) : (
+              <Login />
+            )
           }
         />
 
-        {/* Páginas protegidas — exigem login */}
+        {/* Páginas protegidas */}
         <Route
           path="/"
           element={
@@ -87,8 +99,8 @@ function AppLayout() {
         <Route path="*" element={<NotFound />} />
       </Routes>
 
-      {/* Menu inferior — apenas em páginas protegidas autenticadas */}
-      {isAuthenticated && !isPublicPage && <BottomNav />}
+      {/* Menu inferior */}
+      {!loading && isAuthenticated && !isPublicPage && <BottomNav />}
     </>
   );
 }

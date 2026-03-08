@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function Login() {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
@@ -16,21 +16,18 @@ export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setLoading(true);
 
-    // Pequeno delay para feedback visual
-    setTimeout(() => {
-      const ok = login(username.trim(), password);
-      if (ok) {
-        navigate("/", { replace: true });
-      } else {
-        setError("Usuário ou senha incorretos.");
-      }
+    const { error } = await login(email.trim().toLowerCase(), password);
+    if (error) {
+      setError(error);
       setLoading(false);
-    }, 400);
+    } else {
+      navigate("/", { replace: true });
+    }
   };
 
   return (
@@ -52,17 +49,16 @@ export default function Login() {
           </span>
         </div>
 
-        {/* Formulário */}
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="username">Usuário</Label>
+            <Label htmlFor="email">E-mail</Label>
             <Input
-              id="username"
-              type="text"
-              autoComplete="username"
-              placeholder="Nome de usuário"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
+              id="email"
+              type="email"
+              autoComplete="email"
+              placeholder="seu@email.com"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
               className="h-12 text-base"
               autoCapitalize="none"
               required
@@ -99,7 +95,7 @@ export default function Login() {
           </div>
 
           {error && (
-            <p className="text-sm text-destructive text-center font-medium">
+            <p className="text-sm text-destructive text-center font-medium animate-fade-in">
               {error}
             </p>
           )}
@@ -107,10 +103,13 @@ export default function Login() {
           <Button
             type="submit"
             className="w-full h-12 text-base font-semibold mt-2"
-            disabled={loading || !username || !password}
+            disabled={loading || !email || !password}
           >
             {loading ? (
-              "Entrando..."
+              <span className="flex items-center gap-2">
+                <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground" />
+                Entrando...
+              </span>
             ) : (
               <>
                 <LogIn className="h-4 w-4 mr-2" />

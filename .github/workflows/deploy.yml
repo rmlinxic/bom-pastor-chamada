@@ -34,9 +34,7 @@ jobs:
           # Supabase (Settings > Secrets and variables > Actions)
           VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
           VITE_SUPABASE_PUBLISHABLE_KEY: ${{ secrets.VITE_SUPABASE_PUBLISHABLE_KEY }}
-          # Login do catequista
-          VITE_ADMIN_USER: ${{ secrets.VITE_ADMIN_USER }}
-          VITE_ADMIN_PASSWORD: ${{ secrets.VITE_ADMIN_PASSWORD }}
+          # Login agora usa Supabase Auth — nao sao necessarias credenciais no build
         run: npm run build
 
       - name: Upload artifact
