@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/contexts/AuthContext";
 
 export default function Login() {
-  const [email, setEmail] = useState("");
+  const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPass, setShowPass] = useState(false);
   const [error, setError] = useState("");
@@ -20,8 +20,7 @@ export default function Login() {
     e.preventDefault();
     setError("");
     setLoading(true);
-
-    const { error } = await login(email.trim().toLowerCase(), password);
+    const { error } = await login(username.trim(), password);
     if (error) {
       setError(error);
       setLoading(false);
@@ -33,7 +32,6 @@ export default function Login() {
   return (
     <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 py-8">
       <div className="w-full max-w-sm">
-        {/* Cabeçalho */}
         <div className="flex flex-col items-center mb-10">
           <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 mb-4">
             <Church className="h-10 w-10 text-primary" />
@@ -51,16 +49,18 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="email">E-mail</Label>
+            <Label htmlFor="username">Usuário</Label>
             <Input
-              id="email"
-              type="email"
-              autoComplete="email"
-              placeholder="seu@email.com"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
+              id="username"
+              type="text"
+              autoComplete="username"
+              placeholder="Nome de usuário"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
               className="h-12 text-base"
               autoCapitalize="none"
+              autoCorrect="off"
+              spellCheck={false}
               required
             />
           </div>
@@ -103,7 +103,7 @@ export default function Login() {
           <Button
             type="submit"
             className="w-full h-12 text-base font-semibold mt-2"
-            disabled={loading || !email || !password}
+            disabled={loading || !username || !password}
           >
             {loading ? (
               <span className="flex items-center gap-2">

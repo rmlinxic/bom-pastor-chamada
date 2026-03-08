@@ -42,7 +42,7 @@ const db = supabase as any;
 
 type FormData = {
   name: string;
-  email: string;
+  username: string;
   password: string;
   role: "admin" | "catequista";
   etapa: string;
@@ -50,7 +50,7 @@ type FormData = {
 
 const EMPTY_FORM: FormData = {
   name: "",
-  email: "",
+  username: "",
   password: "",
   role: "catequista",
   etapa: "",
@@ -81,7 +81,7 @@ export default function Admin() {
     setEditingId(c.id);
     setForm({
       name: c.name,
-      email: c.email,
+      username: c.username,
       password: "",
       role: c.role,
       etapa: c.etapa ?? "",
@@ -93,23 +93,21 @@ export default function Admin() {
   const handleDeactivate = (c: Catequista) => {
     if (
       window.confirm(
-        `Desativar o catequista "${c.name}"?\n\nEle perderá o acesso ao sistema imediatamente.`
+        `Desativar "${c.name}" (@${c.username})?\n\nEle perderá o acesso imediatamente.`
       )
     ) {
       deactivateMutation.mutate(c.id);
     }
   };
 
-  // Lógica de divisão A/B quando duas etapas são iguais
   const handleSave = async () => {
-    if (!form.name.trim() || !form.email.trim()) return;
+    if (!form.name.trim() || !form.username.trim()) return;
     if (!editingId && !form.password.trim()) return;
 
     setSaving(true);
     try {
       const etapaInput = form.etapa.trim();
 
-      // Verificar duplicata de etapa (apenas para catequistas, não admins)
       if (form.role === "catequista" && etapaInput) {
         const duplicate = activeList.find(
           (c) =>
@@ -123,7 +121,7 @@ export default function Admin() {
           const novoNomeB = `${etapaInput} B`;
 
           const confirmed = window.confirm(
-            `A etapa "${etapaInput}" já está atribuída a "${duplicate.name}".\n\n` +
+            `A etapa "${etapaInput}" já está atribuída a "${duplicate.name}" (@${duplicate.username}).\n\n` +
               `Deseja dividir em subturmas automaticamente?\n\n` +
               `• "${duplicate.name}" → ${novoNomeA}\n` +
               `• "${form.name}" → ${novoNomeB}\n\n` +
@@ -135,23 +133,20 @@ export default function Admin() {
             return;
           }
 
-          // 1. Renomear etapa do catequista existente
           await db
             .from("catequistas")
             .update({ etapa: novoNomeA })
             .eq("id", duplicate.id);
 
-          // 2. Renomear class_name dos alunos dessa etapa
           await supabase
             .from("students")
             .update({ class_name: novoNomeA })
             .eq("class_name", etapaInput);
 
           toast.success(
-            `Turma dividida: "${novoNomeA}" (${duplicate.name}) e "${novoNomeB}" (${form.name})`
+            `Turma dividida: "${novoNomeA}" e "${novoNomeB}"`
           );
 
-          // Salvar com etapa B
           if (editingId) {
             await updateMutation.mutateAsync({
               id: editingId,
@@ -160,17 +155,13 @@ export default function Admin() {
               newPassword: form.password || undefined,
             });
           } else {
-            await createMutation.mutateAsync({
-              ...form,
-              etapa: novoNomeB,
-            });
+            await createMutation.mutateAsync({ ...form, etapa: novoNomeB });
           }
           setOpen(false);
           return;
         }
       }
 
-      // Sem duplicata — salvar normalmente
       if (editingId) {
         await updateMutation.mutateAsync({
           id: editingId,
@@ -197,7 +188,6 @@ export default function Admin() {
         subtitle="Gerencie catequistas e etapas da paróquia"
       />
 
-      {/* Botão novo catequista */}
       <div className="px-4 mb-6">
         <Button className="w-full h-12 text-base font-semibold" onClick={openCreate}>
           <UserPlus className="mr-2 h-5 w-5" />
@@ -205,7 +195,6 @@ export default function Admin() {
         </Button>
       </div>
 
-      {/* Lista */}
       {isLoading ? (
         <div className="flex justify-center py-12">
           <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
@@ -240,10 +229,10 @@ export default function Admin() {
                           : "bg-primary/10 text-primary"
                       )}
                     >
-                      {c.role === "admin" ? "Administrador" : "Catequista"}
+                      {c.role === "admin" ? "Admin" : "Catequista"}
                     </span>
                   </div>
-                  <p className="text-xs text-muted-foreground">{c.email}</p>
+                  <p className="text-xs text-muted-foreground font-mono">@{c.username}</p>
                   {c.etapa && (
                     <div className="flex items-center gap-1.5 mt-2">
                       <BookOpen className="h-3.5 w-3.5 text-primary" />
@@ -279,14 +268,13 @@ export default function Admin() {
         </div>
       )}
 
-      {/* Resumo */}
       {activeList.length > 0 && (
         <div className="mx-4 mt-6 rounded-lg bg-muted/40 border border-border p-4">
           <div className="flex items-center gap-2 mb-3">
             <ShieldCheck className="h-4 w-4 text-primary" />
-            <span className="text-sm font-semibold text-foreground">Resumo da Paróquia</span>
+            <span className="text-sm font-semibold">Resumo da Paróquia</span>
           </div>
-          <div className="grid grid-cols-2 gap-3 text-xs">
+          <div className="grid grid-cols-2 gap-3 text-xs mb-3">
             <div className="bg-card rounded-lg border border-border p-3 text-center">
               <p className="text-2xl font-bold text-primary">
                 {activeList.filter((c) => c.role === "catequista").length}
@@ -300,21 +288,18 @@ export default function Admin() {
               <p className="text-muted-foreground">Etapas ativas</p>
             </div>
           </div>
-          <div className="mt-3 space-y-1">
-            {activeList
-              .filter((c) => c.role === "catequista" && c.etapa)
-              .map((c) => (
-                <div key={c.id} className="flex items-center gap-2 text-xs">
-                  <BookOpen className="h-3 w-3 text-muted-foreground" />
-                  <span className="text-foreground font-medium">{c.etapa}</span>
-                  <span className="text-muted-foreground">— {c.name}</span>
-                </div>
-              ))}
-          </div>
+          {activeList
+            .filter((c) => c.role === "catequista" && c.etapa)
+            .map((c) => (
+              <div key={c.id} className="flex items-center gap-2 text-xs py-1">
+                <BookOpen className="h-3 w-3 text-muted-foreground" />
+                <span className="font-medium">{c.etapa}</span>
+                <span className="text-muted-foreground">— {c.name} (@{c.username})</span>
+              </div>
+            ))}
         </div>
       )}
 
-      {/* Diálogo criar / editar */}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="mx-4 max-w-sm">
           <DialogHeader>
@@ -335,19 +320,33 @@ export default function Admin() {
             </div>
 
             <div>
-              <Label>E-mail de acesso</Label>
+              <Label>Nome de usuário</Label>
               <Input
-                type="email"
-                value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                placeholder="catequista@email.com"
+                type="text"
+                autoComplete="off"
+                autoCapitalize="none"
+                autoCorrect="off"
+                spellCheck={false}
+                value={form.username}
+                onChange={(e) =>
+                  setForm({
+                    ...form,
+                    username: e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                  })
+                }
+                placeholder="Ex: maria_silva"
                 required
               />
+              <p className="text-xs text-muted-foreground mt-1">
+                Apenas letras minúsculas, números e underline.
+              </p>
             </div>
 
             <div>
               <Label>
-                {editingId ? "Nova senha (deixe em branco para manter)" : "Senha"}
+                {editingId
+                  ? "Nova senha (deixe em branco para manter)"
+                  : "Senha"}
               </Label>
               <div className="relative">
                 <Input
@@ -364,7 +363,11 @@ export default function Admin() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
                   tabIndex={-1}
                 >
-                  {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                  {showPass ? (
+                    <EyeOff className="h-4 w-4" />
+                  ) : (
+                    <Eye className="h-4 w-4" />
+                  )}
                 </button>
               </div>
             </div>
@@ -408,7 +411,7 @@ export default function Admin() {
               disabled={
                 saving ||
                 !form.name.trim() ||
-                !form.email.trim() ||
+                !form.username.trim() ||
                 (!editingId && !form.password.trim())
               }
             >

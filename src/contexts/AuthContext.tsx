@@ -1,7 +1,6 @@
 import { createContext, useContext, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-// Salt interno — não exposto como variável de ambiente
 const SALT = "bom_pastor_catequese";
 const SESSION_KEY = "bom_pastor_session_v2";
 const db = supabase as any;
@@ -17,16 +16,16 @@ async function hashPassword(password: string): Promise<string> {
 export interface CatequistaUser {
   id: string;
   name: string;
-  email: string;
+  username: string;
   role: "admin" | "catequista";
-  etapa: string | null; // turma que este catequista gerencia (null = admin)
+  etapa: string | null;
 }
 
 interface AuthContextType {
   user: CatequistaUser | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
-  login: (email: string, password: string) => Promise<{ error: string | null }>;
+  login: (username: string, password: string) => Promise<{ error: string | null }>;
   logout: () => void;
 }
 
@@ -51,13 +50,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<CatequistaUser | null>(loadSession);
 
   const login = useCallback(
-    async (email: string, password: string): Promise<{ error: string | null }> => {
+    async (username: string, password: string): Promise<{ error: string | null }> => {
       const hash = await hashPassword(password);
 
       const { data, error } = await db
         .from("catequistas")
-        .select("id, name, email, role, etapa")
-        .eq("email", email.toLowerCase().trim())
+        .select("id, name, username, role, etapa")
+        .eq("username", username.toLowerCase().trim())
         .eq("password_hash", hash)
         .eq("active", true)
         .maybeSingle();
@@ -66,20 +65,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (error.code === "42P01") {
           return {
             error:
-              "Sistema não configurado. Execute a migração SQL no Supabase (veja SUPABASE_MIGRATION.md).",
+              "Sistema não configurado. Execute a migração SQL no Supabase.",
           };
         }
         return { error: "Erro ao acessar o banco de dados." };
       }
 
       if (!data) {
-        return { error: "E-mail ou senha incorretos." };
+        return { error: "Usuário ou senha incorretos." };
       }
 
       const sessionUser: CatequistaUser = {
         id: data.id,
         name: data.name,
-        email: data.email,
+        username: data.username,
         role: data.role,
         etapa: data.etapa ?? null,
       };

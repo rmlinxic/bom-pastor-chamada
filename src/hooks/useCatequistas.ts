@@ -16,7 +16,7 @@ export async function hashPassword(password: string): Promise<string> {
 export interface Catequista {
   id: string;
   name: string;
-  email: string;
+  username: string;
   role: "admin" | "catequista";
   etapa: string | null;
   active: boolean;
@@ -29,7 +29,7 @@ export function useCatequistas() {
     queryFn: async () => {
       const { data, error } = await db
         .from("catequistas")
-        .select("id, name, email, role, etapa, active, created_at")
+        .select("id, name, username, role, etapa, active, created_at")
         .order("created_at");
       if (error) throw error;
       return (data ?? []) as Catequista[];
@@ -42,7 +42,7 @@ export function useCreateCatequista() {
   return useMutation({
     mutationFn: async (input: {
       name: string;
-      email: string;
+      username: string;
       password: string;
       etapa: string | null;
       role: "admin" | "catequista";
@@ -50,7 +50,7 @@ export function useCreateCatequista() {
       const password_hash = await hashPassword(input.password);
       const { error } = await db.from("catequistas").insert({
         name: input.name.trim(),
-        email: input.email.toLowerCase().trim(),
+        username: input.username.toLowerCase().trim(),
         password_hash,
         etapa: input.etapa?.trim() || null,
         role: input.role,
@@ -63,7 +63,7 @@ export function useCreateCatequista() {
     },
     onError: (err: Error) => {
       if (err.message?.includes("unique") || err.message?.includes("duplicate")) {
-        toast.error("Já existe um catequista com esse e-mail.");
+        toast.error("Já existe um catequista com esse nome de usuário.");
       } else {
         toast.error("Erro ao criar catequista.");
       }
@@ -77,14 +77,14 @@ export function useUpdateCatequista() {
     mutationFn: async (input: {
       id: string;
       name: string;
-      email: string;
+      username: string;
       newPassword?: string;
       etapa: string | null;
       role: "admin" | "catequista";
     }) => {
       const update: Record<string, unknown> = {
         name: input.name.trim(),
-        email: input.email.toLowerCase().trim(),
+        username: input.username.toLowerCase().trim(),
         etapa: input.etapa?.trim() || null,
         role: input.role,
       };

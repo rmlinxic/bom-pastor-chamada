@@ -10,11 +10,11 @@ Cole cada bloco no **Supabase Dashboard → SQL Editor** e execute em ordem.
 CREATE TABLE catequistas (
   id            UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
   name          TEXT        NOT NULL,
-  email         TEXT        UNIQUE NOT NULL,
+  username      TEXT        UNIQUE NOT NULL,
   password_hash TEXT        NOT NULL,
   role          TEXT        NOT NULL DEFAULT 'catequista'
                             CHECK (role IN ('admin', 'catequista')),
-  etapa         TEXT,       -- turma gerenciada pelo catequista (NULL para admin)
+  etapa         TEXT,
   active        BOOLEAN     NOT NULL DEFAULT true,
   created_at    TIMESTAMPTZ DEFAULT now()
 );
@@ -24,16 +24,15 @@ CREATE TABLE catequistas (
 
 ## Passo 2 — Criar o administrador inicial
 
-> Substitua `admin@suaparoquia.com` pelo seu e-mail e `SuaSenha@123` pela sua senha.
-> O hash é SHA-256 com o prefixo interno `bom_pastor_catequese`.
+> Substitua `admin` pelo nome de usuário que desejar e `SuaSenha@123` pela sua senha.
 
 ```sql
 CREATE EXTENSION IF NOT EXISTS pgcrypto;
 
-INSERT INTO catequistas (name, email, password_hash, role)
+INSERT INTO catequistas (name, username, password_hash, role)
 VALUES (
   'Administrador',
-  'admin@suaparoquia.com',
+  'admin',
   encode(
     digest('bom_pastor_catequese' || 'SuaSenha@123', 'sha256'),
     'hex'
@@ -42,7 +41,7 @@ VALUES (
 );
 ```
 
-Após executar, faça login no sistema com o e-mail e senha acima.
+Após executar, faça login com o nome de usuário e senha definidos acima.
 Você pode criar novos catequistas no **Painel Admin** dentro do aplicativo.
 
 ---
