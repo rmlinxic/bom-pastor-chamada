@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useMemo } from "react";
 import {
   UserPlus,
   Pencil,
@@ -7,6 +7,8 @@ import {
   Trash2,
   Upload,
   FileDown,
+  BookOpen,
+  AlertTriangle,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -28,6 +30,7 @@ import {
   useStudentAttendanceHistory,
   useImportStudents,
 } from "@/hooks/useStudents";
+import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
 const statusLabels: Record<string, string> = {
@@ -42,11 +45,6 @@ const statusColors: Record<string, string> = {
   falta_nao_justificada: "text-destructive",
 };
 
-// ---------------------------------------------------------------------------
-// Leitura de CSV com fallback de encoding
-// Tenta UTF-8 primeiro; se detectar caracteres corrompidos, tenta Windows-1252
-// (encoding padrão do Excel brasileiro)
-// ---------------------------------------------------------------------------
 function readCSVWithFallback(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const tryEncoding = (enc: string) => {
@@ -54,7 +52,6 @@ function readCSVWithFallback(file: File): Promise<string> {
       reader.onerror = () => reject(new Error("Erro ao ler o arquivo."));
       reader.onload = (evt) => {
         const text = (evt.target?.result as string) ?? "";
-        // Se UTF-8 retornar caractere de substituição (�), tentar Latin-1
         if (enc === "UTF-8" && text.includes("\uFFFD")) {
           tryEncoding("Windows-1252");
         } else {
@@ -67,11 +64,7 @@ function readCSVWithFallback(file: File): Promise<string> {
   });
 }
 
-// ---------------------------------------------------------------------------
-// Parser de CSV
-// Detecta separador automático (vírgula ou ponto e vírgula)
-// ---------------------------------------------------------------------------
-function parseStudentsCSV(raw: string) {
+function parseStudentsCSV(raw: string, requireClass = true) {
   const lines = raw.trim().split(/\r?\n/).filter((l) => l.trim());
   if (lines.length < 2) throw new Error("O arquivo está vazio ou não tem dados.");
 
@@ -116,20 +109,17 @@ function parseStudentsCSV(raw: string) {
   const phoneIdx = idx("phone");
 
   if (nameIdx === -1)
-    throw new Error(
-      'Coluna "Nome" não encontrada. Verifique o cabeçalho do CSV.'
-    );
-  if (classIdx === -1)
-    throw new Error(
-      'Coluna "Turma" não encontrada. Verifique o cabeçalho do CSV.'
-    );
+    throw new Error('Coluna "Nome" não encontrada. Verifique o cabeçalho do CSV.');
+
+  if (requireClass && classIdx === -1)
+    throw new Error('Coluna "Turma" não encontrada. Verifique o cabeçalho do CSV.');
 
   const students = [];
   for (let i = 1; i < lines.length; i++) {
     const cols = splitLine(lines[i]);
     const name = cols[nameIdx] ?? "";
-    const class_name = cols[classIdx] ?? "";
-    if (!name || !class_name) continue;
+    const class_name = classIdx >= 0 ? (cols[classIdx] ?? "") : "";
+    if (!name) continue;
     students.push({
       name,
       class_name,
@@ -143,16 +133,22 @@ function parseStudentsCSV(raw: string) {
   return students;
 }
 
-// Gera e faz download do modelo CSV (com BOM para Excel PT-BR)
-function downloadTemplate() {
-  const rows = [
-    ["Nome", "Turma", "Responsavel", "Telefone"],
-    ["João Silva", "Crisma 2025", "Maria Silva", "(41) 99999-0001"],
-    ["Ana Souza", "Crisma 2025", "Carlos Souza", "(41) 99999-0002"],
-    ["Pedro Lima", "Crisma 2026", "Fátima Lima", "(41) 99999-0003"],
-  ];
+function downloadTemplate(includeClass: boolean) {
+  const headers = includeClass
+    ? ["Nome", "Turma", "Responsavel", "Telefone"]
+    : ["Nome", "Responsavel", "Telefone"];
+  const rows = includeClass
+    ? [
+        headers,
+        ["João Silva", "Crisma 2025", "Maria Silva", "(41) 99999-0001"],
+        ["Ana Souza", "Crisma 2025", "Carlos Souza", "(41) 99999-0002"],
+      ]
+    : [
+        headers,
+        ["João Silva", "Maria Silva", "(41) 99999-0001"],
+        ["Ana Souza", "Carlos Souza", "(41) 99999-0002"],
+      ];
   const csv = rows.map((r) => r.join(",")).join("\n");
-  // \uFEFF = BOM UTF-8, garante que o Excel abre com acentos corretos
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
@@ -162,9 +158,8 @@ function downloadTemplate() {
   URL.revokeObjectURL(url);
 }
 
-// ---------------------------------------------------------------------------
-
 export default function Students() {
+  const { user, isAdmin } = useAuth();
   const { data: students = [] } = useStudents();
   const addMutation = useAddStudent();
   const updateMutation = useUpdateStudent();
@@ -181,9 +176,19 @@ export default function Students() {
   const emptyForm = { name: "", class_name: "", parent_name: "", phone: "" };
   const [form, setForm] = useState(emptyForm);
 
+  // Etapas disponíveis para o datalist do admin
+  const availableEtapas = useMemo(
+    () => Array.from(new Set(students.map((s) => s.class_name))).sort(),
+    [students]
+  );
+
   const openAdd = () => {
     setEditingStudent(null);
-    setForm(emptyForm);
+    setForm({
+      ...emptyForm,
+      // Catequista: pré-preenche com sua própria etapa
+      class_name: isAdmin ? "" : (user?.etapa ?? ""),
+    });
     setOpen(true);
   };
 
@@ -210,10 +215,14 @@ export default function Students() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim() || !form.class_name.trim()) return;
+    // Catequista: força class_name para sua etapa
+    const finalClass = isAdmin ? form.class_name : (user?.etapa ?? form.class_name);
+    if (!form.name.trim() || !finalClass.trim()) return;
+    const finalForm = { ...form, class_name: finalClass };
+
     if (editingStudent) {
       updateMutation.mutate(
-        { id: editingStudent, ...form },
+        { id: editingStudent, ...finalForm },
         {
           onSuccess: () => {
             setOpen(false);
@@ -223,7 +232,7 @@ export default function Students() {
         }
       );
     } else {
-      addMutation.mutate(form, {
+      addMutation.mutate(finalForm, {
         onSuccess: () => {
           setOpen(false);
           setForm(emptyForm);
@@ -232,7 +241,6 @@ export default function Students() {
     }
   };
 
-  // Leitura do arquivo CSV com detecção automática de encoding
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -240,17 +248,23 @@ export default function Students() {
 
     try {
       const text = await readCSVWithFallback(file);
-      const parsed = parseStudentsCSV(text);
+      // Admin precisa da coluna Turma; catequista não
+      const parsed = parseStudentsCSV(text, isAdmin);
+
+      // Para catequistas: substitui class_name pela sua etapa
+      const studentsToImport = isAdmin
+        ? parsed
+        : parsed.map((s) => ({ ...s, class_name: user?.etapa ?? "" }));
+
       if (
         window.confirm(
-          `${parsed.length} aluno(s) encontrado(s) no arquivo.\n\nDeseja importar todos?`
+          `${studentsToImport.length} aluno(s) encontrado(s) no arquivo.\n\nDeseja importar todos?`
         )
       ) {
-        importMutation.mutate(parsed);
+        importMutation.mutate(studentsToImport);
       }
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : "Erro ao ler o arquivo.";
+      const msg = err instanceof Error ? err.message : "Erro ao ler o arquivo.";
       toast.error(msg);
     }
   };
@@ -290,15 +304,8 @@ export default function Students() {
               key={h.id}
               className="flex items-center justify-between rounded-lg border border-border bg-card p-4 shadow-sm"
             >
-              <span className="text-sm font-medium text-foreground">
-                {h.date}
-              </span>
-              <span
-                className={cn(
-                  "text-sm font-semibold",
-                  statusColors[h.status]
-                )}
-              >
+              <span className="text-sm font-medium text-foreground">{h.date}</span>
+              <span className={cn("text-sm font-semibold", statusColors[h.status])}>
                 {statusLabels[h.status] ?? h.status}
               </span>
             </div>
@@ -317,14 +324,23 @@ export default function Students() {
     <div className="pb-24">
       <PageHeader title="Alunos" subtitle="Gerencie os catequizandos" />
 
-      {/* Ações principais */}
+      {/* Aviso se catequista sem etapa atribuída */}
+      {!isAdmin && !user?.etapa && (
+        <div className="mx-4 mb-4 flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4">
+          <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
+          <p className="text-sm text-warning">
+            Você ainda não tem uma etapa atribuída. Contate o administrador.
+          </p>
+        </div>
+      )}
+
       <div className="px-4 mb-4 space-y-2">
-        {/* Adicionar aluno manual */}
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
             <Button
               className="w-full h-12 text-base font-semibold"
               onClick={openAdd}
+              disabled={!isAdmin && !user?.etapa}
             >
               <UserPlus className="mr-2 h-5 w-5" />
               Novo Aluno
@@ -346,18 +362,39 @@ export default function Students() {
                   required
                 />
               </div>
-              <div>
-                <Label htmlFor="class_name">Turma</Label>
-                <Input
-                  id="class_name"
-                  value={form.class_name}
-                  onChange={(e) =>
-                    setForm({ ...form, class_name: e.target.value })
-                  }
-                  placeholder="Ex: Crisma 2025"
-                  required
-                />
-              </div>
+
+              {/* Turma: editável para admin, exibida automaticamente para catequista */}
+              {isAdmin ? (
+                <div>
+                  <Label htmlFor="class_name">Turma / Etapa</Label>
+                  <Input
+                    id="class_name"
+                    value={form.class_name}
+                    onChange={(e) =>
+                      setForm({ ...form, class_name: e.target.value })
+                    }
+                    placeholder="Ex: Crisma 2025"
+                    list="etapas-datalist"
+                    required
+                  />
+                  <datalist id="etapas-datalist">
+                    {availableEtapas.map((e) => (
+                      <option key={e} value={e} />
+                    ))}
+                  </datalist>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 rounded-lg bg-muted/40 border border-border px-3 py-3">
+                  <BookOpen className="h-4 w-4 text-primary shrink-0" />
+                  <div>
+                    <p className="text-xs text-muted-foreground">Etapa (automática)</p>
+                    <p className="text-sm font-semibold text-primary">
+                      {user?.etapa}
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div>
                 <Label htmlFor="parent_name">Nome do Responsável</Label>
                 <Input
@@ -377,11 +414,7 @@ export default function Students() {
                   placeholder="(99) 99999-9999"
                 />
               </div>
-              <Button
-                type="submit"
-                className="w-full h-12"
-                disabled={isPending}
-              >
+              <Button type="submit" className="w-full h-12" disabled={isPending}>
                 {isPending
                   ? "Salvando..."
                   : editingStudent
@@ -392,7 +425,6 @@ export default function Students() {
           </DialogContent>
         </Dialog>
 
-        {/* Importar / Baixar modelo */}
         <div className="flex gap-2">
           <input
             ref={fileInputRef}
@@ -405,7 +437,7 @@ export default function Students() {
             variant="outline"
             className="flex-1 h-11"
             onClick={() => fileInputRef.current?.click()}
-            disabled={importMutation.isPending}
+            disabled={importMutation.isPending || (!isAdmin && !user?.etapa)}
           >
             <Upload className="mr-2 h-4 w-4" />
             {importMutation.isPending ? "Importando..." : "Importar CSV"}
@@ -413,7 +445,7 @@ export default function Students() {
           <Button
             variant="outline"
             className="flex-1 h-11"
-            onClick={downloadTemplate}
+            onClick={() => downloadTemplate(isAdmin)}
             title="Baixar planilha modelo"
           >
             <FileDown className="mr-2 h-4 w-4" />
@@ -422,13 +454,14 @@ export default function Students() {
         </div>
 
         <p className="text-xs text-muted-foreground text-center">
-          CSV aceita colunas: <strong>Nome</strong>, <strong>Turma</strong>,
-          Responsavel, Telefone — vírgula ou ponto e vírgula
+          {isAdmin
+            ? "CSV aceita: Nome, Turma, Responsavel, Telefone"
+            : "CSV aceita: Nome, Responsavel, Telefone — a etapa é atribuída automaticamente"}
         </p>
       </div>
 
-      {/* Filtro por turma */}
-      {classes.length > 2 && (
+      {/* Filtro por turma — só aparece se admin tiver várias turmas */}
+      {isAdmin && classes.length > 2 && (
         <div className="px-4 mb-4 flex gap-2 overflow-x-auto pb-1">
           {classes.map((c) => (
             <button
@@ -447,7 +480,6 @@ export default function Students() {
         </div>
       )}
 
-      {/* Lista de alunos */}
       <div className="space-y-2 px-4">
         {filteredStudents.map((s) => (
           <div
@@ -456,9 +488,7 @@ export default function Students() {
           >
             <div className="flex items-start justify-between">
               <div className="flex-1 min-w-0 pr-2">
-                <p className="font-semibold text-foreground truncate">
-                  {s.name}
-                </p>
+                <p className="font-semibold text-foreground truncate">{s.name}</p>
                 <p className="text-sm text-primary font-medium">{s.class_name}</p>
                 <div className="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
                   <span>Resp: {s.parent_name}</span>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { format } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarIcon, Church, CheckCircle2, Clock } from "lucide-react";
@@ -16,9 +16,21 @@ import {
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useSubmitJustification } from "@/hooks/useAttendance";
-import { useStudents } from "@/hooks/useStudents";
+import { usePublicStudents } from "@/hooks/useStudents";
+
+/** Remove sufixo " A" ou " B" (case-insensitive) para obter o nome base da etapa */
+function getBaseEtapa(className: string): string {
+  return className.replace(/\s+[AaBb]$/, "").trim();
+}
+
+/** Retorna o sufixo da subturma ("A", "B") ou null se não houver */
+function getSubTurma(className: string, base: string): string | null {
+  const suffix = className.slice(base.length).trim();
+  return suffix || null;
+}
 
 export default function Justification() {
+  const [selectedEtapa, setSelectedEtapa] = useState("");
   const [studentId, setStudentId] = useState("");
   const [date, setDate] = useState<Date | undefined>();
   const [reason, setReason] = useState("");
@@ -26,15 +38,28 @@ export default function Justification() {
   const [wasPending, setWasPending] = useState(false);
 
   const mutation = useSubmitJustification();
-  const { data: students = [], isLoading: loadingStudents } = useStudents();
+  const { data: allStudents = [], isLoading: loadingStudents } = usePublicStudents();
 
-  const sortedStudents = [...students].sort((a, b) =>
-    a.class_name !== b.class_name
-      ? a.class_name.localeCompare(b.class_name)
-      : a.name.localeCompare(b.name)
-  );
+  /** Nomes base únicos das etapas ("Crisma 2025 A" e "B" viram apenas "Crisma 2025") */
+  const etapas = useMemo(() => {
+    const bases = new Set(allStudents.map((s) => getBaseEtapa(s.class_name)));
+    return Array.from(bases).sort();
+  }, [allStudents]);
+
+  /** Alunos filtrados pela etapa selecionada (inclui subturmas A e B) */
+  const filteredStudents = useMemo(() => {
+    if (!selectedEtapa) return [];
+    return allStudents
+      .filter((s) => getBaseEtapa(s.class_name) === selectedEtapa)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [allStudents, selectedEtapa]);
 
   const canSubmit = !!studentId && !!date && reason.trim().length > 0;
+
+  const handleEtapaChange = (value: string) => {
+    setSelectedEtapa(value);
+    setStudentId(""); // reset seleção de aluno ao trocar etapa
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,6 +70,7 @@ export default function Justification() {
         onSuccess: (result) => {
           setWasPending(result.pending);
           setSubmitted(true);
+          setSelectedEtapa("");
           setStudentId("");
           setDate(undefined);
           setReason("");
@@ -52,6 +78,8 @@ export default function Justification() {
       }
     );
   };
+
+  const handleSendAnother = () => setSubmitted(false);
 
   return (
     <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8">
@@ -80,7 +108,7 @@ export default function Justification() {
                 foi salva e <strong>será aplicada automaticamente</strong> assim
                 que o catequista marcar a presença.
               </p>
-              <Button onClick={() => setSubmitted(false)} className="mt-5 w-full">
+              <Button onClick={handleSendAnother} className="mt-5 w-full">
                 Enviar outra justificativa
               </Button>
             </div>
@@ -93,7 +121,7 @@ export default function Justification() {
               <p className="text-sm text-muted-foreground mt-2">
                 O status foi atualizado automaticamente no sistema.
               </p>
-              <Button onClick={() => setSubmitted(false)} className="mt-5 w-full">
+              <Button onClick={handleSendAnother} className="mt-5 w-full">
                 Enviar outra justificativa
               </Button>
             </div>
@@ -106,40 +134,76 @@ export default function Justification() {
               registrada automaticamente quando o catequista marcar a chamada.
             </div>
 
+            {/* 1º campo: Etapa */}
             <div className="space-y-1.5">
-              <Label>Nome do Catequizando</Label>
+              <Label>Etapa do Catequizando</Label>
               <Select
-                value={studentId}
-                onValueChange={setStudentId}
+                value={selectedEtapa}
+                onValueChange={handleEtapaChange}
                 disabled={loadingStudents}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue
                     placeholder={
                       loadingStudents
-                        ? "Carregando lista de alunos..."
-                        : "Selecione o nome do seu filho(a)"
+                        ? "Carregando..."
+                        : "Selecione a etapa"
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {sortedStudents.length === 0 && !loadingStudents && (
+                  {etapas.length === 0 && !loadingStudents && (
                     <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-                      Nenhum aluno cadastrado ainda.
+                      Nenhuma etapa cadastrada.
                     </div>
                   )}
-                  {sortedStudents.map((s) => (
-                    <SelectItem key={s.id} value={s.id}>
-                      <span className="font-medium">{s.name}</span>
-                      <span className="ml-2 text-xs text-muted-foreground">
-                        — {s.class_name}
-                      </span>
+                  {etapas.map((etapa) => (
+                    <SelectItem key={etapa} value={etapa}>
+                      {etapa}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
+            {/* 2º campo: Nome do aluno (filtrado pela etapa) */}
+            <div className="space-y-1.5">
+              <Label>Nome do Catequizando</Label>
+              <Select
+                value={studentId}
+                onValueChange={setStudentId}
+                disabled={!selectedEtapa || loadingStudents}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue
+                    placeholder={
+                      !selectedEtapa
+                        ? "Selecione a etapa primeiro"
+                        : filteredStudents.length === 0
+                        ? "Nenhum aluno nesta etapa"
+                        : "Selecione o nome do seu filho(a)"
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {filteredStudents.map((s) => {
+                    const sub = getSubTurma(s.class_name, selectedEtapa);
+                    return (
+                      <SelectItem key={s.id} value={s.id}>
+                        <span className="font-medium">{s.name}</span>
+                        {sub && (
+                          <span className="ml-2 text-xs text-muted-foreground">
+                            — Turma {sub}
+                          </span>
+                        )}
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* 3º campo: Data */}
             <div className="space-y-1.5">
               <Label>Data da Falta</Label>
               <Popover>
@@ -169,6 +233,7 @@ export default function Justification() {
               </Popover>
             </div>
 
+            {/* 4º campo: Motivo */}
             <div className="space-y-1.5">
               <Label htmlFor="reason">Motivo da Falta</Label>
               <Textarea

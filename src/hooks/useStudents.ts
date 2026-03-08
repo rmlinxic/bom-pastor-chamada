@@ -3,6 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
+/** Hook autenticado: catequista vê apenas sua etapa, admin vê tudo */
 export function useStudents() {
   const { user, isAdmin } = useAuth();
 
@@ -16,7 +17,6 @@ export function useStudents() {
         .order("class_name", { ascending: true })
         .order("name", { ascending: true });
 
-      // Catequistas só vêem seus próprios alunos
       if (!isAdmin && user?.etapa) {
         query = query.eq("class_name", user.etapa);
       }
@@ -26,6 +26,23 @@ export function useStudents() {
       return data ?? [];
     },
     enabled: !!user,
+  });
+}
+
+/** Hook público: usado na página de justificativas (sem login) */
+export function usePublicStudents() {
+  return useQuery({
+    queryKey: ["students-public"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("students")
+        .select("id, name, class_name")
+        .eq("active", true)
+        .order("class_name", { ascending: true })
+        .order("name", { ascending: true });
+      if (error) throw error;
+      return (data ?? []) as { id: string; name: string; class_name: string }[];
+    },
   });
 }
 
@@ -43,6 +60,7 @@ export function useAddStudent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["students-public"] });
       toast.success("Aluno cadastrado com sucesso!");
     },
     onError: () => toast.error("Erro ao cadastrar aluno."),
@@ -72,6 +90,7 @@ export function useUpdateStudent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["students-public"] });
       toast.success("Aluno atualizado com sucesso!");
     },
     onError: () => toast.error("Erro ao atualizar aluno."),
@@ -90,6 +109,7 @@ export function useDeleteStudent() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["students-public"] });
       toast.success("Aluno removido.");
     },
     onError: () => toast.error("Erro ao remover aluno."),
@@ -129,6 +149,7 @@ export function useImportStudents() {
     },
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
+      queryClient.invalidateQueries({ queryKey: ["students-public"] });
       toast.success(`${count} aluno(s) importado(s) com sucesso!`);
     },
     onError: (err: Error) => {
