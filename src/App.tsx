@@ -16,6 +16,7 @@ import Students from "./pages/Students";
 import Reports from "./pages/Reports";
 import Admin from "./pages/Admin";
 import Justification from "./pages/Justification";
+import Missas from "./pages/Missas";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import BottomNav from "./components/BottomNav";
@@ -96,6 +97,14 @@ function AppLayout() {
           element={
             <ProtectedRoute>
               <Reports />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/missas"
+          element={
+            <ProtectedRoute>
+              <Missas />
             </ProtectedRoute>
           }
         />

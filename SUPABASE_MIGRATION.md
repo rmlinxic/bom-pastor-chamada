@@ -41,8 +41,19 @@ VALUES (
 );
 ```
 
-Após executar, faça login com o nome de usuário e senha definidos acima.
-Você pode criar novos catequistas no **Painel Admin** dentro do aplicativo.
+---
+
+## Passo 3 — Criar tabela de presenças nas missas
+
+```sql
+CREATE TABLE mass_attendance (
+  id          UUID        DEFAULT gen_random_uuid() PRIMARY KEY,
+  student_id  UUID        NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+  date        DATE        NOT NULL,
+  created_at  TIMESTAMPTZ DEFAULT now(),
+  UNIQUE(student_id, date)
+);
+```
 
 ---
 
@@ -52,3 +63,4 @@ Você pode criar novos catequistas no **Painel Admin** dentro do aplicativo.
 - O painel Admin só é visível para usuários com `role = 'admin'`.
 - Cada catequista acessa apenas os alunos e presenças da sua própria `etapa`.
 - O administrador vê todos os dados de todas as turmas.
+- A tabela `mass_attendance` registra presenças únicas por aluno/dia (`UNIQUE` constraint).
