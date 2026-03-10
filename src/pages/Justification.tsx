@@ -17,19 +17,19 @@ import {
 import { cn } from "@/lib/utils";
 import { useSubmitJustification } from "@/hooks/useAttendance";
 import { usePublicStudents } from "@/hooks/useStudents";
+import { useParoquias } from "@/hooks/useParoquias";
 
-/** Remove sufixo " A" ou " B" (case-insensitive) para obter o nome base da etapa */
 function getBaseEtapa(className: string): string {
   return className.replace(/\s+[AaBb]$/, "").trim();
 }
 
-/** Retorna o sufixo da subturma ("A", "B") ou null se não houver */
 function getSubTurma(className: string, base: string): string | null {
   const suffix = className.slice(base.length).trim();
   return suffix || null;
 }
 
 export default function Justification() {
+  const [selectedParoquia, setSelectedParoquia] = useState("");
   const [selectedEtapa, setSelectedEtapa] = useState("");
   const [studentId, setStudentId] = useState("");
   const [date, setDate] = useState<Date | undefined>();
@@ -39,26 +39,37 @@ export default function Justification() {
 
   const mutation = useSubmitJustification();
   const { data: allStudents = [], isLoading: loadingStudents } = usePublicStudents();
+  const { data: paroquias = [], isLoading: loadingParoquias } = useParoquias();
 
-  /** Nomes base únicos das etapas ("Crisma 2025 A" e "B" viram apenas "Crisma 2025") */
+  // Alunos filtrados pela paróquia selecionada
+  const studentsByParoquia = useMemo(() => {
+    if (!selectedParoquia) return allStudents;
+    return allStudents.filter((s: any) => s.paroquia_id === selectedParoquia);
+  }, [allStudents, selectedParoquia]);
+
   const etapas = useMemo(() => {
-    const bases = new Set(allStudents.map((s) => getBaseEtapa(s.class_name)));
+    const bases = new Set(studentsByParoquia.map((s) => getBaseEtapa(s.class_name)));
     return Array.from(bases).sort();
-  }, [allStudents]);
+  }, [studentsByParoquia]);
 
-  /** Alunos filtrados pela etapa selecionada (inclui subturmas A e B) */
   const filteredStudents = useMemo(() => {
     if (!selectedEtapa) return [];
-    return allStudents
+    return studentsByParoquia
       .filter((s) => getBaseEtapa(s.class_name) === selectedEtapa)
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [allStudents, selectedEtapa]);
+  }, [studentsByParoquia, selectedEtapa]);
 
   const canSubmit = !!studentId && !!date && reason.trim().length > 0;
 
+  const handleParoquiaChange = (value: string) => {
+    setSelectedParoquia(value);
+    setSelectedEtapa("");
+    setStudentId("");
+  };
+
   const handleEtapaChange = (value: string) => {
     setSelectedEtapa(value);
-    setStudentId(""); // reset seleção de aluno ao trocar etapa
+    setStudentId("");
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -70,6 +81,7 @@ export default function Justification() {
         onSuccess: (result) => {
           setWasPending(result.pending);
           setSubmitted(true);
+          setSelectedParoquia("");
           setSelectedEtapa("");
           setStudentId("");
           setDate(undefined);
@@ -92,7 +104,7 @@ export default function Justification() {
             Justificativa de Falta
           </h1>
           <p className="text-sm text-muted-foreground text-center mt-1">
-            Paróquia Bom Pastor — Portal dos Pais
+            Portal dos Pais — Catequese
           </p>
         </div>
 
@@ -100,30 +112,22 @@ export default function Justification() {
           wasPending ? (
             <div className="rounded-lg border border-warning/30 bg-warning/10 p-6 text-center animate-fade-in">
               <Clock className="h-12 w-12 text-warning mx-auto mb-3" />
-              <p className="text-lg font-semibold text-warning">
-                Justificativa registrada!
-              </p>
+              <p className="text-lg font-semibold text-warning">Justificativa registrada!</p>
               <p className="text-sm text-muted-foreground mt-2">
                 A chamada desse dia ainda não foi registrada. Sua justificativa
                 foi salva e <strong>será aplicada automaticamente</strong> assim
                 que o catequista marcar a presença.
               </p>
-              <Button onClick={handleSendAnother} className="mt-5 w-full">
-                Enviar outra justificativa
-              </Button>
+              <Button onClick={handleSendAnother} className="mt-5 w-full">Enviar outra justificativa</Button>
             </div>
           ) : (
             <div className="rounded-lg border border-success/30 bg-success/10 p-6 text-center animate-fade-in">
               <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-3" />
-              <p className="text-lg font-semibold text-success">
-                Falta justificada!
-              </p>
+              <p className="text-lg font-semibold text-success">Falta justificada!</p>
               <p className="text-sm text-muted-foreground mt-2">
                 O status foi atualizado automaticamente no sistema.
               </p>
-              <Button onClick={handleSendAnother} className="mt-5 w-full">
-                Enviar outra justificativa
-              </Button>
+              <Button onClick={handleSendAnother} className="mt-5 w-full">Enviar outra justificativa</Button>
             </div>
           )
         ) : (
@@ -134,39 +138,59 @@ export default function Justification() {
               registrada automaticamente quando o catequista marcar a chamada.
             </div>
 
+            {/* 0º campo: Paróquia/Comunidade */}
+            <div className="space-y-1.5">
+              <Label>Comunidade / Paróquia</Label>
+              <Select
+                value={selectedParoquia}
+                onValueChange={handleParoquiaChange}
+                disabled={loadingParoquias}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder={loadingParoquias ? "Carregando..." : "Selecione a comunidade"} />
+                </SelectTrigger>
+                <SelectContent>
+                  {paroquias.filter((p) => p.ativa).length === 0 && !loadingParoquias && (
+                    <div className="px-3 py-4 text-center text-sm text-muted-foreground">Nenhuma comunidade cadastrada.</div>
+                  )}
+                  {paroquias.filter((p) => p.ativa).map((p) => (
+                    <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
             {/* 1º campo: Etapa */}
             <div className="space-y-1.5">
               <Label>Etapa do Catequizando</Label>
               <Select
                 value={selectedEtapa}
                 onValueChange={handleEtapaChange}
-                disabled={loadingStudents}
+                disabled={!selectedParoquia || loadingStudents}
               >
                 <SelectTrigger className="w-full">
                   <SelectValue
                     placeholder={
-                      loadingStudents
+                      !selectedParoquia
+                        ? "Selecione a comunidade primeiro"
+                        : loadingStudents
                         ? "Carregando..."
                         : "Selecione a etapa"
                     }
                   />
                 </SelectTrigger>
                 <SelectContent>
-                  {etapas.length === 0 && !loadingStudents && (
-                    <div className="px-3 py-4 text-center text-sm text-muted-foreground">
-                      Nenhuma etapa cadastrada.
-                    </div>
+                  {etapas.length === 0 && !loadingStudents && selectedParoquia && (
+                    <div className="px-3 py-4 text-center text-sm text-muted-foreground">Nenhuma etapa nesta comunidade.</div>
                   )}
                   {etapas.map((etapa) => (
-                    <SelectItem key={etapa} value={etapa}>
-                      {etapa}
-                    </SelectItem>
+                    <SelectItem key={etapa} value={etapa}>{etapa}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
 
-            {/* 2º campo: Nome do aluno (filtrado pela etapa) */}
+            {/* 2º campo: Nome do aluno */}
             <div className="space-y-1.5">
               <Label>Nome do Catequizando</Label>
               <Select
@@ -191,11 +215,7 @@ export default function Justification() {
                     return (
                       <SelectItem key={s.id} value={s.id}>
                         <span className="font-medium">{s.name}</span>
-                        {sub && (
-                          <span className="ml-2 text-xs text-muted-foreground">
-                            — Turma {sub}
-                          </span>
-                        )}
+                        {sub && <span className="ml-2 text-xs text-muted-foreground">— Turma {sub}</span>}
                       </SelectItem>
                     );
                   })}
@@ -210,25 +230,14 @@ export default function Justification() {
                 <PopoverTrigger asChild>
                   <Button
                     variant="outline"
-                    className={cn(
-                      "w-full justify-start text-left font-normal",
-                      !date && "text-muted-foreground"
-                    )}
+                    className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
                   >
                     <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date
-                      ? format(date, "PPP", { locale: ptBR })
-                      : "Selecione a data da falta"}
+                    {date ? format(date, "PPP", { locale: ptBR }) : "Selecione a data da falta"}
                   </Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar
-                    mode="single"
-                    selected={date}
-                    onSelect={setDate}
-                    initialFocus
-                    className="p-3 pointer-events-auto"
-                  />
+                  <Calendar mode="single" selected={date} onSelect={setDate} initialFocus className="p-3 pointer-events-auto" />
                 </PopoverContent>
               </Popover>
             </div>
