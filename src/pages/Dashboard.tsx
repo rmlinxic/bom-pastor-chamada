@@ -1,7 +1,7 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Clock, Users, CheckCircle, AlertTriangle, XCircle,
-  BookOpen, Church, Building2, MessageCircle,
+  BookOpen, Church, Building2, MessageCircle, ChevronDown,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getDaysInMonth, format, parseISO } from "date-fns";
@@ -9,10 +9,14 @@ import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { useParoquias } from "@/hooks/useParoquias";
+import { useCatequistas } from "@/hooks/useCatequistas";
 import PageHeader from "@/components/PageHeader";
 import StatCard from "@/components/StatCard";
 import { useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 
 const db = supabase as any;
@@ -23,65 +27,112 @@ function lastDayOfMonth(monthStr: string) {
   return new Date(y, m, 0).getDate();
 }
 
-/** Formata telefone para link WhatsApp: remove tudo que não é dígito, aplica DDD 41 se necessario */
 function toWhatsappNumber(raw: string | null | undefined): string {
   if (!raw) return "5541";
   const digits = raw.replace(/\D/g, "");
   if (digits.length === 0) return "5541";
-  // Já tem código do país
   if (digits.startsWith("55") && digits.length >= 12) return digits;
-  // Tem DDD (10 ou 11 dígitos)
   if (digits.length >= 10) return "55" + digits;
-  // Sem DDD: presume 41
   return "5541" + digits;
 }
 
+// Scope de visualização
+type Scope =
+  | { kind: "own" }                           // catequista: apenas sua etapa
+  | { kind: "paroquia"; paroquia_id: string }  // toda uma paróquia
+  | { kind: "etapa"; etapa: string; paroquia_id?: string } // etapa específica
+  | { kind: "all" };                           // tudo (admin)
+
 export default function Dashboard() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isCoordinator, isCatequista } = useAuth();
   const navigate = useNavigate();
   const { data: paroquias = [] } = useParoquias();
-  const [selectedParoquia, setSelectedParoquia] = useState<string>("all");
+  const { data: catequistas = [] } = useCatequistas();
 
+  // ---------- estado de filtro ----------
+  // Para catequista+coordenador e coordenador: default = própria etapa ("own")
+  // Para admin: default = "all"
+  const defaultScope: Scope = isAdmin ? { kind: "all" } : { kind: "own" };
+  const [scope, setScope] = useState<Scope>(defaultScope);
+
+  // Filtro de paróquia (1º nível) — admin e coordenador
+  const [selParoquia, setSelParoquia] = useState<string>("all");
+  // Filtro de etapa (2º nível)
+  const [selEtapa, setSelEtapa] = useState<string>("all");
+
+  // Quando muda paróquia, reseta etapa
+  useEffect(() => { setSelEtapa("all"); }, [selParoquia]);
+
+  // Monta o scope a partir dos selects
+  useEffect(() => {
+    if (isAdmin) {
+      if (selParoquia === "all" && selEtapa === "all") setScope({ kind: "all" });
+      else if (selEtapa !== "all") setScope({ kind: "etapa", etapa: selEtapa, paroquia_id: selParoquia === "all" ? undefined : selParoquia });
+      else setScope({ kind: "paroquia", paroquia_id: selParoquia });
+    } else if (isCoordinator) {
+      // coordenador puro ou catequista+coord
+      const myParoquia = user?.paroquia_id ?? null;
+      if (selEtapa === "own") setScope({ kind: "own" });
+      else if (selEtapa === "paroquia") setScope(myParoquia ? { kind: "paroquia", paroquia_id: myParoquia } : { kind: "own" });
+      else if (selEtapa !== "all") setScope({ kind: "etapa", etapa: selEtapa, paroquia_id: myParoquia ?? undefined });
+      else setScope({ kind: "own" });
+    }
+  }, [selParoquia, selEtapa, isAdmin, isCoordinator, user?.paroquia_id]);
+
+  // Etapas disponíveis para o filtro de etapa
+  const etapasDisponiveis = useMemo(() => {
+    const paroqId = isAdmin ? (selParoquia === "all" ? null : selParoquia) : (user?.paroquia_id ?? null);
+    const cats = catequistas.filter((c) =>
+      c.active && c.role === "catequista" && c.etapa &&
+      (paroqId ? c.paroquia_id === paroqId : true)
+    );
+    return Array.from(new Set(cats.map((c) => c.etapa!))).sort();
+  }, [catequistas, selParoquia, isAdmin, user?.paroquia_id]);
+
+  const paroquiasAtivas = useMemo(() => paroquias.filter((p) => p.ativa), [paroquias]);
+
+  // ---------- query de dados ----------
   const { data: stats } = useQuery({
-    queryKey: ["dashboard-stats", user?.id, user?.etapa, selectedParoquia],
+    queryKey: ["dashboard-stats", user?.id, scope],
     queryFn: async () => {
-      // 1. Alunos
       let studentsQuery = db
         .from("students")
         .select("id, name, phone, parent_name", { count: "exact" })
         .eq("active", true);
 
-      if (!isAdmin && user?.id) {
+      if (scope.kind === "own") {
+        // Apenas alunos do próprio catequista
         studentsQuery = studentsQuery.or(
-          `catequista_id.eq.${user.id},and(catequista_id.is.null,class_name.eq.${user.etapa ?? "__nenhuma__"})`
+          `catequista_id.eq.${user!.id},and(catequista_id.is.null,class_name.eq.${user?.etapa ?? "__nenhuma__"})`
         );
-      } else if (isAdmin && selectedParoquia !== "all") {
-        studentsQuery = studentsQuery.eq("paroquia_id", selectedParoquia);
+      } else if (scope.kind === "paroquia") {
+        studentsQuery = studentsQuery.eq("paroquia_id", scope.paroquia_id);
+      } else if (scope.kind === "etapa") {
+        studentsQuery = studentsQuery.eq("class_name", scope.etapa);
+        if (scope.paroquia_id) studentsQuery = studentsQuery.eq("paroquia_id", scope.paroquia_id);
       }
+      // "all": sem filtro adicional
 
       const studentsRes = await studentsQuery;
       const totalStudents = studentsRes.count ?? 0;
-      const allStudents: { id: string; name: string; phone: string | null; parent_name: string | null }[] = studentsRes.data ?? [];
+      const allStudents: { id: string; name: string; phone: string | null; parent_name: string | null }[] =
+        studentsRes.data ?? [];
       const studentIds = allStudents.map((s) => s.id);
 
       if (studentIds.length === 0) {
         return {
           totalStudents: 0, present: 0, justified: 0, unjustified: 0,
-          chartData: [],
-          alertStudents: [], pendingList: [], studentsWithoutMass: [],
-          massEndOfMonthAlert: false, daysLeftInMonth: 0,
+          chartData: [], alertStudents: [], pendingList: [],
+          studentsWithoutMass: [], massEndOfMonthAlert: false, daysLeftInMonth: 0,
         };
       }
 
-      // 2. Presenças
       const records: { student_id: string; status: string; date: string }[] =
         (await db.from("attendance").select("student_id, status, date").in("student_id", studentIds)).data ?? [];
 
-      // 3. Justificativas pendentes
       const pendingList =
         (await db.from("pending_justifications").select("id, date, students(name)").in("student_id", studentIds)).data ?? [];
 
-      // 4. Missas
       const month = todayMonthStr();
       const lastDay = lastDayOfMonth(month);
       const massRes = await db.from("mass_attendance").select("student_id")
@@ -95,12 +146,10 @@ export default function Dashboard() {
       const daysLeftInMonth = getDaysInMonth(today) - today.getDate();
       const massEndOfMonthAlert = daysLeftInMonth <= 7 && studentsWithoutMass.length > 0;
 
-      // 5. Totais
       const present = records.filter((r) => r.status === "presente").length;
       const justified = records.filter((r) => r.status === "falta_justificada").length;
       const unjustified = records.filter((r) => r.status === "falta_nao_justificada").length;
 
-      // 6. Alunos com faltas não justificadas >= 2 (alerta mais cedo)
       const unjustifiedCounts: Record<string, number> = {};
       records.forEach((r) => {
         if (r.status === "falta_nao_justificada")
@@ -108,95 +157,127 @@ export default function Dashboard() {
       });
       const alertStudents = allStudents
         .filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 2)
-        .map((s) => ({
-          id: s.id,
-          name: s.name,
-          phone: s.phone ?? null,
-          parent_name: s.parent_name ?? null,
-          count: unjustifiedCounts[s.id],
-        }))
+        .map((s) => ({ id: s.id, name: s.name, phone: s.phone ?? null, parent_name: s.parent_name ?? null, count: unjustifiedCounts[s.id] }))
         .sort((a, b) => b.count - a.count);
 
-      // 7. Gráfico: 1 barra por dia com registro, ordenado cronologicamente
       const dayMap: Record<string, number> = {};
-      records.forEach((r) => {
-        if (r.status === "presente") {
-          dayMap[r.date] = (dayMap[r.date] || 0) + 1;
-        }
-      });
-      // Todos os dias que têm qualquer registro (não apenas presenças)
+      records.forEach((r) => { if (r.status === "presente") dayMap[r.date] = (dayMap[r.date] || 0) + 1; });
       const allDates = new Set(records.map((r) => r.date));
-      const chartData = Array.from(allDates)
-        .sort()
-        .map((date) => ({
-          name: format(parseISO(date), "dd/MM", { locale: ptBR }),
-          presenca: dayMap[date] ?? 0,
-        }));
+      const chartData = Array.from(allDates).sort().map((date) => ({
+        name: format(parseISO(date), "dd/MM", { locale: ptBR }),
+        presenca: dayMap[date] ?? 0,
+      }));
 
-      return {
-        totalStudents, present, justified, unjustified,
-        chartData,
-        alertStudents, pendingList, studentsWithoutMass,
-        massEndOfMonthAlert, daysLeftInMonth,
-      };
+      return { totalStudents, present, justified, unjustified, chartData, alertStudents, pendingList, studentsWithoutMass, massEndOfMonthAlert, daysLeftInMonth };
     },
     enabled: !!user,
   });
 
   const pendingCount = stats?.pendingList?.length ?? 0;
   const missasPendingCount = stats?.studentsWithoutMass?.length ?? 0;
-  const paroquiasAtivas = useMemo(() => paroquias.filter((p) => p.ativa), [paroquias]);
+
+  // ---------- label do escopo atual ----------
+  const scopeLabel = useMemo(() => {
+    if (scope.kind === "own") return user?.etapa ? `Etapa: ${user.etapa}` : "Minha etapa";
+    if (scope.kind === "all") return "Todas as paróquias";
+    if (scope.kind === "paroquia") return paroquias.find((p) => p.id === (scope as any).paroquia_id)?.nome ?? "Paróquia";
+    if (scope.kind === "etapa") return (scope as any).etapa;
+    return "";
+  }, [scope, paroquias, user?.etapa]);
+
+  // Catequista simples: sem filtros
+  const isCatequistaOnly = isCatequista && !isCoordinator;
 
   return (
     <div className="pb-24">
-      <PageHeader
-        title="Catequese Bom Pastor"
-        subtitle={isAdmin ? "Painel geral" : (user?.etapa ?? "Sem etapa atribuída")}
-      />
+      <PageHeader title="Catequese Bom Pastor" subtitle={scopeLabel} />
 
       <div className="px-4 mb-4">
         <p className="text-xl font-bold text-foreground">Bem-vindo, {user?.name}!</p>
-        <div className="flex items-center gap-1.5 mt-1">
-          {isAdmin ? (
-            <p className="text-sm text-muted-foreground">Você está vendo dados de{" "}
-              <span className="font-medium text-foreground">
-                {selectedParoquia === "all" ? "todas as paróquias" : (paroquias.find((p) => p.id === selectedParoquia)?.nome ?? "paróquia selecionada")}
-              </span>.
-            </p>
-          ) : user?.etapa ? (
-            <>
-              <BookOpen className="h-3.5 w-3.5 text-primary" />
-              <p className="text-sm text-muted-foreground">Etapa: <span className="font-semibold text-primary">{user.etapa}</span></p>
-            </>
-          ) : (
-            <p className="text-sm text-warning">Você ainda não tem uma etapa atribuída.</p>
-          )}
-        </div>
+        {!isCatequistaOnly && (
+          <p className="text-sm text-muted-foreground mt-0.5">
+            Visualizando: <span className="font-medium text-foreground">{scopeLabel}</span>
+          </p>
+        )}
+        {isCatequistaOnly && user?.etapa && (
+          <div className="flex items-center gap-1.5 mt-1">
+            <BookOpen className="h-3.5 w-3.5 text-primary" />
+            <p className="text-sm text-muted-foreground">Etapa: <span className="font-semibold text-primary">{user.etapa}</span></p>
+          </div>
+        )}
       </div>
 
-      {/* Filtro por paróquia — apenas admin */}
-      {isAdmin && paroquiasAtivas.length > 1 && (
-        <div className="px-4 mb-4 flex gap-2 overflow-x-auto pb-1">
-          <button onClick={() => setSelectedParoquia("all")}
-            className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5",
-              selectedParoquia === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-            )}
-          >
-            <Building2 className="h-3.5 w-3.5" /> Todas
-          </button>
-          {paroquiasAtivas.map((p) => (
-            <button key={p.id} onClick={() => setSelectedParoquia(p.id)}
-              className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                selectedParoquia === p.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+      {/* ===== FILTROS ===== */}
+      {!isCatequistaOnly && (
+        <div className="px-4 mb-4 space-y-2">
+
+          {/* Admin: filtro de paróquia */}
+          {isAdmin && paroquiasAtivas.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <button onClick={() => setSelParoquia("all")}
+                className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5",
+                  selParoquia === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                )}
+              >
+                <Building2 className="h-3.5 w-3.5" /> Todas
+              </button>
+              {paroquiasAtivas.map((p) => (
+                <button key={p.id} onClick={() => setSelParoquia(p.id)}
+                  className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+                    selParoquia === p.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                  )}
+                >{p.nome}</button>
+              ))}
+            </div>
+          )}
+
+          {/* Coordenador puro: chips de escopo */}
+          {isCoordinator && !isAdmin && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {/* Minha etapa (só se for também catequista) */}
+              {isCatequista && user?.etapa && (
+                <button onClick={() => setSelEtapa("own")}
+                  className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5",
+                    selEtapa === "own" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                  )}
+                >
+                  <BookOpen className="h-3.5 w-3.5" /> {user.etapa}
+                </button>
               )}
-            >
-              {p.nome}
-            </button>
-          ))}
+              {/* Paróquia toda */}
+              <button onClick={() => setSelEtapa("paroquia")}
+                className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5",
+                  selEtapa === "paroquia" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
+                )}
+              >
+                <Building2 className="h-3.5 w-3.5" /> Paróquia toda
+              </button>
+            </div>
+          )}
+
+          {/* Filtro de etapa (2º nível) — aparece para admin e coordenador */}
+          {etapasDisponiveis.length > 0 && (isAdmin || (isCoordinator && !isAdmin)) && (
+            <div>
+              <Select
+                value={selEtapa === "own" || selEtapa === "paroquia" ? "all" : selEtapa}
+                onValueChange={(v) => setSelEtapa(v)}
+              >
+                <SelectTrigger className="w-full h-9 text-sm">
+                  <SelectValue placeholder="Filtrar por etapa..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas as etapas</SelectItem>
+                  {etapasDisponiveis.map((e) => (
+                    <SelectItem key={e} value={e}>{e}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
         </div>
       )}
 
-      {/* Cards de estatísticas */}
+      {/* Cards */}
       <div className="grid grid-cols-2 gap-3 px-4">
         <StatCard label="Total de Alunos" value={stats?.totalStudents ?? 0} icon={Users} />
         <StatCard label="Presenças" value={stats?.present ?? 0} icon={CheckCircle} variant="success" />
@@ -204,7 +285,7 @@ export default function Dashboard() {
         <StatCard label="Faltas Não Justificadas" value={stats?.unjustified ?? 0} icon={XCircle} variant="destructive" />
       </div>
 
-      {/* ===== ALERTA DE FALTAS NÃO JUSTIFICADAS ===== */}
+      {/* Alertas de faltas */}
       {(stats?.alertStudents?.length ?? 0) > 0 && (
         <div className="mx-4 mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
           <div className="flex items-center gap-2 mb-1">
@@ -228,14 +309,10 @@ export default function Dashboard() {
                     </p>
                   </div>
                   {hasPhone ? (
-                    <a
-                      href={`https://wa.me/${wn}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
+                    <a href={`https://wa.me/${wn}`} target="_blank" rel="noopener noreferrer"
                       className="shrink-0 flex items-center gap-1.5 rounded-full bg-[#25D366] text-white text-xs font-semibold px-3 py-1.5 hover:bg-[#1ebe5d] transition-colors"
                     >
-                      <MessageCircle className="h-3.5 w-3.5" />
-                      WhatsApp
+                      <MessageCircle className="h-3.5 w-3.5" /> WhatsApp
                     </a>
                   ) : (
                     <span className="shrink-0 text-xs text-muted-foreground italic">Sem telefone</span>
@@ -247,7 +324,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* Aviso missas pendentes */}
+      {/* Missas pendentes */}
       {missasPendingCount > 0 && (
         <button onClick={() => navigate("/missas")} className="w-full text-left">
           <div className={`mx-4 mt-4 rounded-lg border p-4 ${stats?.massEndOfMonthAlert ? "border-destructive/40 bg-destructive/10" : "border-warning/40 bg-warning/10"}`}>
@@ -265,9 +342,7 @@ export default function Dashboard() {
             {stats!.studentsWithoutMass.length <= 5 && (
               <div className="flex flex-wrap gap-1.5 mt-2">
                 {stats!.studentsWithoutMass.map((s: any) => (
-                  <span key={s.id} className={`text-xs rounded-full px-2 py-0.5 font-medium ${stats?.massEndOfMonthAlert ? "bg-destructive/20 text-destructive" : "bg-warning/20 text-warning"}`}>
-                    {s.name}
-                  </span>
+                  <span key={s.id} className={`text-xs rounded-full px-2 py-0.5 font-medium ${stats?.massEndOfMonthAlert ? "bg-destructive/20 text-destructive" : "bg-warning/20 text-warning"}`}>{s.name}</span>
                 ))}
               </div>
             )}
@@ -293,7 +368,7 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* ===== GRÁFICO POR DIA ===== */}
+      {/* Gráfico por dia */}
       <div className="mt-6 px-4 pb-2">
         <h2 className="mb-1 text-lg font-semibold text-foreground">Frequência por Dia</h2>
         <p className="text-xs text-muted-foreground mb-3">
@@ -303,7 +378,6 @@ export default function Dashboard() {
         </p>
         {(stats?.chartData?.length ?? 0) > 0 ? (
           <div className="rounded-lg bg-card p-4 shadow-sm border border-border overflow-x-auto">
-            {/* Largura mínima dinâmica para muitos dias não ficarem espremidos */}
             <div style={{ minWidth: Math.max(300, (stats?.chartData?.length ?? 0) * 44) }}>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={stats?.chartData ?? []} margin={{ left: -16, right: 4 }}>
