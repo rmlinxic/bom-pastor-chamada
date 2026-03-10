@@ -19,6 +19,7 @@ import Justification from "./pages/Justification";
 import Missas from "./pages/Missas";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import CoordinadorView from "./pages/CoordinadorView";
 import BottomNav from "./components/BottomNav";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -31,6 +32,13 @@ function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isAdmin } = useAuth();
   if (!isAuthenticated) return <Navigate to="/login" replace />;
   if (!isAdmin) return <Navigate to="/" replace />;
+  return <>{children}</>;
+}
+
+function CoordinatorRoute({ children }: { children: React.ReactNode }) {
+  const { isAuthenticated, isCoordinator, isAdmin } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  if (!isCoordinator && !isAdmin) return <Navigate to="/" replace />;
   return <>{children}</>;
 }
 
@@ -67,57 +75,25 @@ function AppLayout() {
           element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
         />
 
-        {/* Páginas protegidas — qualquer catequista autenticado */}
+        {/* Páginas protegidas — qualquer usuário autenticado */}
+        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+        <Route path="/chamada" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
+        <Route path="/alunos" element={<ProtectedRoute><Students /></ProtectedRoute>} />
+        <Route path="/relatorios" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+        <Route path="/missas" element={<ProtectedRoute><Missas /></ProtectedRoute>} />
+
+        {/* Página do coordenador paroquial */}
         <Route
-          path="/"
+          path="/coordenador"
           element={
-            <ProtectedRoute>
-              <Dashboard />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/chamada"
-          element={
-            <ProtectedRoute>
-              <Attendance />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/alunos"
-          element={
-            <ProtectedRoute>
-              <Students />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/relatorios"
-          element={
-            <ProtectedRoute>
-              <Reports />
-            </ProtectedRoute>
-          }
-        />
-        <Route
-          path="/missas"
-          element={
-            <ProtectedRoute>
-              <Missas />
-            </ProtectedRoute>
+            <CoordinatorRoute>
+              <CoordinadorView />
+            </CoordinatorRoute>
           }
         />
 
         {/* Página exclusiva do administrador */}
-        <Route
-          path="/admin"
-          element={
-            <AdminRoute>
-              <Admin />
-            </AdminRoute>
-          }
-        />
+        <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
 
         <Route path="*" element={<NotFound />} />
       </Routes>
