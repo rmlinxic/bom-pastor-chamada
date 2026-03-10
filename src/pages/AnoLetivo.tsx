@@ -1,407 +1,322 @@
-/**
- * Página de Encerramento / Novo Ano Catequético
- * Acessível apenas por coordenadores paroquiais.
- *
- * Fluxo:
- *  1. Coordenador clica em "Novo Ano Catequético" no CoordinadorView
- *  2. Abre essa página (rota /ano-letivo)
- *  3. Passo 1 — Confirmar encerramento do ano atual
- *  4. Passo 2 — Atualizar etapa de cada catequista
- *  5. Passo 3 — Confirmar; o sistema calcula automaticamente quais alunos
- *               são aptos e quais vão para promoção manual no dashboard.
- */
 import { useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import {
-  GraduationCap, ChevronRight, ChevronLeft, Check,
-  AlertTriangle, User, ArrowRight, Loader2,
-} from "lucide-react";
+import { GraduationCap, AlertTriangle, CheckCircle2, ArrowRight, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import {
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
+} from "@/components/ui/select";
 import PageHeader from "@/components/PageHeader";
-import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
-import { cn } from "@/lib/utils";
+import { supabase } from "@/integrations/supabase/client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
+import { ETAPAS, proximaEtapa } from "@/lib/etapas";
 
 const db = supabase as any;
 
-// Etapas fixas do programa catequético (ajuste conforme a paróquia)
-const ETAPAS = [
-  "Pré-Eucaristia",
-  "1ª Eucaristia",
-  "Pós-Eucaristia",
-  "Pré-Crisma I",
-  "Pré-Crisma II",
-  "Crisma",
-];
-
-const MAX_FALTAS = 3; // faltas NJ + meses sem missa
-
-type Step = 1 | 2 | 3 | 4;
-
-interface CatequistaRow {
-  id: string;
-  name: string;
-  etapa: string | null;
-  novaEtapa: string;
-}
+type Catequista = { id: string; name: string; etapa: string | null; novaEtapa: string };
 
 export default function AnoLetivo() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { toast } = useToast();
-
   const paroquiaId = user?.paroquia_id;
   const anoAtual = new Date().getFullYear();
-  const [step, setStep] = useState<Step>(1);
-  const [confirmText, setConfirmText] = useState("");
-  const [catequistasState, setCatequistasState] = useState<CatequistaRow[]>([]);
-  const [processando, setProcessando] = useState(false);
 
-  // ---------- busca catequistas da paróquia ----------
-  const { data: catequistas = [] } = useQuery({
+  const [step, setStep] = useState<1 | 2 | 3>(1);
+  const [confirmText, setConfirmText] = useState("");
+  const [catequistas, setCatequistas] = useState<Catequista[]>([]);
+  const [processing, setProcessing] = useState(false);
+
+  // Busca catequistas ativos da paróquia
+  const { data: catRaw = [], isLoading: loadingCat } = useQuery({
     queryKey: ["catequistas-paroquia", paroquiaId],
     queryFn: async () => {
       const { data } = await db
         .from("catequistas")
-        .select("id, name, etapa, role")
+        .select("id, name, etapa")
         .eq("paroquia_id", paroquiaId)
         .eq("active", true)
-        .in("role", ["catequista"]);
-      return (data ?? []) as { id: string; name: string; etapa: string | null; role: string }[];
+        .in("role", ["catequista", "coordenador_catequista"]);
+      return (data ?? []) as { id: string; name: string; etapa: string | null }[];
     },
-    enabled: !!paroquiaId && step === 2,
-  });
-
-  // Quando carrega catequistas, inicializa estado
-  useMemo(() => {
-    if (catequistas.length > 0 && catequistasState.length === 0) {
-      setCatequistasState(
-        catequistas.map((c) => ({
-          id: c.id,
-          name: c.name,
-          etapa: c.etapa,
-          novaEtapa: c.etapa ?? "",
+    enabled: !!paroquiaId,
+    onSuccess: (data) => {
+      setCatequistas(
+        data.map((c) => ({
+          ...c,
+          novaEtapa: c.etapa ?? ETAPAS[0],
         }))
       );
-    }
-  }, [catequistas]);
+    },
+  });
 
-  // ---------- processamento principal ----------
-  const processarAno = async () => {
-    if (!paroquiaId) return;
-    setProcessando(true);
-    try {
+  const allEtapasSet = useMemo(
+    () => catequistas.every((c) => !!c.novaEtapa),
+    [catequistas]
+  );
+
+  const processarAno = useMutation({
+    mutationFn: async () => {
+      setProcessing(true);
+
       // 1. Busca todos os alunos ativos da paróquia
-      const { data: alunos } = await db
+      const { data: students } = await db
         .from("students")
-        .select("id, name, class_name, catequista_id")
+        .select("id, class_name, catequista_id")
         .eq("paroquia_id", paroquiaId)
         .eq("active", true);
 
-      if (!alunos?.length) { toast({ title: "Nenhum aluno encontrado.", variant: "destructive" }); return; }
+      const allStudents = (students ?? []) as { id: string; class_name: string; catequista_id: string | null }[];
 
-      const alunoIds = alunos.map((a: any) => a.id);
+      // 2. Para cada aluno, calcula score de faltas a partir do 1º registro
+      const aptos: { id: string; novaEtapa: string }[] = [];
+      const pendentes: {
+        student_id: string;
+        faltas_nao_justificadas: number;
+        meses_sem_missa: number;
+        score_faltas: number;
+      }[] = [];
 
-      // 2. Busca presenças (apenas do ano atual)
-      const { data: presencas } = await db
-        .from("attendance")
-        .select("student_id, status, date")
-        .in("student_id", alunoIds)
-        .gte("date", `${anoAtual}-01-01`);
+      for (const student of allStudents) {
+        // Primeiro registro de presença
+        const { data: firstRec } = await db
+          .from("attendance")
+          .select("date")
+          .eq("student_id", student.id)
+          .order("date", { ascending: true })
+          .limit(1)
+          .maybeSingle();
 
-      // 3. Busca missas do ano
-      const { data: missas } = await db
-        .from("mass_attendance")
-        .select("student_id, date")
-        .in("student_id", alunoIds)
-        .gte("date", `${anoAtual}-01-01`);
+        const since = firstRec?.date ?? null;
 
-      // 4. Calcula score de faltas por aluno
-      // Contagem começa no primeiro registro de presença do catequista
-      const primeiroRegistro: Record<string, string> = {};
-      const faltasNJ: Record<string, number> = {};
-      const mesesComMissa: Record<string, Set<string>> = {};
-
-      (presencas ?? []).forEach((p: any) => {
-        if (!primeiroRegistro[p.student_id] || p.date < primeiroRegistro[p.student_id])
-          primeiroRegistro[p.student_id] = p.date;
-        if (p.status === "falta_nao_justificada")
-          faltasNJ[p.student_id] = (faltasNJ[p.student_id] || 0) + 1;
-      });
-
-      (missas ?? []).forEach((m: any) => {
-        if (!mesesComMissa[m.student_id]) mesesComMissa[m.student_id] = new Set();
-        mesesComMissa[m.student_id].add(m.date.slice(0, 7));
-      });
-
-      // Meses do ano catequético (primeiro registro → hoje)
-      const hoje = new Date().toISOString().slice(0, 7);
-      const mesesLetivos = (studentId: string): string[] => {
-        const inicio = (primeiroRegistro[studentId] ?? `${anoAtual}-01-01`).slice(0, 7);
-        const result: string[] = [];
-        let cur = inicio;
-        while (cur <= hoje) {
-          result.push(cur);
-          const [y, m] = cur.split("-").map(Number);
-          cur = new Date(y, m, 1).toISOString().slice(0, 7);
+        // Faltas não justificadas
+        let faltasNJ = 0;
+        if (since) {
+          const { count } = await db
+            .from("attendance")
+            .select("id", { count: "exact" })
+            .eq("student_id", student.id)
+            .eq("status", "falta_nao_justificada")
+            .gte("date", since);
+          faltasNJ = count ?? 0;
         }
-        return result;
-      };
 
-      const scoreAluno = (studentId: string) => {
-        const fnj = faltasNJ[studentId] ?? 0;
-        const meses = mesesLetivos(studentId);
-        const mesesSemMissa = meses.filter((m) => !(mesesComMissa[studentId] ?? new Set()).has(m)).length;
-        return { fnj, mesesSemMissa, total: fnj + mesesSemMissa };
-      };
+        // Meses sem missa (desde o 1º registro de presença)
+        let mesesSemMissa = 0;
+        if (since) {
+          const sinceDate = new Date(since);
+          const hoje = new Date();
+          const meses: string[] = [];
+          const cur = new Date(sinceDate.getFullYear(), sinceDate.getMonth(), 1);
+          while (cur <= hoje) {
+            meses.push(cur.toISOString().slice(0, 7));
+            cur.setMonth(cur.getMonth() + 1);
+          }
+          for (const mes of meses) {
+            const [y, m] = mes.split("-").map(Number);
+            const start = `${mes}-01`;
+            const end = new Date(y, m, 0).toISOString().slice(0, 10);
+            const { count } = await db
+              .from("mass_attendance")
+              .select("id", { count: "exact" })
+              .eq("student_id", student.id)
+              .gte("date", start)
+              .lte("date", end);
+            if ((count ?? 0) === 0) mesesSemMissa++;
+          }
+        }
 
-      // 5. Separa: aptos (total <= MAX_FALTAS) e pendentes
-      const aptos: any[] = [];
-      const pendentes: any[] = [];
-      alunos.forEach((a: any) => {
-        const { fnj, mesesSemMissa, total } = scoreAluno(a.id);
-        if (total <= MAX_FALTAS) aptos.push(a);
-        else pendentes.push({ ...a, fnj, mesesSemMissa, total });
-      });
+        const score = faltasNJ + mesesSemMissa;
+        const cataquistaNovaEtapa = catequistas.find((c) => c.id === student.catequista_id)?.novaEtapa ?? null;
+        const novaEtapa = cataquistaNovaEtapa ?? proximaEtapa(student.class_name);
 
-      // 6. Mapa de catequista_id → nova etapa
-      const novaEtapaMap: Record<string, string> = {};
-      catequistasState.forEach((c) => { novaEtapaMap[c.id] = c.novaEtapa; });
-
-      // 7. Atualiza catequistas com nova etapa
-      for (const c of catequistasState) {
-        if (c.novaEtapa !== c.etapa) {
-          await db.from("catequistas").update({ etapa: c.novaEtapa }).eq("id", c.id);
+        if (score <= 3) {
+          aptos.push({ id: student.id, novaEtapa });
+        } else {
+          pendentes.push({ student_id: student.id, faltas_nao_justificadas: faltasNJ, meses_sem_missa: mesesSemMissa, score_faltas: score });
         }
       }
 
-      // 8. Atualiza alunos aptos: muda class_name para nova etapa do catequista
-      for (const a of aptos) {
-        const nova = novaEtapaMap[a.catequista_id];
-        if (nova) {
-          await db.from("students").update({ class_name: nova, ano_catequetico: anoAtual }).eq("id", a.id);
-        }
+      // 3. Atualiza alunos aptos
+      for (const { id, novaEtapa } of aptos) {
+        await db.from("students").update({ class_name: novaEtapa, ano_catequetico: anoAtual }).eq("id", id);
       }
 
-      // 9. Insere pendências de promoção manual
+      // 4. Insere pendentes
       if (pendentes.length > 0) {
-        const rows = pendentes.map((a: any) => ({
-          student_id: a.id,
-          paroquia_id: paroquiaId,
-          ano_catequetico: anoAtual,
-          faltas_nao_justificadas: a.fnj,
-          meses_sem_missa: a.mesesSemMissa,
-          score_faltas: a.total,
-        }));
-        await db.from("promocoes_pendentes").upsert(rows, { onConflict: "student_id,ano_catequetico", ignoreDuplicates: true });
+        await db.from("promocoes_pendentes").upsert(
+          pendentes.map((p) => ({ ...p, paroquia_id: paroquiaId, ano_catequetico: anoAtual })),
+          { onConflict: "student_id,ano_catequetico" }
+        );
       }
 
-      // 10. Registra ano catequético
+      // 5. Atualiza etapas dos catequistas
+      for (const cat of catequistas) {
+        await db.from("catequistas").update({ etapa: cat.novaEtapa }).eq("id", cat.id);
+        // Atualiza class_name dos alunos do catequista que ainda não foram atualizados
+        // (os aptos já foram; apenas garante consistência)
+      }
+
+      // 6. Registra ano
       await db.from("anos_catequeticos").upsert(
-        { paroquia_id: paroquiaId, ano: anoAtual, ativo: true },
+        { paroquia_id: paroquiaId, ano: anoAtual, encerrado_em: new Date().toISOString(), ativo: false },
         { onConflict: "paroquia_id,ano" }
       );
 
-      // 11. Log
+      // 7. Log
       await db.from("activity_log").insert({
         catequista_id: user!.id,
-        acao: "encerramento_ano_catequetico",
+        acao: "encerramento_ano",
         detalhes: { ano: anoAtual, aptos: aptos.length, pendentes: pendentes.length, paroquia_id: paroquiaId },
       });
 
-      qc.invalidateQueries();
-      toast({ title: `Ano ${anoAtual} processado!`, description: `${aptos.length} aluno(s) promovidos automaticamente. ${pendentes.length} aguardam decisão manual.` });
-      setStep(4);
-    } catch (e: any) {
-      toast({ title: "Erro ao processar", description: e.message, variant: "destructive" });
-    } finally {
-      setProcessando(false);
-    }
-  };
+      return { aptos: aptos.length, pendentes: pendentes.length };
+    },
+    onSuccess: ({ aptos, pendentes }) => {
+      setProcessing(false);
+      qc.invalidateQueries({ queryKey: ["students"] });
+      qc.invalidateQueries({ queryKey: ["promocoes-pendentes"] });
+      toast({
+        title: "Ano encerrado com sucesso!",
+        description: `${aptos} aluno(s) promovido(s) automaticamente. ${pendentes} aguardando decisão manual.`,
+      });
+      navigate("/coordenador");
+    },
+    onError: () => {
+      setProcessing(false);
+      toast({ title: "Erro ao processar o ano. Tente novamente.", variant: "destructive" });
+    },
+  });
 
-  // ---------- render ----------
   return (
-    <div className="pb-24 max-w-lg mx-auto">
-      <PageHeader
-        title="Novo Ano Catequético"
-        subtitle={`Paróquia ${user?.paroquia_nome ?? ""} — ${anoAtual}`}
-      />
+    <div className="pb-24">
+      <PageHeader title="Encerramento de Ano" subtitle={`Ano Catequético ${anoAtual}`} />
 
-      {/* Indicador de passos */}
-      <div className="flex items-center justify-center gap-2 px-4 mb-6">
-        {[1, 2, 3].map((s) => (
-          <div key={s} className="flex items-center gap-2">
-            <div className={cn(
-              "w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold border-2 transition-colors",
-              step > s ? "bg-success border-success text-white"
-              : step === s ? "bg-primary border-primary text-white"
-              : "bg-muted border-border text-muted-foreground"
-            )}>
-              {step > s ? <Check className="h-4 w-4" /> : s}
+      <div className="px-4 space-y-4">
+        {/* Indicador de passos */}
+        <div className="flex items-center gap-2 justify-center py-2">
+          {([1, 2, 3] as const).map((s) => (
+            <div key={s} className={`flex items-center gap-1`}>
+              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
+                step === s ? "border-primary bg-primary text-white" :
+                step > s ? "border-success bg-success/10 text-success" : "border-border text-muted-foreground"
+              }`}>{step > s ? "✓" : s}</div>
+              {s < 3 && <div className={`w-8 h-0.5 ${step > s ? "bg-success" : "bg-border"}`} />}
             </div>
-            {s < 3 && <ArrowRight className="h-4 w-4 text-muted-foreground" />}
-          </div>
-        ))}
-      </div>
+          ))}
+        </div>
 
-      {/* ===== PASSO 1: confirmar encerramento ===== */}
-      {step === 1 && (
-        <div className="px-4 space-y-4">
-          <div className="rounded-lg border border-destructive/30 bg-destructive/10 p-4">
-            <div className="flex items-center gap-2 mb-2">
+        {/* PASSO 1 — Confirmação */}
+        {step === 1 && (
+          <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-5 space-y-4">
+            <div className="flex items-center gap-2">
               <AlertTriangle className="h-5 w-5 text-destructive" />
-              <span className="font-bold text-destructive">Ação irreversível</span>
+              <span className="font-bold text-destructive">Ação Irreversível</span>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Ao prosseguir, o sistema irá:
-            </p>
-            <ul className="mt-2 space-y-1 text-sm text-muted-foreground list-disc list-inside">
-              <li>Calcular a frequência de cada aluno no ano {anoAtual}</li>
-              <li>Promover automaticamente os alunos aptos ({'≤'}{MAX_FALTAS} faltas + meses sem missa)</li>
-              <li>Criar uma fila de decisão manual para os demais</li>
-              <li>Permitir que você atualize a etapa de cada catequista</li>
+            <ul className="text-sm text-muted-foreground space-y-1 list-disc pl-5">
+              <li>Alunos aptos serão promovidos automaticamente</li>
+              <li>Alunos com mais de 3 faltas entrarão em fila de decisão manual</li>
+              <li>As etapas de todos os catequistas serão atualizadas</li>
+              <li>O processo não pode ser desfeito</li>
             </ul>
-          </div>
-
-          <div className="space-y-2">
-            <p className="text-sm font-medium">Digite <strong>CONFIRMAR</strong> para continuar:</p>
-            <Input
-              value={confirmText}
-              onChange={(e) => setConfirmText(e.target.value.toUpperCase())}
-              placeholder="CONFIRMAR"
-              className="font-mono"
-            />
-          </div>
-
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1" onClick={() => navigate("/coordenador")}>
-              <ChevronLeft className="h-4 w-4 mr-1" /> Cancelar
-            </Button>
-            <Button
-              className="flex-1"
-              disabled={confirmText !== "CONFIRMAR"}
-              onClick={() => { setStep(2); setCatequistasState([]); }}
-            >
-              Continuar <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ===== PASSO 2: atualizar etapas dos catequistas ===== */}
-      {step === 2 && (
-        <div className="px-4 space-y-4">
-          <p className="text-sm text-muted-foreground">
-            Defina a <strong>nova etapa</strong> de cada catequista para o próximo ano. Os alunos aptos serão vinculados automaticamente.
-          </p>
-
-          {catequistasState.length === 0 && (
-            <div className="flex items-center justify-center gap-2 py-8 text-muted-foreground">
-              <Loader2 className="h-5 w-5 animate-spin" /> Carregando catequistas...
+            <div className="space-y-2">
+              <p className="text-sm font-medium">Digite <strong>CONFIRMAR</strong> para prosseguir:</p>
+              <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)}
+                placeholder="CONFIRMAR" className="font-mono" />
             </div>
-          )}
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => navigate("/coordenador")}>Cancelar</Button>
+              <Button className="flex-1" disabled={confirmText !== "CONFIRMAR"}
+                onClick={() => setStep(2)}>
+                Prosseguir <ArrowRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
 
-          <div className="space-y-3">
-            {catequistasState.map((c, i) => (
-              <div key={c.id} className="rounded-lg border border-border bg-card p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <User className="h-4 w-4 text-primary" />
-                  <span className="font-semibold">{c.name}</span>
-                  <span className="text-xs text-muted-foreground ml-auto">
-                    Atual: <span className="font-medium text-foreground">{c.etapa ?? "—"}</span>
-                  </span>
+        {/* PASSO 2 — Etapas dos catequistas */}
+        {step === 2 && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <GraduationCap className="h-5 w-5 text-primary" />
+                <span className="font-bold">Nova etapa de cada catequista</span>
+              </div>
+              {loadingCat ? (
+                <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
+              ) : catequistas.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-4">Nenhum catequista ativo encontrado.</p>
+              ) : (
+                <div className="space-y-3">
+                  {catequistas.map((c) => (
+                    <div key={c.id} className="flex items-center gap-3">
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{c.name}</p>
+                        <p className="text-xs text-muted-foreground">{c.etapa ?? "sem etapa"}</p>
+                      </div>
+                      <Select value={c.novaEtapa} onValueChange={(v) =>
+                        setCatequistas((prev) => prev.map((x) => x.id === c.id ? { ...x, novaEtapa: v } : x))
+                      }>
+                        <SelectTrigger className="w-44">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {ETAPAS.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  ))}
                 </div>
-                <div className="flex items-center gap-2">
-                  <ArrowRight className="h-4 w-4 text-muted-foreground shrink-0" />
-                  <select
-                    value={c.novaEtapa}
-                    onChange={(e) => setCatequistasState((prev) =>
-                      prev.map((x, j) => j === i ? { ...x, novaEtapa: e.target.value } : x)
+              )}
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setStep(1)}>Voltar</Button>
+              <Button className="flex-1" disabled={!allEtapasSet || catequistas.length === 0}
+                onClick={() => setStep(3)}>
+                Revisar <ArrowRight className="h-4 w-4 ml-1" />
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {/* PASSO 3 — Revisão e processamento */}
+        {step === 3 && (
+          <div className="space-y-4">
+            <div className="rounded-lg border border-border bg-card p-4">
+              <div className="flex items-center gap-2 mb-4">
+                <CheckCircle2 className="h-5 w-5 text-success" />
+                <span className="font-bold">Confirmar mudanças de etapa</span>
+              </div>
+              <div className="space-y-2">
+                {catequistas.map((c) => (
+                  <div key={c.id} className="flex items-center gap-2 text-sm">
+                    <span className="flex-1 font-medium">{c.name}</span>
+                    <span className="text-muted-foreground">{c.etapa ?? "—"}</span>
+                    {c.novaEtapa !== c.etapa && (
+                      <>
+                        <ArrowRight className="h-3.5 w-3.5 text-primary" />
+                        <span className="text-primary font-semibold">{c.novaEtapa}</span>
+                      </>
                     )}
-                    className="flex-1 rounded-md border border-border bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
-                  >
-                    <option value="">— Selecione a nova etapa —</option>
-                    {ETAPAS.map((e) => <option key={e} value={e}>{e}</option>)}
-                    <option value={c.novaEtapa ?? ""}>{c.novaEtapa && !ETAPAS.includes(c.novaEtapa) ? c.novaEtapa : ""}</option>
-                  </select>
-                </div>
+                    {c.novaEtapa === c.etapa && (
+                      <span className="text-muted-foreground text-xs">(sem mudança)</span>
+                    )}
+                  </div>
+                ))}
               </div>
-            ))}
-          </div>
-
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1" onClick={() => setStep(1)}>
-              <ChevronLeft className="h-4 w-4 mr-1" /> Voltar
-            </Button>
-            <Button
-              className="flex-1"
-              disabled={catequistasState.some((c) => !c.novaEtapa)}
-              onClick={() => setStep(3)}
-            >
-              Revisar <ChevronRight className="h-4 w-4 ml-1" />
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ===== PASSO 3: revisão e confirmação final ===== */}
-      {step === 3 && (
-        <div className="px-4 space-y-4">
-          <p className="text-sm text-muted-foreground">Revise as mudanças antes de confirmar:</p>
-
-          <div className="rounded-lg border border-border bg-card p-4 space-y-2">
-            <p className="text-xs font-bold uppercase text-muted-foreground tracking-wide mb-1">Etapas dos catequistas</p>
-            {catequistasState.map((c) => (
-              <div key={c.id} className="flex items-center gap-2 text-sm">
-                <span className="flex-1 font-medium">{c.name}</span>
-                <span className="text-muted-foreground text-xs">{c.etapa ?? "—"}</span>
-                <ArrowRight className="h-3.5 w-3.5 text-muted-foreground" />
-                <span className={cn("text-xs font-bold", c.novaEtapa !== c.etapa ? "text-primary" : "text-muted-foreground")}>
-                  {c.novaEtapa}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          <div className="rounded-lg border border-warning/30 bg-warning/10 p-3">
-            <p className="text-xs text-warning">
-              <strong>Regra de promoção automática:</strong> alunos com até {MAX_FALTAS} faltas não justificadas
-              + meses sem missa são promovidos automaticamente. Os demais entram na fila de decisão manual no seu dashboard.
-            </p>
-          </div>
-
-          <div className="flex gap-3">
-            <Button variant="outline" className="flex-1" onClick={() => setStep(2)} disabled={processando}>
-              <ChevronLeft className="h-4 w-4 mr-1" /> Voltar
-            </Button>
-            <Button className="flex-1" onClick={processarAno} disabled={processando}>
-              {processando ? <><Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> Processando...</> : <><GraduationCap className="h-4 w-4 mr-1.5" /> Confirmar</>}
-            </Button>
-          </div>
-        </div>
-      )}
-
-      {/* ===== PASSO 4: sucesso ===== */}
-      {step === 4 && (
-        <div className="px-4 space-y-4 text-center">
-          <div className="flex justify-center">
-            <div className="w-16 h-16 rounded-full bg-success/20 flex items-center justify-center">
-              <GraduationCap className="h-8 w-8 text-success" />
+            </div>
+            <div className="flex gap-3">
+              <Button variant="outline" className="flex-1" onClick={() => setStep(2)} disabled={processing}>Voltar</Button>
+              <Button className="flex-1" onClick={() => processarAno.mutate()} disabled={processing}>
+                {processing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Processando...</> : "Confirmar e Encerrar Ano"}
+              </Button>
             </div>
           </div>
-          <p className="text-lg font-bold text-foreground">Ano processado com sucesso!</p>
-          <p className="text-sm text-muted-foreground">
-            Alunos aptos foram promovidos. Verifique o seu dashboard para as decisões manuais pendentes.
-          </p>
-          <Button className="w-full" onClick={() => navigate("/coordenador")}>
-            Voltar ao painel
-          </Button>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
