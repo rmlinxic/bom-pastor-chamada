@@ -20,38 +20,70 @@ export function useAttendanceByDate(date: string) {
   });
 }
 
+/**
+ * Busca os IDs de todos os alunos ativos de uma paróquia.
+ * Usado para filtrar attendance/justifications sem depender do join.
+ */
+async function getParoquiaStudentIds(paroquiaId: string): Promise<string[]> {
+  const { data } = await db
+    .from("students")
+    .select("id")
+    .eq("paroquia_id", paroquiaId)
+    .eq("active", true);
+  return (data ?? []).map((s: any) => s.id);
+}
+
 export function useAllAttendance() {
   const { user, isAdmin, isCoordinator } = useAuth();
 
   return useQuery({
     queryKey: ["attendance-all", user?.id, user?.etapa, user?.paroquia_id, isCoordinator],
     queryFn: async () => {
-      const { data, error } = await supabase
-        .from("attendance")
-        .select("*, students(name, class_name, paroquia_id)")
-        .order("date", { ascending: false });
-      if (error) throw error;
+      // Admin: busca tudo direto
+      if (isAdmin) {
+        const { data, error } = await supabase
+          .from("attendance")
+          .select("*, students(name, class_name, paroquia_id)")
+          .order("date", { ascending: false });
+        if (error) throw error;
+        return data ?? [];
+      }
 
-      const records = data ?? [];
-
-      // Admin: vê tudo
-      if (isAdmin) return records;
-
-      // Coordenador (puro ou catequista+coordenador): vê toda a paróquia
+      // Coordenador: busca pelos IDs dos alunos da paróquia (não depende do paroquia_id no join)
       if (isCoordinator && user?.paroquia_id) {
-        return records.filter(
-          (a: any) => a.students?.paroquia_id === user.paroquia_id
-        );
+        const studentIds = await getParoquiaStudentIds(user.paroquia_id);
+        if (studentIds.length === 0) return [];
+        const { data, error } = await supabase
+          .from("attendance")
+          .select("*, students(name, class_name, paroquia_id)")
+          .in("student_id", studentIds)
+          .order("date", { ascending: false });
+        if (error) throw error;
+        return data ?? [];
       }
 
       // Catequista: apenas sua etapa
-      if (user?.etapa) {
-        return records.filter(
-          (a: any) => a.students?.class_name === user.etapa
-        );
+      if (user?.id) {
+        // Busca os IDs dos seus alunos
+        const { data: myStudents } = await db
+          .from("students")
+          .select("id")
+          .eq("active", true)
+          .or(`catequista_id.eq.${user.id},and(catequista_id.is.null,class_name.eq.${
+            user.etapa ?? "__nenhuma__"
+          })`);
+        const ids = (myStudents ?? []).map((s: any) => s.id);
+        if (ids.length === 0) return [];
+        const { data, error } = await supabase
+          .from("attendance")
+          .select("*, students(name, class_name, paroquia_id)")
+          .in("student_id", ids)
+          .order("date", { ascending: false });
+        if (error) throw error;
+        return data ?? [];
       }
 
-      return records;
+      return [];
     },
     enabled: !!user,
   });
@@ -63,38 +95,50 @@ export function usePendingJustifications() {
   return useQuery({
     queryKey: ["pending-justifications", user?.id, user?.etapa, user?.paroquia_id, isCoordinator],
     queryFn: async () => {
-      const { data, error } = await db
-        .from("pending_justifications")
-        .select("*, students(name, class_name, paroquia_id)")
-        .order("date", { ascending: true });
-      if (error) throw error;
+      // Admin: tudo
+      if (isAdmin) {
+        const { data, error } = await db
+          .from("pending_justifications")
+          .select("*, students(name, class_name, paroquia_id)")
+          .order("date", { ascending: true });
+        if (error) throw error;
+        return (data ?? []) as any[];
+      }
 
-      const records = (data ?? []) as {
-        id: string;
-        student_id: string;
-        date: string;
-        reason: string;
-        created_at: string;
-        students: { name: string; class_name: string; paroquia_id: string | null } | null;
-      }[];
-
-      if (isAdmin) return records;
-
-      // Coordenador: toda a paróquia
+      // Coordenador: pelos IDs dos alunos da paróquia
       if (isCoordinator && user?.paroquia_id) {
-        return records.filter(
-          (p) => p.students?.paroquia_id === user.paroquia_id
-        );
+        const studentIds = await getParoquiaStudentIds(user.paroquia_id);
+        if (studentIds.length === 0) return [];
+        const { data, error } = await db
+          .from("pending_justifications")
+          .select("*, students(name, class_name, paroquia_id)")
+          .in("student_id", studentIds)
+          .order("date", { ascending: true });
+        if (error) throw error;
+        return (data ?? []) as any[];
       }
 
-      // Catequista: apenas sua etapa
-      if (user?.etapa) {
-        return records.filter(
-          (p) => p.students?.class_name === user.etapa
-        );
+      // Catequista: pelos IDs dos seus alunos
+      if (user?.id) {
+        const { data: myStudents } = await db
+          .from("students")
+          .select("id")
+          .eq("active", true)
+          .or(`catequista_id.eq.${user.id},and(catequista_id.is.null,class_name.eq.${
+            user.etapa ?? "__nenhuma__"
+          })`);
+        const ids = (myStudents ?? []).map((s: any) => s.id);
+        if (ids.length === 0) return [];
+        const { data, error } = await db
+          .from("pending_justifications")
+          .select("*, students(name, class_name, paroquia_id)")
+          .in("student_id", ids)
+          .order("date", { ascending: true });
+        if (error) throw error;
+        return (data ?? []) as any[];
       }
 
-      return records;
+      return [];
     },
     enabled: !!user,
   });
