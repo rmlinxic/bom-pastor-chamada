@@ -8,6 +8,7 @@ import {
 import { useAddStudent, useUpdateStudent } from "@/hooks/useStudents";
 import { useAuth } from "@/contexts/AuthContext";
 import { ETAPAS, nomeTurma, parseTurma } from "@/lib/etapas";
+import { sanitizeText, sanitizePhone } from "@/lib/security";
 
 interface StudentFormProps {
   student?: {
@@ -56,7 +57,12 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
-    const payload = { ...form, class_name: classNameFinal };
+    const payload = {
+      name: sanitizeText(form.name, 200),
+      parent_name: sanitizeText(form.parent_name, 200),
+      phone: sanitizePhone(form.phone),
+      class_name: classNameFinal,
+    };
     if (isEditing) {
       updateMutation.mutate({ id: student!.id, ...payload }, { onSuccess: onClose });
     } else {
@@ -77,9 +83,14 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
             <label className="text-sm font-medium">Nome do aluno *</label>
-            <Input value={form.name}
+            <Input
+              value={form.name}
               onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
-              placeholder="Nome completo" required />
+              onBlur={(e) => setForm((p) => ({ ...p, name: sanitizeText(e.target.value, 200) }))}
+              placeholder="Nome completo"
+              maxLength={200}
+              required
+            />
           </div>
 
           {/* Etapa */}
@@ -97,7 +108,7 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
             )}
           </div>
 
-          {/* Turma (subturma) — apenas admin/coordenador */}
+          {/* Turma */}
           {canChooseEtapa && (
             <div className="space-y-1">
               <label className="text-sm font-medium">
@@ -118,15 +129,23 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
 
           <div className="space-y-1">
             <label className="text-sm font-medium">Nome do responsável</label>
-            <Input value={form.parent_name}
+            <Input
+              value={form.parent_name}
               onChange={(e) => setForm((p) => ({ ...p, parent_name: e.target.value }))}
-              placeholder="Nome do pai/mãe/responsável" />
+              onBlur={(e) => setForm((p) => ({ ...p, parent_name: sanitizeText(e.target.value, 200) }))}
+              placeholder="Nome do pai/mãe/responsável"
+              maxLength={200}
+            />
           </div>
           <div className="space-y-1">
             <label className="text-sm font-medium">Telefone / WhatsApp</label>
-            <Input value={form.phone}
-              onChange={(e) => setForm((p) => ({ ...p, phone: e.target.value }))}
-              placeholder="(41) 99999-9999" type="tel" />
+            <Input
+              value={form.phone}
+              onChange={(e) => setForm((p) => ({ ...p, phone: sanitizePhone(e.target.value) }))}
+              placeholder="(41) 99999-9999"
+              type="tel"
+              maxLength={20}
+            />
           </div>
           <div className="flex gap-3 pt-2">
             <Button type="button" variant="outline" className="flex-1" onClick={onClose}>Cancelar</Button>

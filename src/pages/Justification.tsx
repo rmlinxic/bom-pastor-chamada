@@ -8,16 +8,13 @@ import { Label } from "@/components/ui/label";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 import { useSubmitJustification } from "@/hooks/useAttendance";
 import { usePublicStudents } from "@/hooks/useStudents";
 import { useParoquias } from "@/hooks/useParoquias";
+import { sanitizeText } from "@/lib/security";
 
 function getBaseEtapa(className: string): string {
   return className.replace(/\s+[AaBb]$/, "").trim();
@@ -41,7 +38,6 @@ export default function Justification() {
   const { data: allStudents = [], isLoading: loadingStudents } = usePublicStudents();
   const { data: paroquias = [], isLoading: loadingParoquias } = useParoquias();
 
-  // Alunos filtrados pela paróquia selecionada
   const studentsByParoquia = useMemo(() => {
     if (!selectedParoquia) return allStudents;
     return allStudents.filter((s: any) => s.paroquia_id === selectedParoquia);
@@ -75,8 +71,11 @@ export default function Justification() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!canSubmit) return;
+    // Sanitiza o motivo antes de enviar
+    const cleanReason = sanitizeText(reason.trim(), 500);
+    if (!cleanReason) return;
     mutation.mutate(
-      { studentId, date: format(date!, "yyyy-MM-dd"), reason },
+      { studentId, date: format(date!, "yyyy-MM-dd"), reason: cleanReason },
       {
         onSuccess: (result) => {
           setWasPending(result.pending);
@@ -100,12 +99,8 @@ export default function Justification() {
           <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-3">
             <Church className="h-8 w-8 text-primary" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground text-center">
-            Justificativa de Falta
-          </h1>
-          <p className="text-sm text-muted-foreground text-center mt-1">
-            Portal dos Pais — Catequese
-          </p>
+          <h1 className="text-2xl font-bold text-foreground text-center">Justificativa de Falta</h1>
+          <p className="text-sm text-muted-foreground text-center mt-1">Portal dos Pais — Catequese</p>
         </div>
 
         {submitted ? (
@@ -138,14 +133,9 @@ export default function Justification() {
               registrada automaticamente quando o catequista marcar a chamada.
             </div>
 
-            {/* 0º campo: Paróquia/Comunidade */}
             <div className="space-y-1.5">
               <Label>Comunidade / Paróquia</Label>
-              <Select
-                value={selectedParoquia}
-                onValueChange={handleParoquiaChange}
-                disabled={loadingParoquias}
-              >
+              <Select value={selectedParoquia} onValueChange={handleParoquiaChange} disabled={loadingParoquias}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder={loadingParoquias ? "Carregando..." : "Selecione a comunidade"} />
                 </SelectTrigger>
@@ -160,24 +150,11 @@ export default function Justification() {
               </Select>
             </div>
 
-            {/* 1º campo: Etapa */}
             <div className="space-y-1.5">
               <Label>Etapa do Catequizando</Label>
-              <Select
-                value={selectedEtapa}
-                onValueChange={handleEtapaChange}
-                disabled={!selectedParoquia || loadingStudents}
-              >
+              <Select value={selectedEtapa} onValueChange={handleEtapaChange} disabled={!selectedParoquia || loadingStudents}>
                 <SelectTrigger className="w-full">
-                  <SelectValue
-                    placeholder={
-                      !selectedParoquia
-                        ? "Selecione a comunidade primeiro"
-                        : loadingStudents
-                        ? "Carregando..."
-                        : "Selecione a etapa"
-                    }
-                  />
+                  <SelectValue placeholder={!selectedParoquia ? "Selecione a comunidade primeiro" : loadingStudents ? "Carregando..." : "Selecione a etapa"} />
                 </SelectTrigger>
                 <SelectContent>
                   {etapas.length === 0 && !loadingStudents && selectedParoquia && (
@@ -190,24 +167,11 @@ export default function Justification() {
               </Select>
             </div>
 
-            {/* 2º campo: Nome do aluno */}
             <div className="space-y-1.5">
               <Label>Nome do Catequizando</Label>
-              <Select
-                value={studentId}
-                onValueChange={setStudentId}
-                disabled={!selectedEtapa || loadingStudents}
-              >
+              <Select value={studentId} onValueChange={setStudentId} disabled={!selectedEtapa || loadingStudents}>
                 <SelectTrigger className="w-full">
-                  <SelectValue
-                    placeholder={
-                      !selectedEtapa
-                        ? "Selecione a etapa primeiro"
-                        : filteredStudents.length === 0
-                        ? "Nenhum aluno nesta etapa"
-                        : "Selecione o nome do seu filho(a)"
-                    }
-                  />
+                  <SelectValue placeholder={!selectedEtapa ? "Selecione a etapa primeiro" : filteredStudents.length === 0 ? "Nenhum aluno nesta etapa" : "Selecione o nome do seu filho(a)"} />
                 </SelectTrigger>
                 <SelectContent>
                   {filteredStudents.map((s) => {
@@ -223,15 +187,11 @@ export default function Justification() {
               </Select>
             </div>
 
-            {/* 3º campo: Data */}
             <div className="space-y-1.5">
               <Label>Data da Falta</Label>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button
-                    variant="outline"
-                    className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}
-                  >
+                  <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}>
                     <CalendarIcon className="mr-2 h-4 w-4" />
                     {date ? format(date, "PPP", { locale: ptBR }) : "Selecione a data da falta"}
                   </Button>
@@ -242,24 +202,22 @@ export default function Justification() {
               </Popover>
             </div>
 
-            {/* 4º campo: Motivo */}
             <div className="space-y-1.5">
               <Label htmlFor="reason">Motivo da Falta</Label>
               <Textarea
                 id="reason"
                 value={reason}
                 onChange={(e) => setReason(e.target.value)}
+                onBlur={(e) => setReason(sanitizeText(e.target.value, 500))}
                 placeholder="Descreva o motivo da falta (ex: doença, consulta médica, viagem familiar...)"
                 rows={4}
+                maxLength={500}
                 required
               />
+              <p className="text-xs text-muted-foreground text-right">{reason.length}/500</p>
             </div>
 
-            <Button
-              type="submit"
-              className="w-full h-12 text-base font-semibold"
-              disabled={mutation.isPending || !canSubmit}
-            >
+            <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={mutation.isPending || !canSubmit}>
               {mutation.isPending ? "Enviando..." : "Enviar Justificativa"}
             </Button>
           </form>
