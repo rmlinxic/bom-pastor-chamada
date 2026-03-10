@@ -3,27 +3,35 @@ import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
 
-/** Hook autenticado: catequista vê apenas sua etapa, admin vê tudo */
+const db = supabase as any;
+
+/** Hook autenticado: catequista vê apenas seus alunos, admin vê tudo */
 export function useStudents() {
   const { user, isAdmin } = useAuth();
 
   return useQuery({
-    queryKey: ["students", user?.id, user?.etapa],
+    queryKey: ["students", user?.id],
     queryFn: async () => {
-      let query = supabase
+      let query = db
         .from("students")
-        .select("*")
+        .select("*, catequistas(name), paroquias(nome)")
         .eq("active", true)
         .order("class_name", { ascending: true })
         .order("name", { ascending: true });
 
-      if (!isAdmin && user?.etapa) {
-        query = query.eq("class_name", user.etapa);
+      // Catequista: filtra pelos seus alunos diretamente via catequista_id
+      // Fallback para class_name caso aluno ainda não tenha catequista_id
+      if (!isAdmin && user?.id) {
+        query = query.or(`catequista_id.eq.${user.id},and(catequista_id.is.null,class_name.eq.${user.etapa ?? "__nenhuma__"})`);
       }
 
       const { data, error } = await query;
       if (error) throw error;
-      return data ?? [];
+      return ((data ?? []) as any[]).map((s) => ({
+        ...s,
+        catequista_nome: s.catequistas?.name ?? null,
+        paroquia_nome: s.paroquias?.nome ?? null,
+      }));
     },
     enabled: !!user,
   });
@@ -34,19 +42,23 @@ export function usePublicStudents() {
   return useQuery({
     queryKey: ["students-public"],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from("students")
-        .select("id, name, class_name")
+        .select("id, name, class_name, paroquia_id, paroquias(nome)")
         .eq("active", true)
         .order("class_name", { ascending: true })
         .order("name", { ascending: true });
       if (error) throw error;
-      return (data ?? []) as { id: string; name: string; class_name: string }[];
+      return ((data ?? []) as any[]).map((s) => ({
+        ...s,
+        paroquia_nome: s.paroquias?.nome ?? null,
+      })) as { id: string; name: string; class_name: string; paroquia_id: string | null; paroquia_nome: string | null }[];
     },
   });
 }
 
 export function useAddStudent() {
+  const { user, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (student: {
@@ -54,8 +66,17 @@ export function useAddStudent() {
       class_name: string;
       parent_name: string;
       phone: string;
+      catequista_id?: string | null;
+      paroquia_id?: string | null;
     }) => {
-      const { error } = await supabase.from("students").insert(student);
+      // Catequista: vincula automaticamente a si mesmo e sua paróquia
+      const payload = {
+        ...student,
+        catequista_id: isAdmin ? (student.catequista_id ?? null) : (user?.id ?? null),
+        paroquia_id: isAdmin ? (student.paroquia_id ?? null) : (user?.paroquia_id ?? null),
+        class_name: isAdmin ? student.class_name : (user?.etapa ?? student.class_name),
+      };
+      const { error } = await db.from("students").insert(payload);
       if (error) throw error;
     },
     onSuccess: () => {
@@ -76,14 +97,18 @@ export function useUpdateStudent() {
       class_name: string;
       parent_name: string;
       phone: string;
+      catequista_id?: string | null;
+      paroquia_id?: string | null;
     }) => {
-      const { error } = await supabase
+      const { error } = await db
         .from("students")
         .update({
           name: student.name,
           class_name: student.class_name,
           parent_name: student.parent_name,
           phone: student.phone,
+          ...(student.catequista_id !== undefined ? { catequista_id: student.catequista_id } : {}),
+          ...(student.paroquia_id !== undefined ? { paroquia_id: student.paroquia_id } : {}),
         })
         .eq("id", student.id);
       if (error) throw error;
@@ -101,7 +126,7 @@ export function useDeleteStudent() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await supabase
+      const { error } = await db
         .from("students")
         .update({ active: false })
         .eq("id", id);
@@ -120,7 +145,7 @@ export function useStudentAttendanceHistory(studentId: string | null) {
   return useQuery({
     queryKey: ["student-history", studentId],
     queryFn: async () => {
-      const { data, error } = await supabase
+      const { data, error } = await db
         .from("attendance")
         .select("*")
         .eq("student_id", studentId!)
@@ -133,6 +158,7 @@ export function useStudentAttendanceHistory(studentId: string | null) {
 }
 
 export function useImportStudents() {
+  const { user, isAdmin } = useAuth();
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (
@@ -143,7 +169,13 @@ export function useImportStudents() {
         phone: string;
       }[]
     ) => {
-      const { error } = await supabase.from("students").insert(students);
+      const payload = students.map((s) => ({
+        ...s,
+        catequista_id: isAdmin ? null : (user?.id ?? null),
+        paroquia_id: isAdmin ? null : (user?.paroquia_id ?? null),
+        class_name: isAdmin ? s.class_name : (user?.etapa ?? s.class_name),
+      }));
+      const { error } = await db.from("students").insert(payload);
       if (error) throw error;
       return students.length;
     },
