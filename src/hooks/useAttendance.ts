@@ -21,21 +21,31 @@ export function useAttendanceByDate(date: string) {
 }
 
 export function useAllAttendance() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isCoordinator } = useAuth();
 
   return useQuery({
-    queryKey: ["attendance-all", user?.id, user?.etapa],
+    queryKey: ["attendance-all", user?.id, user?.etapa, user?.paroquia_id, isCoordinator],
     queryFn: async () => {
       const { data, error } = await supabase
         .from("attendance")
-        .select("*, students(name, class_name)")
+        .select("*, students(name, class_name, paroquia_id)")
         .order("date", { ascending: false });
       if (error) throw error;
 
       const records = data ?? [];
 
-      // Catequistas só vêem as presenças da sua etapa
-      if (!isAdmin && user?.etapa) {
+      // Admin: vê tudo
+      if (isAdmin) return records;
+
+      // Coordenador (puro ou catequista+coordenador): vê toda a paróquia
+      if (isCoordinator && user?.paroquia_id) {
+        return records.filter(
+          (a: any) => a.students?.paroquia_id === user.paroquia_id
+        );
+      }
+
+      // Catequista: apenas sua etapa
+      if (user?.etapa) {
         return records.filter(
           (a: any) => a.students?.class_name === user.etapa
         );
@@ -48,14 +58,14 @@ export function useAllAttendance() {
 }
 
 export function usePendingJustifications() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isCoordinator } = useAuth();
 
   return useQuery({
-    queryKey: ["pending-justifications", user?.id, user?.etapa],
+    queryKey: ["pending-justifications", user?.id, user?.etapa, user?.paroquia_id, isCoordinator],
     queryFn: async () => {
       const { data, error } = await db
         .from("pending_justifications")
-        .select("*, students(name, class_name)")
+        .select("*, students(name, class_name, paroquia_id)")
         .order("date", { ascending: true });
       if (error) throw error;
 
@@ -65,10 +75,20 @@ export function usePendingJustifications() {
         date: string;
         reason: string;
         created_at: string;
-        students: { name: string; class_name: string } | null;
+        students: { name: string; class_name: string; paroquia_id: string | null } | null;
       }[];
 
-      if (!isAdmin && user?.etapa) {
+      if (isAdmin) return records;
+
+      // Coordenador: toda a paróquia
+      if (isCoordinator && user?.paroquia_id) {
+        return records.filter(
+          (p) => p.students?.paroquia_id === user.paroquia_id
+        );
+      }
+
+      // Catequista: apenas sua etapa
+      if (user?.etapa) {
         return records.filter(
           (p) => p.students?.class_name === user.etapa
         );

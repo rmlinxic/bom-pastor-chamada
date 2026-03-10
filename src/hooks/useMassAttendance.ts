@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { useAuth } from "@/contexts/AuthContext";
 
 const db = supabase as any;
 
@@ -8,7 +9,7 @@ export type MassRecord = {
   id: string;
   student_id: string;
   date: string;
-  students: { name: string } | null;
+  students: { name: string; paroquia_id?: string | null } | null;
 };
 
 function lastDayOfMonth(monthStr: string): string {
@@ -18,8 +19,8 @@ function lastDayOfMonth(monthStr: string): string {
 }
 
 /**
- * Busca todos os registros de missa de um mês para uma lista de alunos.
- * Filtrado por etapa: o hook recebe apenas os IDs dos alunos do catequista.
+ * Busca registros de missa de um mês para uma lista de alunos.
+ * Coordenador recebe a lista de IDs de TODOS os alunos da paróquia.
  */
 export function useMassAttendanceByMonth(
   studentIds: string[],
@@ -30,7 +31,7 @@ export function useMassAttendanceByMonth(
     queryFn: async () => {
       const { data, error } = await db
         .from("mass_attendance")
-        .select("id, student_id, date, students(name)")
+        .select("id, student_id, date, students(name, paroquia_id)")
         .in("student_id", studentIds)
         .gte("date", `${month}-01`)
         .lte("date", lastDayOfMonth(month))
@@ -92,5 +93,25 @@ export function useDeleteMassAttendance() {
       toast.success("Registro removido.");
     },
     onError: () => toast.error("Erro ao remover registro."),
+  });
+}
+
+/**
+ * Hook para coordenador: busca IDs de todos os alunos da paróquia
+ * e repassa para useMassAttendanceByMonth.
+ */
+export function useParoquiaMassStudentIds() {
+  const { user, isCoordinator, isAdmin } = useAuth();
+  return useQuery({
+    queryKey: ["paroquia-mass-student-ids", user?.paroquia_id],
+    queryFn: async () => {
+      const { data } = await db
+        .from("students")
+        .select("id")
+        .eq("paroquia_id", user!.paroquia_id)
+        .eq("active", true);
+      return (data ?? []).map((s: any) => s.id) as string[];
+    },
+    enabled: (isCoordinator || isAdmin) && !!user?.paroquia_id,
   });
 }

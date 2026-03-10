@@ -5,12 +5,12 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const db = supabase as any;
 
-/** Hook autenticado: catequista vê apenas seus alunos, admin vê tudo */
+/** Hook autenticado: coordenador vê toda a paróquia, catequista vê só seus alunos, admin vê tudo */
 export function useStudents() {
-  const { user, isAdmin } = useAuth();
+  const { user, isAdmin, isCoordinator } = useAuth();
 
   return useQuery({
-    queryKey: ["students", user?.id],
+    queryKey: ["students", user?.id, isCoordinator, user?.paroquia_id],
     queryFn: async () => {
       let query = db
         .from("students")
@@ -19,10 +19,18 @@ export function useStudents() {
         .order("class_name", { ascending: true })
         .order("name", { ascending: true });
 
-      // Catequista: filtra pelos seus alunos diretamente via catequista_id
-      // Fallback para class_name caso aluno ainda não tenha catequista_id
-      if (!isAdmin && user?.id) {
-        query = query.or(`catequista_id.eq.${user.id},and(catequista_id.is.null,class_name.eq.${user.etapa ?? "__nenhuma__"})`);
+      if (isAdmin) {
+        // Admin: vê tudo, sem filtro
+      } else if (isCoordinator && user?.paroquia_id) {
+        // Coordenador (puro ou catequista+coordenador): filtra por paróquia
+        query = query.eq("paroquia_id", user.paroquia_id);
+      } else if (user?.id) {
+        // Catequista: apenas seus alunos
+        query = query.or(
+          `catequista_id.eq.${user.id},and(catequista_id.is.null,class_name.eq.${
+            user.etapa ?? "__nenhuma__"
+          })`
+        );
       }
 
       const { data, error } = await query;
@@ -69,7 +77,6 @@ export function useAddStudent() {
       catequista_id?: string | null;
       paroquia_id?: string | null;
     }) => {
-      // Catequista: vincula automaticamente a si mesmo e sua paróquia
       const payload = {
         ...student,
         catequista_id: isAdmin ? (student.catequista_id ?? null) : (user?.id ?? null),
