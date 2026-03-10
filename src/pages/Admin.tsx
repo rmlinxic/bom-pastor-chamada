@@ -216,6 +216,8 @@ export default function Admin() {
     }
   };
 
+  const showParoquiaSelector = form.role === "catequista" || form.role === "coordenador";
+
   return (
     <div className="pb-24">
       <PageHeader
@@ -268,12 +270,21 @@ export default function Admin() {
                         </span>
                       </div>
                       <p className="text-xs text-muted-foreground font-mono">@{c.username}</p>
-                      {c.paroquia_nome && (
+
+                      {/* Paróquia */}
+                      {c.paroquia_nome ? (
                         <div className="flex items-center gap-1.5 mt-1">
                           <Building2 className="h-3.5 w-3.5 text-muted-foreground" />
                           <span className="text-xs text-muted-foreground">{c.paroquia_nome}</span>
                         </div>
-                      )}
+                      ) : (c.role === "catequista" || c.role === "coordenador") ? (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          <Building2 className="h-3.5 w-3.5 text-destructive/60" />
+                          <span className="text-xs text-destructive/70 italic">Sem paróquia atribuída</span>
+                        </div>
+                      ) : null}
+
+                      {/* Etapa */}
                       {c.etapa && (
                         <div className="flex items-center gap-1.5 mt-1">
                           <BookOpen className="h-3.5 w-3.5 text-primary" />
@@ -434,7 +445,10 @@ export default function Admin() {
 
             <div>
               <Label>Função</Label>
-              <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as UserRole })}>
+              <Select
+                value={form.role}
+                onValueChange={(v) => setForm({ ...form, role: v as UserRole, paroquia_id: "", etapa: "" })}
+              >
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="catequista">Catequista</SelectItem>
@@ -444,22 +458,38 @@ export default function Admin() {
               </Select>
             </div>
 
-            {(form.role === "catequista" || form.role === "coordenador") && (
+            {/* Paróquia — aparece sempre para catequista e coordenador */}
+            {showParoquiaSelector && (
               <div>
-                <Label>Paróquia</Label>
-                <Select value={form.paroquia_id} onValueChange={(v) => setForm({ ...form, paroquia_id: v })}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione a paróquia" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {paroquias.filter((p) => p.ativa).map((p) => (
-                      <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <Label>
+                  Paróquia
+                  {!form.paroquia_id && (
+                    <span className="ml-2 text-xs text-destructive font-normal">(obrigatório)</span>
+                  )}
+                </Label>
+                {paroquias.filter((p) => p.ativa).length === 0 ? (
+                  <div className="rounded-md border border-destructive/40 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+                    Nenhuma paróquia ativa. Crie uma na aba "Paróquias" primeiro.
+                  </div>
+                ) : (
+                  <Select
+                    value={form.paroquia_id}
+                    onValueChange={(v) => setForm({ ...form, paroquia_id: v })}
+                  >
+                    <SelectTrigger className={cn(!form.paroquia_id && "border-destructive/50")}>
+                      <SelectValue placeholder="Selecione a paróquia" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {paroquias.filter((p) => p.ativa).map((p) => (
+                        <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
               </div>
             )}
 
+            {/* Etapa — apenas para catequista */}
             {form.role === "catequista" && (
               <div>
                 <Label>Etapa atribuída</Label>
@@ -477,7 +507,12 @@ export default function Admin() {
             <Button
               className="w-full h-11"
               onClick={handleSave}
-              disabled={saving || !form.name.trim() || !form.username.trim() || (!editingId && !form.password.trim())}
+              disabled={
+                saving ||
+                !form.name.trim() ||
+                !form.username.trim() ||
+                (!editingId && !form.password.trim())
+              }
             >
               {saving ? (
                 <span className="flex items-center gap-2">
