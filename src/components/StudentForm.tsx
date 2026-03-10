@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/select";
 import { useAddStudent, useUpdateStudent } from "@/hooks/useStudents";
 import { useAuth } from "@/contexts/AuthContext";
-import { ETAPAS } from "@/lib/etapas";
+import { ETAPAS, nomeTurma, parseTurma } from "@/lib/etapas";
 
 interface StudentFormProps {
   student?: {
@@ -28,36 +28,39 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
   const updateMutation = useUpdateStudent();
   const canChooseEtapa = isAdmin || isCoordinator;
 
-  const defaultEtapa = isAdmin || isCoordinator ? ETAPAS[0] : (user?.etapa ?? ETAPAS[0]);
+  const defaultParsed = parseTurma(
+    student?.class_name ?? user?.etapa ?? ETAPAS[0]
+  );
 
   const [form, setForm] = useState({
     name: student?.name ?? "",
-    class_name: student?.class_name ?? defaultEtapa,
     parent_name: student?.parent_name ?? "",
     phone: student?.phone ?? "",
   });
+  const [etapa, setEtapa] = useState(defaultParsed.etapa || ETAPAS[0]);
+  const [turma, setTurma] = useState(defaultParsed.turma);
 
   useEffect(() => {
     if (student) {
-      setForm({
-        name: student.name,
-        class_name: student.class_name,
-        parent_name: student.parent_name,
-        phone: student.phone,
-      });
+      const p = parseTurma(student.class_name);
+      setForm({ name: student.name, parent_name: student.parent_name, phone: student.phone });
+      setEtapa(p.etapa || ETAPAS[0]);
+      setTurma(p.turma);
     }
   }, [student?.id]);
 
   const isEditing = !!student;
   const isPending = addMutation.isPending || updateMutation.isPending;
+  const classNameFinal = nomeTurma(etapa, turma || undefined);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) return;
+    const payload = { ...form, class_name: classNameFinal };
     if (isEditing) {
-      updateMutation.mutate({ id: student!.id, ...form }, { onSuccess: onClose });
+      updateMutation.mutate({ id: student!.id, ...payload }, { onSuccess: onClose });
     } else {
-      addMutation.mutate(form, { onSuccess: onClose });
+      addMutation.mutate(payload, { onSuccess: onClose });
     }
   };
 
@@ -78,25 +81,41 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
               onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}
               placeholder="Nome completo" required />
           </div>
+
+          {/* Etapa */}
           <div className="space-y-1">
             <label className="text-sm font-medium">Etapa</label>
             {canChooseEtapa ? (
-              <Select value={form.class_name}
-                onValueChange={(v) => setForm((p) => ({ ...p, class_name: v }))}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione a etapa" />
-                </SelectTrigger>
+              <Select value={etapa} onValueChange={(v) => { setEtapa(v); setTurma(""); }}>
+                <SelectTrigger><SelectValue placeholder="Selecione a etapa" /></SelectTrigger>
                 <SelectContent>
                   {ETAPAS.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
                 </SelectContent>
               </Select>
             ) : (
-              <>
-                <Input value={form.class_name} disabled className="opacity-60" />
-                <p className="text-xs text-muted-foreground">Definida pela sua etapa cadastrada.</p>
-              </>
+              <Input value={nomeTurma(etapa, turma || undefined)} disabled className="opacity-60" />
             )}
           </div>
+
+          {/* Turma (subturma) — apenas admin/coordenador */}
+          {canChooseEtapa && (
+            <div className="space-y-1">
+              <label className="text-sm font-medium">
+                Turma <span className="text-muted-foreground text-xs font-normal">(A, B, C... se houver subturmas)</span>
+              </label>
+              <Select value={turma || "__none__"} onValueChange={(v) => setTurma(v === "__none__" ? "" : v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__none__">Sem subturma</SelectItem>
+                  {["A","B","C","D","E","F","G","H"].map((l) => (
+                    <SelectItem key={l} value={l}>Turma {l}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-primary font-medium">Turma final: <strong>{classNameFinal}</strong></p>
+            </div>
+          )}
+
           <div className="space-y-1">
             <label className="text-sm font-medium">Nome do responsável</label>
             <Input value={form.parent_name}

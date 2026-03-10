@@ -11,11 +11,17 @@ import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { ETAPAS, proximaEtapa } from "@/lib/etapas";
+import { ETAPAS, nomeTurma, parseTurma, proximaEtapa } from "@/lib/etapas";
 
 const db = supabase as any;
 
-type Catequista = { id: string; name: string; etapa: string | null; novaEtapa: string };
+type Catequista = {
+  id: string;
+  name: string;
+  etapa: string | null;       // etapa atual (ex: "Primeira Etapa A")
+  novaEtapa: string;          // etapa base selecionada (ex: "Segunda Etapa")
+  novaTurma: string;          // sufixo selecionado (ex: "A" ou "")
+};
 
 export default function AnoLetivo() {
   const { user } = useAuth();
@@ -30,7 +36,6 @@ export default function AnoLetivo() {
   const [catequistas, setCatequistas] = useState<Catequista[]>([]);
   const [processing, setProcessing] = useState(false);
 
-  // Busca catequistas ativos da paróquia
   const { data: catRaw = [], isLoading: loadingCat } = useQuery({
     queryKey: ["catequistas-paroquia", paroquiaId],
     queryFn: async () => {
@@ -45,10 +50,16 @@ export default function AnoLetivo() {
     enabled: !!paroquiaId,
     onSuccess: (data) => {
       setCatequistas(
-        data.map((c) => ({
-          ...c,
-          novaEtapa: c.etapa ?? ETAPAS[0],
-        }))
+        data.map((c) => {
+          const { etapa: etapaBase } = parseTurma(c.etapa ?? "");
+          const proxima = proximaEtapa(c.etapa ?? "");
+          const { etapa: proximaBase, turma: proximaTurma } = parseTurma(proxima);
+          return {
+            ...c,
+            novaEtapa: proximaBase || ETAPAS[0],
+            novaTurma: proximaTurma,
+          };
+        })
       );
     },
   });
@@ -62,7 +73,6 @@ export default function AnoLetivo() {
     mutationFn: async () => {
       setProcessing(true);
 
-      // 1. Busca todos os alunos ativos da paróquia
       const { data: students } = await db
         .from("students")
         .select("id, class_name, catequista_id")
@@ -71,7 +81,6 @@ export default function AnoLetivo() {
 
       const allStudents = (students ?? []) as { id: string; class_name: string; catequista_id: string | null }[];
 
-      // 2. Para cada aluno, calcula score de faltas a partir do 1º registro
       const aptos: { id: string; novaEtapa: string }[] = [];
       const pendentes: {
         student_id: string;
@@ -81,7 +90,6 @@ export default function AnoLetivo() {
       }[] = [];
 
       for (const student of allStudents) {
-        // Primeiro registro de presença
         const { data: firstRec } = await db
           .from("attendance")
           .select("date")
@@ -91,8 +99,6 @@ export default function AnoLetivo() {
           .maybeSingle();
 
         const since = firstRec?.date ?? null;
-
-        // Faltas não justificadas
         let faltasNJ = 0;
         if (since) {
           const { count } = await db
@@ -104,48 +110,46 @@ export default function AnoLetivo() {
           faltasNJ = count ?? 0;
         }
 
-        // Meses sem missa (desde o 1º registro de presença)
         let mesesSemMissa = 0;
         if (since) {
           const sinceDate = new Date(since);
           const hoje = new Date();
-          const meses: string[] = [];
           const cur = new Date(sinceDate.getFullYear(), sinceDate.getMonth(), 1);
           while (cur <= hoje) {
-            meses.push(cur.toISOString().slice(0, 7));
-            cur.setMonth(cur.getMonth() + 1);
-          }
-          for (const mes of meses) {
+            const mes = cur.toISOString().slice(0, 7);
             const [y, m] = mes.split("-").map(Number);
-            const start = `${mes}-01`;
             const end = new Date(y, m, 0).toISOString().slice(0, 10);
             const { count } = await db
               .from("mass_attendance")
               .select("id", { count: "exact" })
               .eq("student_id", student.id)
-              .gte("date", start)
+              .gte("date", `${mes}-01`)
               .lte("date", end);
             if ((count ?? 0) === 0) mesesSemMissa++;
+            cur.setMonth(cur.getMonth() + 1);
           }
         }
 
         const score = faltasNJ + mesesSemMissa;
-        const cataquistaNovaEtapa = catequistas.find((c) => c.id === student.catequista_id)?.novaEtapa ?? null;
-        const novaEtapa = cataquistaNovaEtapa ?? proximaEtapa(student.class_name);
+        const cat = catequistas.find((c) => c.id === student.catequista_id);
+        const novaEtapa = cat ? nomeTurma(cat.novaEtapa, cat.novaTurma || undefined) : proximaEtapa(student.class_name);
 
         if (score <= 3) {
           aptos.push({ id: student.id, novaEtapa });
         } else {
-          pendentes.push({ student_id: student.id, faltas_nao_justificadas: faltasNJ, meses_sem_missa: mesesSemMissa, score_faltas: score });
+          pendentes.push({
+            student_id: student.id,
+            faltas_nao_justificadas: faltasNJ,
+            meses_sem_missa: mesesSemMissa,
+            score_faltas: score,
+          });
         }
       }
 
-      // 3. Atualiza alunos aptos
       for (const { id, novaEtapa } of aptos) {
         await db.from("students").update({ class_name: novaEtapa, ano_catequetico: anoAtual }).eq("id", id);
       }
 
-      // 4. Insere pendentes
       if (pendentes.length > 0) {
         await db.from("promocoes_pendentes").upsert(
           pendentes.map((p) => ({ ...p, paroquia_id: paroquiaId, ano_catequetico: anoAtual })),
@@ -153,20 +157,16 @@ export default function AnoLetivo() {
         );
       }
 
-      // 5. Atualiza etapas dos catequistas
       for (const cat of catequistas) {
-        await db.from("catequistas").update({ etapa: cat.novaEtapa }).eq("id", cat.id);
-        // Atualiza class_name dos alunos do catequista que ainda não foram atualizados
-        // (os aptos já foram; apenas garante consistência)
+        const novaEtapaFinal = nomeTurma(cat.novaEtapa, cat.novaTurma || undefined);
+        await db.from("catequistas").update({ etapa: novaEtapaFinal }).eq("id", cat.id);
       }
 
-      // 6. Registra ano
       await db.from("anos_catequeticos").upsert(
         { paroquia_id: paroquiaId, ano: anoAtual, encerrado_em: new Date().toISOString(), ativo: false },
         { onConflict: "paroquia_id,ano" }
       );
 
-      // 7. Log
       await db.from("activity_log").insert({
         catequista_id: user!.id,
         acao: "encerramento_ano",
@@ -181,7 +181,7 @@ export default function AnoLetivo() {
       qc.invalidateQueries({ queryKey: ["promocoes-pendentes"] });
       toast({
         title: "Ano encerrado com sucesso!",
-        description: `${aptos} aluno(s) promovido(s) automaticamente. ${pendentes} aguardando decisão manual.`,
+        description: `${aptos} aluno(s) promovido(s). ${pendentes} aguardando decisão manual.`,
       });
       navigate("/coordenador");
     },
@@ -199,7 +199,7 @@ export default function AnoLetivo() {
         {/* Indicador de passos */}
         <div className="flex items-center gap-2 justify-center py-2">
           {([1, 2, 3] as const).map((s) => (
-            <div key={s} className={`flex items-center gap-1`}>
+            <div key={s} className="flex items-center gap-1">
               <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
                 step === s ? "border-primary bg-primary text-white" :
                 step > s ? "border-success bg-success/10 text-success" : "border-border text-muted-foreground"
@@ -209,7 +209,7 @@ export default function AnoLetivo() {
           ))}
         </div>
 
-        {/* PASSO 1 — Confirmação */}
+        {/* PASSO 1 */}
         {step === 1 && (
           <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-5 space-y-4">
             <div className="flex items-center gap-2">
@@ -229,8 +229,7 @@ export default function AnoLetivo() {
             </div>
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => navigate("/coordenador")}>Cancelar</Button>
-              <Button className="flex-1" disabled={confirmText !== "CONFIRMAR"}
-                onClick={() => setStep(2)}>
+              <Button className="flex-1" disabled={confirmText !== "CONFIRMAR"} onClick={() => setStep(2)}>
                 Prosseguir <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
@@ -250,23 +249,43 @@ export default function AnoLetivo() {
               ) : catequistas.length === 0 ? (
                 <p className="text-sm text-muted-foreground text-center py-4">Nenhum catequista ativo encontrado.</p>
               ) : (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   {catequistas.map((c) => (
-                    <div key={c.id} className="flex items-center gap-3">
-                      <div className="flex-1 min-w-0">
-                        <p className="text-sm font-medium truncate">{c.name}</p>
-                        <p className="text-xs text-muted-foreground">{c.etapa ?? "sem etapa"}</p>
+                    <div key={c.id} className="rounded-lg border border-border p-3 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <p className="text-sm font-semibold">{c.name}</p>
+                        <span className="text-xs text-muted-foreground">{c.etapa ?? "sem etapa"}</span>
                       </div>
-                      <Select value={c.novaEtapa} onValueChange={(v) =>
-                        setCatequistas((prev) => prev.map((x) => x.id === c.id ? { ...x, novaEtapa: v } : x))
-                      }>
-                        <SelectTrigger className="w-44">
+                      {/* Select de etapa */}
+                      <Select value={c.novaEtapa}
+                        onValueChange={(v) => setCatequistas((prev) =>
+                          prev.map((x) => x.id === c.id ? { ...x, novaEtapa: v, novaTurma: "" } : x)
+                        )}>
+                        <SelectTrigger className="w-full">
                           <SelectValue />
                         </SelectTrigger>
                         <SelectContent>
                           {ETAPAS.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
                         </SelectContent>
                       </Select>
+                      {/* Select de turma */}
+                      <Select value={c.novaTurma || "__none__"}
+                        onValueChange={(v) => setCatequistas((prev) =>
+                          prev.map((x) => x.id === c.id ? { ...x, novaTurma: v === "__none__" ? "" : v } : x)
+                        )}>
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="__none__">Sem subturma</SelectItem>
+                          {["A","B","C","D","E","F","G","H"].map((l) => (
+                            <SelectItem key={l} value={l}>Turma {l}</SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <p className="text-xs text-primary font-medium">
+                        Turma final: <strong>{nomeTurma(c.novaEtapa, c.novaTurma || undefined)}</strong>
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -274,15 +293,14 @@ export default function AnoLetivo() {
             </div>
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setStep(1)}>Voltar</Button>
-              <Button className="flex-1" disabled={!allEtapasSet || catequistas.length === 0}
-                onClick={() => setStep(3)}>
+              <Button className="flex-1" disabled={!allEtapasSet || catequistas.length === 0} onClick={() => setStep(3)}>
                 Revisar <ArrowRight className="h-4 w-4 ml-1" />
               </Button>
             </div>
           </div>
         )}
 
-        {/* PASSO 3 — Revisão e processamento */}
+        {/* PASSO 3 — Revisão */}
         {step === 3 && (
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-card p-4">
@@ -291,27 +309,29 @@ export default function AnoLetivo() {
                 <span className="font-bold">Confirmar mudanças de etapa</span>
               </div>
               <div className="space-y-2">
-                {catequistas.map((c) => (
-                  <div key={c.id} className="flex items-center gap-2 text-sm">
-                    <span className="flex-1 font-medium">{c.name}</span>
-                    <span className="text-muted-foreground">{c.etapa ?? "—"}</span>
-                    {c.novaEtapa !== c.etapa && (
-                      <>
-                        <ArrowRight className="h-3.5 w-3.5 text-primary" />
-                        <span className="text-primary font-semibold">{c.novaEtapa}</span>
-                      </>
-                    )}
-                    {c.novaEtapa === c.etapa && (
-                      <span className="text-muted-foreground text-xs">(sem mudança)</span>
-                    )}
-                  </div>
-                ))}
+                {catequistas.map((c) => {
+                  const nova = nomeTurma(c.novaEtapa, c.novaTurma || undefined);
+                  return (
+                    <div key={c.id} className="flex items-center gap-2 text-sm">
+                      <span className="flex-1 font-medium truncate">{c.name}</span>
+                      <span className="text-muted-foreground text-xs shrink-0">{c.etapa ?? "—"}</span>
+                      {nova !== c.etapa ? (
+                        <>
+                          <ArrowRight className="h-3.5 w-3.5 text-primary shrink-0" />
+                          <span className="text-primary font-semibold text-xs shrink-0">{nova}</span>
+                        </>
+                      ) : (
+                        <span className="text-muted-foreground text-xs">(sem mudança)</span>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
             <div className="flex gap-3">
               <Button variant="outline" className="flex-1" onClick={() => setStep(2)} disabled={processing}>Voltar</Button>
               <Button className="flex-1" onClick={() => processarAno.mutate()} disabled={processing}>
-                {processing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" /> Processando...</> : "Confirmar e Encerrar Ano"}
+                {processing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Processando...</> : "Confirmar e Encerrar Ano"}
               </Button>
             </div>
           </div>

@@ -19,6 +19,7 @@ import {
 import { useParoquias, useCreateParoquia, useToggleParoquia } from "@/hooks/useParoquias";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { ETAPAS, nomeTurma, parseTurma } from "@/lib/etapas";
 
 const db = supabase as any;
 type UserRole = "admin" | "catequista" | "coordenador";
@@ -28,14 +29,15 @@ type FormData = {
   username: string;
   password: string;
   role: UserRole;
-  etapa: string;
+  etapa: string;      // ex: "Primeira Etapa"
+  turma: string;      // ex: "A", "B" ou "" (sem subturma)
   paroquia_id: string;
   is_coordenador: boolean;
 };
 
 const EMPTY_FORM: FormData = {
   name: "", username: "", password: "",
-  role: "catequista", etapa: "", paroquia_id: "", is_coordenador: false,
+  role: "catequista", etapa: "", turma: "", paroquia_id: "", is_coordenador: false,
 };
 
 const ROLE_LABELS: Record<UserRole, string> = {
@@ -72,10 +74,11 @@ export default function Admin() {
   const openCreate = () => { setEditingId(null); setForm(EMPTY_FORM); setShowPass(false); setOpen(true); };
 
   const openEdit = (c: Catequista) => {
+    const { etapa, turma } = parseTurma(c.etapa ?? "");
     setEditingId(c.id);
     setForm({
       name: c.name, username: c.username, password: "",
-      role: c.role, etapa: c.etapa ?? "",
+      role: c.role, etapa, turma,
       paroquia_id: c.paroquia_id ?? "",
       is_coordenador: c.is_coordenador,
     });
@@ -93,32 +96,25 @@ export default function Admin() {
     if (!editingId && !form.password.trim()) return;
     setSaving(true);
     try {
-      const etapaInput = form.etapa.trim();
-      if (form.role === "catequista" && etapaInput) {
+      // Monta etapa final: "Primeira Etapa" ou "Primeira Etapa A"
+      const etapaFinal = nomeTurma(form.etapa, form.turma || undefined);
+
+      if (form.role === "catequista" && form.etapa) {
+        // Verifica duplicata de turma exata
         const duplicate = activeList.find(
           (c) => c.role === "catequista" && c.id !== editingId &&
             c.paroquia_id === (form.paroquia_id || null) &&
-            c.etapa?.toLowerCase() === etapaInput.toLowerCase()
+            c.etapa === etapaFinal
         );
         if (duplicate) {
-          const novoA = `${etapaInput} A`; const novoB = `${etapaInput} B`;
-          const confirmed = window.confirm(
-            `A etapa "${etapaInput}" já está atribuída a "${duplicate.name}".\n\n` +
-            `Deseja dividir em subturmas?\n• "${duplicate.name}" → ${novoA}\n• "${form.name}" → ${novoB}`
-          );
-          if (!confirmed) { setSaving(false); return; }
-          await db.from("catequistas").update({ etapa: novoA }).eq("id", duplicate.id);
-          await db.from("students").update({ class_name: novoA }).eq("class_name", etapaInput);
-          toast.success(`Turma dividida: "${novoA}" e "${novoB}"`);
-          const payload = { ...form, etapa: novoB, paroquia_id: form.paroquia_id || null, is_coordenador: form.is_coordenador };
-          if (editingId) await updateMutation.mutateAsync({ id: editingId, ...payload, newPassword: form.password || undefined });
-          else await createMutation.mutateAsync({ ...payload });
-          setOpen(false); return;
+          toast.error(`A turma "${etapaFinal}" já está atribuída a "${duplicate.name}". Escolha um sufixo diferente (A, B, C...).`);
+          setSaving(false); return;
         }
       }
+
       const payload = {
         ...form,
-        etapa: etapaInput || null,
+        etapa: etapaFinal || null,
         paroquia_id: form.paroquia_id || null,
         is_coordenador: form.role === "coordenador" ? true : form.is_coordenador,
       };
@@ -137,7 +133,6 @@ export default function Admin() {
 
   const showParoquiaSelector = form.role === "catequista" || form.role === "coordenador";
 
-  // Badge de função combinada
   const getRoleBadge = (c: Catequista) => {
     if (c.role === "catequista" && c.is_coordenador)
       return { label: "Catequista + Coord.", cls: "bg-primary/10 text-primary" };
@@ -298,12 +293,10 @@ export default function Admin() {
               </div>
             </div>
 
-            {/* Função principal */}
             <div>
               <Label>Função</Label>
               <Select value={form.role}
-                onValueChange={(v) => setForm({ ...form, role: v as UserRole, paroquia_id: "", etapa: "", is_coordenador: v === "coordenador" })}
-              >
+                onValueChange={(v) => setForm({ ...form, role: v as UserRole, paroquia_id: "", etapa: "", turma: "", is_coordenador: v === "coordenador" })}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="catequista">Catequista</SelectItem>
@@ -313,15 +306,11 @@ export default function Admin() {
               </Select>
             </div>
 
-            {/* Checkbox: catequista também coordena? */}
             {form.role === "catequista" && (
               <label className="flex items-center gap-3 cursor-pointer select-none rounded-lg border border-border bg-muted/30 px-3 py-3">
-                <input
-                  type="checkbox"
-                  checked={form.is_coordenador}
+                <input type="checkbox" checked={form.is_coordenador}
                   onChange={(e) => setForm({ ...form, is_coordenador: e.target.checked })}
-                  className="h-4 w-4 rounded accent-primary"
-                />
+                  className="h-4 w-4 rounded accent-primary" />
                 <div>
                   <p className="text-sm font-medium">Também é coordenador de paróquia</p>
                   <p className="text-xs text-muted-foreground">Terá acesso à visão de coordenador além da chamada</p>
@@ -329,7 +318,6 @@ export default function Admin() {
               </label>
             )}
 
-            {/* Paróquia */}
             {showParoquiaSelector && (
               <div>
                 <Label>Paróquia{!form.paroquia_id && <span className="ml-2 text-xs text-destructive font-normal">(obrigatório)</span>}</Label>
@@ -352,18 +340,56 @@ export default function Admin() {
               </div>
             )}
 
-            {/* Etapa */}
+            {/* Etapa + Turma */}
             {form.role === "catequista" && (
-              <div>
-                <Label>Etapa atribuída</Label>
-                <Input value={form.etapa} onChange={(e) => setForm({ ...form, etapa: e.target.value })} placeholder="Ex: Crisma 2025" />
-                <p className="text-xs text-muted-foreground mt-1">Se outra etapa igual já existir, o sistema divide em A e B.</p>
+              <div className="space-y-3">
+                <div>
+                  <Label>Etapa</Label>
+                  <Select value={form.etapa} onValueChange={(v) => setForm({ ...form, etapa: v, turma: "" })}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Selecione a etapa" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {ETAPAS.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                {form.etapa && (
+                  <div>
+                    <Label>
+                      Turma <span className="text-muted-foreground text-xs font-normal ml-1">(opcional — use A, B, C... se houver mais de um catequista nesta etapa)</span>
+                    </Label>
+                    <Select value={form.turma || "__none__"}
+                      onValueChange={(v) => setForm({ ...form, turma: v === "__none__" ? "" : v })}>
+                      <SelectTrigger>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none__">Sem subturma — única turma desta etapa</SelectItem>
+                        {["A","B","C","D","E","F","G","H"].map((l) => (
+                          <SelectItem key={l} value={l}>Turma {l} — ex: "{form.etapa} {l}"</SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {form.turma && (
+                      <p className="text-xs text-primary mt-1 font-medium">
+                        Turma final: <strong>{form.etapa} {form.turma}</strong>
+                      </p>
+                    )}
+                    {!form.turma && (
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Turma final: <strong>{form.etapa}</strong>
+                      </p>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 
             <Button className="w-full h-11" onClick={handleSave}
               disabled={saving || !form.name.trim() || !form.username.trim() || (!editingId && !form.password.trim())}>
-              {saving ? <span className="flex items-center gap-2"><span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground" />Salvando...</span>
+              {saving
+                ? <span className="flex items-center gap-2"><span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground" />Salvando...</span>
                 : editingId ? "Salvar alterações" : "Criar usuário"}
             </Button>
           </div>
