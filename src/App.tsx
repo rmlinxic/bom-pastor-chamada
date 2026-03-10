@@ -23,6 +23,7 @@ import CoordinadorView from "./pages/CoordinadorView";
 import AnoLetivo from "./pages/AnoLetivo";
 import BottomNav from "./components/BottomNav";
 import ProtectedRoute from "./components/ProtectedRoute";
+import SessionGuard from "./components/SessionGuard";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 
 const queryClient = new QueryClient();
@@ -49,7 +50,7 @@ function AppLayout() {
   const isPublicPage = PUBLIC_PATHS.includes(location.pathname);
 
   return (
-    <>
+    <SessionGuard>
       {isAuthenticated && !isPublicPage && (
         <div className="fixed top-3 right-3 z-50 flex items-center gap-2">
           <span className="hidden sm:block text-xs text-muted-foreground bg-muted/90 rounded-full px-2 py-1 border border-border">
@@ -75,14 +76,13 @@ function AppLayout() {
         <Route path="/relatorios" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
         <Route path="/missas" element={<ProtectedRoute><Missas /></ProtectedRoute>} />
         <Route path="/coordenador" element={<CoordinatorRoute><CoordinadorView /></CoordinatorRoute>} />
-        {/* Rota exclusiva de encerramento de ano — só coordenador paroquial */}
         <Route path="/ano-letivo" element={<CoordinatorRoute><AnoLetivo /></CoordinatorRoute>} />
         <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
         <Route path="*" element={<NotFound />} />
       </Routes>
 
       {isAuthenticated && !isPublicPage && <BottomNav />}
-    </>
+    </SessionGuard>
   );
 }
 
