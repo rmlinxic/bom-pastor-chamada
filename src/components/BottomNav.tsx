@@ -42,7 +42,10 @@ export default function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
-      <div className={cn("mx-auto grid max-w-lg items-center", `grid-cols-${tabs.length}`)}>
+      <div
+        className="mx-auto grid max-w-lg items-center"
+        style={{ gridTemplateColumns: `repeat(${tabs.length}, minmax(0, 1fr))` }}
+      >
         {tabs.map((tab) => {
           const active = location.pathname === tab.path;
           const isAdminTab = tab.path === "/admin";
