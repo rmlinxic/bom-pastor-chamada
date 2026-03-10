@@ -1,45 +1,25 @@
 import { useState, useRef, useMemo } from "react";
 import {
-  UserPlus,
-  Pencil,
-  History,
-  ArrowLeft,
-  Trash2,
-  Upload,
-  FileDown,
-  BookOpen,
-  AlertTriangle,
-  Building2,
-  User,
+  UserPlus, Pencil, History, ArrowLeft, Trash2, Upload, FileDown,
+  BookOpen, AlertTriangle, Building2, User,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
+  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
 } from "@/components/ui/dialog";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
+  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import PageHeader from "@/components/PageHeader";
 import {
-  useStudents,
-  useAddStudent,
-  useUpdateStudent,
-  useDeleteStudent,
-  useStudentAttendanceHistory,
-  useImportStudents,
+  useStudents, useAddStudent, useUpdateStudent, useDeleteStudent,
+  useStudentAttendanceHistory, useImportStudents,
 } from "@/hooks/useStudents";
 import { useCatequistas } from "@/hooks/useCatequistas";
+import { useParoquias } from "@/hooks/useParoquias";
 import { useAuth } from "@/contexts/AuthContext";
 import { toast } from "sonner";
 
@@ -48,7 +28,6 @@ const statusLabels: Record<string, string> = {
   falta_justificada: "Falta Justificada",
   falta_nao_justificada: "Falta Não Justificada",
 };
-
 const statusColors: Record<string, string> = {
   presente: "text-success",
   falta_justificada: "text-warning",
@@ -62,11 +41,8 @@ function readCSVWithFallback(file: File): Promise<string> {
       reader.onerror = () => reject(new Error("Erro ao ler o arquivo."));
       reader.onload = (evt) => {
         const text = (evt.target?.result as string) ?? "";
-        if (enc === "UTF-8" && text.includes("\uFFFD")) {
-          tryEncoding("Windows-1252");
-        } else {
-          resolve(text);
-        }
+        if (enc === "UTF-8" && text.includes("\uFFFD")) tryEncoding("Windows-1252");
+        else resolve(text);
       };
       reader.readAsText(file, enc);
     };
@@ -84,11 +60,13 @@ function parseStudentsCSV(raw: string, requireClass = true) {
   const ALIASES: Record<string, string> = {
     nome: "name", name: "name",
     turma: "class_name", class: "class_name", classe: "class_name", class_name: "class_name",
-    responsavel: "parent_name", "responsável": "parent_name", parent: "parent_name", parent_name: "parent_name", mae: "parent_name", "mãe": "parent_name", pai: "parent_name",
+    responsavel: "parent_name", "responsável": "parent_name", parent: "parent_name",
+    parent_name: "parent_name", mae: "parent_name", "mãe": "parent_name", pai: "parent_name",
     telefone: "phone", phone: "phone", tel: "phone", celular: "phone", fone: "phone",
   };
-  const idx = (field: string) => headers.findIndex((h) => ALIASES[h] === field);
-  const nameIdx = idx("name"); const classIdx = idx("class_name"); const parentIdx = idx("parent_name"); const phoneIdx = idx("phone");
+  const idx = (f: string) => headers.findIndex((h) => ALIASES[h] === f);
+  const nameIdx = idx("name"); const classIdx = idx("class_name");
+  const parentIdx = idx("parent_name"); const phoneIdx = idx("phone");
   if (nameIdx === -1) throw new Error('Coluna "Nome" não encontrada.');
   if (requireClass && classIdx === -1) throw new Error('Coluna "Turma" não encontrada.');
   const students = [];
@@ -110,8 +88,8 @@ function parseStudentsCSV(raw: string, requireClass = true) {
 function downloadTemplate(includeClass: boolean) {
   const headers = includeClass ? ["Nome", "Turma", "Responsavel", "Telefone"] : ["Nome", "Responsavel", "Telefone"];
   const rows = includeClass
-    ? [headers, ["João Silva", "Crisma 2025", "Maria Silva", "(41) 99999-0001"], ["Ana Souza", "Crisma 2025", "Carlos Souza", "(41) 99999-0002"]]
-    : [headers, ["João Silva", "Maria Silva", "(41) 99999-0001"], ["Ana Souza", "Carlos Souza", "(41) 99999-0002"]];
+    ? [headers, ["João Silva", "Crisma 2025", "Maria Silva", "(41) 99999-0001"]]
+    : [headers, ["João Silva", "Maria Silva", "(41) 99999-0001"]];
   const csv = rows.map((r) => r.join(",")).join("\n");
   const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -123,6 +101,7 @@ export default function Students() {
   const { user, isAdmin } = useAuth();
   const { data: students = [] } = useStudents();
   const { data: catequistas = [] } = useCatequistas();
+  const { data: paroquias = [] } = useParoquias();
   const addMutation = useAddStudent();
   const updateMutation = useUpdateStudent();
   const deleteMutation = useDeleteStudent();
@@ -132,21 +111,36 @@ export default function Students() {
   const [editingStudent, setEditingStudent] = useState<string | null>(null);
   const [historyStudentId, setHistoryStudentId] = useState<string | null>(null);
   const [selectedClass, setSelectedClass] = useState<string>("all");
+  const [selectedParoquia, setSelectedParoquia] = useState<string>("all");
   const { data: history = [] } = useStudentAttendanceHistory(historyStudentId);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const emptyForm = { name: "", class_name: "", parent_name: "", phone: "", catequista_id: "", paroquia_id: "" };
   const [form, setForm] = useState(emptyForm);
 
-  // Catequistas ativos com etapa (para admin selecionar ao criar aluno)
-  const catequistasAtivos = useMemo(
-    () => catequistas.filter((c) => c.role === "catequista" && c.active),
-    [catequistas]
+  const catequistasAtivos = useMemo(() => catequistas.filter((c) => c.role === "catequista" && c.active), [catequistas]);
+  const availableEtapas = useMemo(() => Array.from(new Set(students.map((s: any) => s.class_name))).sort() as string[], [students]);
+
+  // Paróquias que têm pelo menos 1 aluno
+  const paroquiasComAlunos = useMemo(() => {
+    const ids = new Set(students.map((s: any) => s.paroquia_id).filter(Boolean));
+    return paroquias.filter((p) => ids.has(p.id));
+  }, [students, paroquias]);
+
+  // Turmas visíveis com o filtro de paróquia aplicado
+  const studentsFilteredByParoquia = useMemo(() =>
+    selectedParoquia === "all" ? students : students.filter((s: any) => s.paroquia_id === selectedParoquia),
+    [students, selectedParoquia]
   );
 
-  const availableEtapas = useMemo(
-    () => Array.from(new Set(students.map((s: any) => s.class_name))).sort() as string[],
-    [students]
+  const classes = useMemo(() =>
+    ["all", ...Array.from(new Set(studentsFilteredByParoquia.map((s: any) => s.class_name))).sort() as string[]],
+    [studentsFilteredByParoquia]
+  );
+
+  const filteredStudents = useMemo(() =>
+    selectedClass === "all" ? studentsFilteredByParoquia : studentsFilteredByParoquia.filter((s: any) => s.class_name === selectedClass),
+    [studentsFilteredByParoquia, selectedClass]
   );
 
   const openAdd = () => {
@@ -158,47 +152,28 @@ export default function Students() {
   const openEdit = (s: any) => {
     setEditingStudent(s.id);
     setForm({
-      name: s.name,
-      class_name: s.class_name,
-      parent_name: s.parent_name,
-      phone: s.phone,
-      catequista_id: s.catequista_id ?? "",
-      paroquia_id: s.paroquia_id ?? "",
+      name: s.name, class_name: s.class_name, parent_name: s.parent_name,
+      phone: s.phone, catequista_id: s.catequista_id ?? "", paroquia_id: s.paroquia_id ?? "",
     });
     setOpen(true);
   };
 
-  // Ao selecionar catequista, preenche automaticamente etapa e paróquia
   const handleCatequisSelect = (catId: string) => {
     const cat = catequistasAtivos.find((c) => c.id === catId);
-    setForm((f) => ({
-      ...f,
-      catequista_id: catId,
-      paroquia_id: cat?.paroquia_id ?? "",
-      class_name: cat?.etapa ?? f.class_name,
-    }));
+    setForm((f) => ({ ...f, catequista_id: catId, paroquia_id: cat?.paroquia_id ?? "", class_name: cat?.etapa ?? f.class_name }));
   };
 
   const handleDelete = (id: string, name: string) => {
-    if (window.confirm(`Deseja remover o aluno "${name}"?\nO histórico de presença será preservado.`)) {
-      deleteMutation.mutate(id);
-    }
+    if (window.confirm(`Deseja remover o aluno "${name}"?\nO histórico de presença será preservado.`)) deleteMutation.mutate(id);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     const finalClass = isAdmin ? form.class_name : (user?.etapa ?? form.class_name);
     if (!form.name.trim() || !finalClass.trim()) return;
-    const payload = {
-      ...form,
-      class_name: finalClass,
-      catequista_id: form.catequista_id || null,
-      paroquia_id: form.paroquia_id || null,
-    };
+    const payload = { ...form, class_name: finalClass, catequista_id: form.catequista_id || null, paroquia_id: form.paroquia_id || null };
     if (editingStudent) {
-      updateMutation.mutate({ id: editingStudent, ...payload }, {
-        onSuccess: () => { setOpen(false); setForm(emptyForm); setEditingStudent(null); },
-      });
+      updateMutation.mutate({ id: editingStudent, ...payload }, { onSuccess: () => { setOpen(false); setForm(emptyForm); setEditingStudent(null); } });
     } else {
       addMutation.mutate(payload, { onSuccess: () => { setOpen(false); setForm(emptyForm); } });
     }
@@ -212,17 +187,13 @@ export default function Students() {
       const text = await readCSVWithFallback(file);
       const parsed = parseStudentsCSV(text, isAdmin);
       const studentsToImport = isAdmin ? parsed : parsed.map((s) => ({ ...s, class_name: user?.etapa ?? "" }));
-      if (window.confirm(`${studentsToImport.length} aluno(s) encontrado(s).\n\nDeseja importar todos?`)) {
-        importMutation.mutate(studentsToImport);
-      }
+      if (window.confirm(`${studentsToImport.length} aluno(s) encontrado(s).\n\nDeseja importar todos?`)) importMutation.mutate(studentsToImport);
     } catch (err: unknown) {
       toast.error(err instanceof Error ? err.message : "Erro ao ler o arquivo.");
     }
   };
 
   const isPending = addMutation.isPending || updateMutation.isPending;
-  const classes = ["all", ...Array.from(new Set(students.map((s: any) => s.class_name))).sort() as string[]];
-  const filteredStudents = selectedClass === "all" ? students : students.filter((s: any) => s.class_name === selectedClass);
 
   if (historyStudentId) {
     const student = students.find((s: any) => s.id === historyStudentId);
@@ -236,13 +207,13 @@ export default function Students() {
           <p className="text-sm text-muted-foreground">Histórico de presença</p>
         </div>
         <div className="px-4 space-y-2">
-          {history.map((h: any) => (
+          {(history as any[]).map((h) => (
             <div key={h.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-4 shadow-sm">
               <span className="text-sm font-medium text-foreground">{h.date}</span>
               <span className={cn("text-sm font-semibold", statusColors[h.status])}>{statusLabels[h.status] ?? h.status}</span>
             </div>
           ))}
-          {history.length === 0 && (<p className="py-8 text-center text-muted-foreground">Nenhum registro encontrado.</p>)}
+          {history.length === 0 && <p className="py-8 text-center text-muted-foreground">Nenhum registro encontrado.</p>}
         </div>
       </div>
     );
@@ -275,16 +246,12 @@ export default function Students() {
                 <Label htmlFor="name">Nome do Aluno</Label>
                 <Input id="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
               </div>
-
-              {/* Admin: seleciona catequista → preenche etapa e paróquia automaticamente */}
               {isAdmin ? (
                 <>
                   <div>
                     <Label>Catequista responsável</Label>
                     <Select value={form.catequista_id} onValueChange={handleCatequisSelect}>
-                      <SelectTrigger>
-                        <SelectValue placeholder="Selecione o catequista" />
-                      </SelectTrigger>
+                      <SelectTrigger><SelectValue placeholder="Selecione o catequista" /></SelectTrigger>
                       <SelectContent>
                         {catequistasAtivos.map((c) => (
                           <SelectItem key={c.id} value={c.id}>
@@ -294,22 +261,15 @@ export default function Students() {
                       </SelectContent>
                     </Select>
                   </div>
-                  {/* Etapa preenchida automaticamente mas editável */}
                   <div>
                     <Label htmlFor="class_name">Etapa / Turma</Label>
-                    <Input
-                      id="class_name"
-                      value={form.class_name}
+                    <Input id="class_name" value={form.class_name}
                       onChange={(e) => setForm({ ...form, class_name: e.target.value })}
-                      placeholder="Preenchida ao selecionar catequista"
-                      list="etapas-datalist"
-                      required
-                    />
+                      placeholder="Preenchida ao selecionar catequista" list="etapas-datalist" required />
                     <datalist id="etapas-datalist">
-                      {availableEtapas.map((e) => (<option key={e} value={e} />))}
+                      {availableEtapas.map((e) => <option key={e} value={e} />)}
                     </datalist>
                   </div>
-                  {/* Paróquia (somente leitura, derivada do catequista) */}
                   {form.paroquia_id && (
                     <div className="flex items-center gap-2 rounded-lg bg-muted/40 border border-border px-3 py-2">
                       <Building2 className="h-4 w-4 text-primary shrink-0" />
@@ -323,7 +283,6 @@ export default function Students() {
                   )}
                 </>
               ) : (
-                /* Catequista: mostra info da sua etapa e paróquia automaticamente */
                 <div className="space-y-2">
                   <div className="flex items-center gap-3 rounded-lg bg-muted/40 border border-border px-3 py-3">
                     <BookOpen className="h-4 w-4 text-primary shrink-0" />
@@ -343,7 +302,6 @@ export default function Students() {
                   )}
                 </div>
               )}
-
               <div>
                 <Label htmlFor="parent_name">Nome do Responsável</Label>
                 <Input id="parent_name" value={form.parent_name} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} />
@@ -362,31 +320,64 @@ export default function Students() {
         <div className="flex gap-2">
           <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
           <Button variant="outline" className="flex-1 h-11" onClick={() => fileInputRef.current?.click()} disabled={importMutation.isPending || (!isAdmin && !user?.etapa)}>
-            <Upload className="mr-2 h-4 w-4" />
-            {importMutation.isPending ? "Importando..." : "Importar CSV"}
+            <Upload className="mr-2 h-4 w-4" />{importMutation.isPending ? "Importando..." : "Importar CSV"}
           </Button>
-          <Button variant="outline" className="flex-1 h-11" onClick={() => downloadTemplate(isAdmin)} title="Baixar planilha modelo">
+          <Button variant="outline" className="flex-1 h-11" onClick={() => downloadTemplate(isAdmin)}>
             <FileDown className="mr-2 h-4 w-4" /> Modelo
           </Button>
         </div>
-        <p className="text-xs text-muted-foreground text-center">
-          {isAdmin ? "CSV aceita: Nome, Turma, Responsavel, Telefone" : "CSV aceita: Nome, Responsavel, Telefone — etapa e paróquia automáticas"}
-        </p>
       </div>
 
-      {/* Filtro por turma */}
-      {classes.length > 2 && (
-        <div className="px-4 mb-4 flex gap-2 overflow-x-auto pb-1">
-          {classes.map((c) => (
-            <button key={c} onClick={() => setSelectedClass(c)}
-              className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                selectedClass === c ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-              )}
-            >
-              {c === "all" ? "Todas as turmas" : c}
-            </button>
-          ))}
+      {/* ===== FILTROS ===== */}
+      {isAdmin && (
+        <div className="px-4 mb-3 space-y-2">
+          {/* Filtro por paróquia */}
+          {paroquiasComAlunos.length > 0 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              <button
+                onClick={() => { setSelectedParoquia("all"); setSelectedClass("all"); }}
+                className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5",
+                  selectedParoquia === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                )}
+              >
+                <Building2 className="h-3.5 w-3.5" /> Todas as paróquias
+              </button>
+              {paroquiasComAlunos.map((p) => (
+                <button key={p.id}
+                  onClick={() => { setSelectedParoquia(p.id); setSelectedClass("all"); }}
+                  className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+                    selectedParoquia === p.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  )}
+                >
+                  {p.nome}
+                </button>
+              ))}
+            </div>
+          )}
+          {/* Filtro por turma (somente após filtrar paróquia ou se houver várias turmas) */}
+          {classes.length > 2 && (
+            <div className="flex gap-2 overflow-x-auto pb-1">
+              {classes.map((c) => (
+                <button key={c} onClick={() => setSelectedClass(c)}
+                  className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+                    selectedClass === c ? "bg-secondary text-secondary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
+                  )}
+                >
+                  {c === "all" ? "Todas as turmas" : c}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
+      )}
+
+      {/* Contador */}
+      {isAdmin && (
+        <p className="px-4 mb-2 text-xs text-muted-foreground">
+          {filteredStudents.length} aluno{filteredStudents.length !== 1 ? "s" : ""}
+          {selectedParoquia !== "all" && ` — ${paroquias.find((p) => p.id === selectedParoquia)?.nome}`}
+          {selectedClass !== "all" && ` • ${selectedClass}`}
+        </p>
       )}
 
       <div className="space-y-2 px-4">
@@ -396,19 +387,10 @@ export default function Students() {
               <div className="flex-1 min-w-0 pr-2">
                 <p className="font-semibold text-foreground truncate">{s.name}</p>
                 <p className="text-sm text-primary font-medium">{s.class_name}</p>
-                {/* Catequista e paróquia (visível para admin) */}
                 {isAdmin && (
                   <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                    {s.catequista_nome && (
-                      <span className="flex items-center gap-1">
-                        <User className="h-3 w-3" />{s.catequista_nome}
-                      </span>
-                    )}
-                    {s.paroquia_nome && (
-                      <span className="flex items-center gap-1">
-                        <Building2 className="h-3 w-3" />{s.paroquia_nome}
-                      </span>
-                    )}
+                    {s.catequista_nome && <span className="flex items-center gap-1"><User className="h-3 w-3" />{s.catequista_nome}</span>}
+                    {s.paroquia_nome && <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{s.paroquia_nome}</span>}
                   </div>
                 )}
                 <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
@@ -428,8 +410,8 @@ export default function Students() {
             </div>
           </div>
         ))}
-        {filteredStudents.length === 0 && students.length > 0 && (<p className="py-8 text-center text-muted-foreground">Nenhum aluno encontrado para essa turma.</p>)}
-        {students.length === 0 && (<p className="py-8 text-center text-muted-foreground">Nenhum aluno cadastrado ainda.<br />Cadastre manualmente ou importe um CSV.</p>)}
+        {filteredStudents.length === 0 && students.length > 0 && <p className="py-8 text-center text-muted-foreground">Nenhum aluno encontrado para esse filtro.</p>}
+        {students.length === 0 && <p className="py-8 text-center text-muted-foreground">Nenhum aluno cadastrado ainda.<br />Cadastre manualmente ou importe um CSV.</p>}
       </div>
     </div>
   );
