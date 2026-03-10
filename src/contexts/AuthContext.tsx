@@ -17,14 +17,17 @@ export interface CatequistaUser {
   id: string;
   name: string;
   username: string;
-  role: "admin" | "catequista";
+  role: "admin" | "catequista" | "coordenador";
   etapa: string | null;
+  paroquia_id: string | null;
+  paroquia_nome: string | null;
 }
 
 interface AuthContextType {
   user: CatequistaUser | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  isCoordinator: boolean;
   login: (username: string, password: string) => Promise<{ error: string | null }>;
   logout: () => void;
 }
@@ -33,6 +36,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   isAuthenticated: false,
   isAdmin: false,
+  isCoordinator: false,
   login: async () => ({ error: null }),
   logout: () => {},
 });
@@ -55,7 +59,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { data, error } = await db
         .from("catequistas")
-        .select("id, name, username, role, etapa")
+        .select("id, name, username, role, etapa, paroquia_id, paroquias(nome)")
         .eq("username", username.toLowerCase().trim())
         .eq("password_hash", hash)
         .eq("active", true)
@@ -64,8 +68,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (error) {
         if (error.code === "42P01") {
           return {
-            error:
-              "Sistema não configurado. Execute a migração SQL no Supabase.",
+            error: "Sistema não configurado. Execute a migração SQL no Supabase.",
           };
         }
         return { error: "Erro ao acessar o banco de dados." };
@@ -81,6 +84,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         username: data.username,
         role: data.role,
         etapa: data.etapa ?? null,
+        paroquia_id: data.paroquia_id ?? null,
+        paroquia_nome: data.paroquias?.nome ?? null,
       };
 
       localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
@@ -101,6 +106,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         user,
         isAuthenticated: !!user,
         isAdmin: user?.role === "admin",
+        isCoordinator: user?.role === "coordenador",
         login,
         logout,
       }}
