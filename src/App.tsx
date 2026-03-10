@@ -20,6 +20,7 @@ import Missas from "./pages/Missas";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import CoordinadorView from "./pages/CoordinadorView";
+import AnoLetivo from "./pages/AnoLetivo";
 import BottomNav from "./components/BottomNav";
 import ProtectedRoute from "./components/ProtectedRoute";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
@@ -66,35 +67,17 @@ function AppLayout() {
       )}
 
       <Routes>
-        {/* Página pública dos pais */}
         <Route path="/justificativa" element={<Justification />} />
-
-        {/* Login */}
-        <Route
-          path="/login"
-          element={isAuthenticated ? <Navigate to="/" replace /> : <Login />}
-        />
-
-        {/* Páginas protegidas — qualquer usuário autenticado */}
+        <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/chamada" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
         <Route path="/alunos" element={<ProtectedRoute><Students /></ProtectedRoute>} />
         <Route path="/relatorios" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
         <Route path="/missas" element={<ProtectedRoute><Missas /></ProtectedRoute>} />
-
-        {/* Página do coordenador paroquial */}
-        <Route
-          path="/coordenador"
-          element={
-            <CoordinatorRoute>
-              <CoordinadorView />
-            </CoordinatorRoute>
-          }
-        />
-
-        {/* Página exclusiva do administrador */}
+        <Route path="/coordenador" element={<CoordinatorRoute><CoordinadorView /></CoordinatorRoute>} />
+        {/* Rota exclusiva de encerramento de ano — só coordenador paroquial */}
+        <Route path="/ano-letivo" element={<CoordinatorRoute><AnoLetivo /></CoordinatorRoute>} />
         <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
-
         <Route path="*" element={<NotFound />} />
       </Routes>
 

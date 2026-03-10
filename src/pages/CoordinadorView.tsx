@@ -1,175 +1,207 @@
-import { useMemo } from "react";
-import { Building2, BookOpen, Users, BarChart3, TrendingUp } from "lucide-react";
+import { useState, useMemo } from "react";
+import {
+  Users, BarChart2, GraduationCap, CheckCircle, XCircle,
+  Clock, AlertTriangle, ChevronDown, ChevronUp, Loader2,
+} from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Button } from "@/components/ui/button";
 import PageHeader from "@/components/PageHeader";
-import { useAuth } from "@/contexts/AuthContext";
-import { useCatequistasByParoquia } from "@/hooks/useCatequistas";
-import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
+import { useNavigate } from "react-router-dom";
+import { useToast } from "@/hooks/use-toast";
 
 const db = supabase as any;
 
-function useParishStats(paroquia_id: string | null) {
-  return useQuery({
-    queryKey: ["parish-stats", paroquia_id],
-    enabled: !!paroquia_id,
-    queryFn: async () => {
-      // Busca todos os alunos da paróquia
-      const { data: students } = await db
-        .from("students")
-        .select("id, name, class_name, catequista_id")
-        .eq("paroquia_id", paroquia_id)
-        .eq("active", true);
-
-      if (!students?.length) return { students: [], attendanceByClass: {} };
-
-      const studentIds = students.map((s: any) => s.id);
-
-      // Busca presenças
-      const { data: attendance } = await db
-        .from("attendance")
-        .select("student_id, status")
-        .in("student_id", studentIds);
-
-      const attendanceByStudent: Record<string, { present: number; total: number }> = {};
-      for (const s of students) {
-        attendanceByStudent[s.id] = { present: 0, total: 0 };
-      }
-      for (const a of (attendance ?? [])) {
-        if (attendanceByStudent[a.student_id]) {
-          attendanceByStudent[a.student_id].total++;
-          if (a.status === "present") attendanceByStudent[a.student_id].present++;
-        }
-      }
-
-      // Agrupa por etapa/catequista
-      const byClass: Record<string, { catequista_id: string; alunos: number; presencaMedia: number }> = {};
-      for (const s of students) {
-        const key = s.class_name;
-        if (!byClass[key]) byClass[key] = { catequista_id: s.catequista_id, alunos: 0, presencaMedia: 0 };
-        byClass[key].alunos++;
-        const att = attendanceByStudent[s.id];
-        byClass[key].presencaMedia += att.total > 0 ? att.present / att.total : 0;
-      }
-      for (const key of Object.keys(byClass)) {
-        byClass[key].presencaMedia = byClass[key].alunos > 0
-          ? Math.round((byClass[key].presencaMedia / byClass[key].alunos) * 100)
-          : 0;
-      }
-
-      return { students, attendanceByClass: byClass };
-    },
-  });
-}
-
 export default function CoordinadorView() {
   const { user } = useAuth();
-  const { data: catequistas = [], isLoading: loadingCat } = useCatequistasByParoquia(user?.paroquia_id ?? null);
-  const { data: stats, isLoading: loadingStats } = useParishStats(user?.paroquia_id ?? null);
+  const navigate = useNavigate();
+  const qc = useQueryClient();
+  const { toast } = useToast();
+  const paroquiaId = user?.paroquia_id;
+  const anoAtual = new Date().getFullYear();
 
-  const catequistasMap = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const c of catequistas) m[c.id] = c.name;
-    return m;
-  }, [catequistas]);
+  // ---------- stats gerais ----------
+  const { data: stats } = useQuery({
+    queryKey: ["coord-stats", paroquiaId],
+    queryFn: async () => {
+      const [studRes, attRes, catRes] = await Promise.all([
+        db.from("students").select("id", { count: "exact" }).eq("paroquia_id", paroquiaId).eq("active", true),
+        db.from("attendance").select("status").in(
+          "student_id",
+          (await db.from("students").select("id").eq("paroquia_id", paroquiaId).eq("active", true)).data?.map((s: any) => s.id) ?? []
+        ),
+        db.from("catequistas").select("id, name, etapa", { count: "exact" }).eq("paroquia_id", paroquiaId).eq("active", true).eq("role", "catequista"),
+      ]);
+      const total = studRes.count ?? 0;
+      const att = attRes.data ?? [];
+      const present = att.filter((a: any) => a.status === "presente").length;
+      const absent = att.filter((a: any) => a.status === "falta_nao_justificada").length;
+      return { total, present, absent, catequistas: catRes.data ?? [], totalCat: catRes.count ?? 0 };
+    },
+    enabled: !!paroquiaId,
+  });
 
-  const isLoading = loadingCat || loadingStats;
-  const attendanceByClass = stats?.attendanceByClass ?? {};
-  const totalAlunos = stats?.students?.length ?? 0;
-  const etapas = Object.keys(attendanceByClass).sort();
+  // ---------- promoções manuais pendentes ----------
+  const { data: pendentes = [], isLoading: loadingPendentes } = useQuery({
+    queryKey: ["promocoes-pendentes", paroquiaId, anoAtual],
+    queryFn: async () => {
+      const { data } = await db
+        .from("promocoes_pendentes")
+        .select("id, student_id, faltas_nao_justificadas, meses_sem_missa, score_faltas, decisao, students(name, class_name)")
+        .eq("paroquia_id", paroquiaId)
+        .eq("ano_catequetico", anoAtual)
+        .is("decisao", null);
+      return (data ?? []) as any[];
+    },
+    enabled: !!paroquiaId,
+  });
+
+  const decisionMutation = useMutation({
+    mutationFn: async ({ id, decisao }: { id: string; decisao: "promovido" | "retido" }) => {
+      await db.from("promocoes_pendentes").update({
+        decisao,
+        decidido_por: user!.id,
+        decidido_em: new Date().toISOString(),
+      }).eq("id", id);
+      // Log
+      await db.from("activity_log").insert({
+        catequista_id: user!.id,
+        acao: "decisao_promocao",
+        detalhes: { promocao_id: id, decisao, paroquia_id: paroquiaId },
+      });
+    },
+    onSuccess: (_, vars) => {
+      qc.invalidateQueries({ queryKey: ["promocoes-pendentes"] });
+      toast({ title: vars.decisao === "promovido" ? "Aluno promovido ✓" : "Aluno retido na etapa atual" });
+    },
+  });
+
+  const [expandedStats, setExpandedStats] = useState(false);
 
   return (
     <div className="pb-24">
-      <PageHeader
-        title="Visão da Paróquia"
-        subtitle={user?.paroquia_nome ?? "Coordenador Paroquial"}
-      />
+      <PageHeader title="Painel do Coordenador" subtitle={user?.paroquia_nome ?? "Paróquia"} />
 
-      {/* Cards de resumo */}
-      <div className="px-4 grid grid-cols-2 gap-3 mb-6">
-        <div className="bg-card rounded-lg border border-border p-4 text-center">
-          <Users className="h-6 w-6 text-primary mx-auto mb-1" />
-          <p className="text-2xl font-bold text-primary">
-            {catequistas.filter((c) => c.role === "catequista").length}
-          </p>
-          <p className="text-xs text-muted-foreground">Catequistas</p>
-        </div>
-        <div className="bg-card rounded-lg border border-border p-4 text-center">
-          <BookOpen className="h-6 w-6 text-primary mx-auto mb-1" />
-          <p className="text-2xl font-bold text-primary">{totalAlunos}</p>
-          <p className="text-xs text-muted-foreground">Catequizandos</p>
-        </div>
-        <div className="bg-card rounded-lg border border-border p-4 text-center">
-          <BarChart3 className="h-6 w-6 text-warning mx-auto mb-1" />
-          <p className="text-2xl font-bold text-warning">{etapas.length}</p>
-          <p className="text-xs text-muted-foreground">Etapas ativas</p>
-        </div>
-        <div className="bg-card rounded-lg border border-border p-4 text-center">
-          <TrendingUp className="h-6 w-6 text-success mx-auto mb-1" />
-          <p className="text-2xl font-bold text-success">
-            {etapas.length > 0
-              ? Math.round(etapas.reduce((acc, k) => acc + attendanceByClass[k].presencaMedia, 0) / etapas.length)
-              : 0}%
-          </p>
-          <p className="text-xs text-muted-foreground">Presença média</p>
-        </div>
-      </div>
+      <div className="px-4 space-y-4">
 
-      {/* Lista de catequistas */}
-      <div className="px-4 mb-2">
-        <h2 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
-          <Building2 className="h-4 w-4 text-primary" />
-          Catequistas da Paróquia
-        </h2>
-      </div>
-
-      {isLoading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        {/* Cards de resumo */}
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { label: "Alunos ativos", value: stats?.total ?? 0, icon: Users, color: "text-primary" },
+            { label: "Catequistas", value: stats?.totalCat ?? 0, icon: GraduationCap, color: "text-success" },
+            { label: "Presenças", value: stats?.present ?? 0, icon: CheckCircle, color: "text-success" },
+            { label: "Faltas NJ", value: stats?.absent ?? 0, icon: XCircle, color: "text-destructive" },
+          ].map(({ label, value, icon: Icon, color }) => (
+            <div key={label} className="rounded-lg border border-border bg-card p-4">
+              <Icon className={cn("h-5 w-5 mb-1", color)} />
+              <p className="text-2xl font-bold">{value}</p>
+              <p className="text-xs text-muted-foreground">{label}</p>
+            </div>
+          ))}
         </div>
-      ) : (
-        <div className="px-4 space-y-3">
-          {catequistas.filter((c) => c.role === "catequista").length === 0 && (
-            <p className="py-8 text-center text-muted-foreground">Nenhum catequista nesta paróquia ainda.</p>
-          )}
-          {catequistas
-            .filter((c) => c.role === "catequista")
-            .map((c) => {
-              const etapa = c.etapa;
-              const classStats = etapa ? attendanceByClass[etapa] : null;
-              return (
-                <div key={c.id} className="rounded-lg border border-border bg-card p-4 shadow-sm">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="flex-1 min-w-0">
-                      <p className="font-semibold text-foreground truncate">{c.name}</p>
-                      <p className="text-xs text-muted-foreground font-mono">@{c.username}</p>
-                      {etapa && (
-                        <div className="flex items-center gap-1.5 mt-2">
-                          <BookOpen className="h-3.5 w-3.5 text-primary" />
-                          <span className="text-sm font-medium text-primary">{etapa}</span>
-                        </div>
-                      )}
+
+        {/* Catequistas da paróquia */}
+        {(stats?.catequistas?.length ?? 0) > 0 && (
+          <div className="rounded-lg border border-border bg-card p-4">
+            <button
+              className="flex w-full items-center justify-between"
+              onClick={() => setExpandedStats((p) => !p)}
+            >
+              <div className="flex items-center gap-2">
+                <BarChart2 className="h-4 w-4 text-primary" />
+                <span className="font-semibold text-sm">Catequistas e Etapas</span>
+              </div>
+              {expandedStats ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+            </button>
+            {expandedStats && (
+              <div className="mt-3 space-y-1.5">
+                {stats!.catequistas.map((c: any) => (
+                  <div key={c.id} className="flex items-center gap-2 text-sm">
+                    <span className="flex-1 font-medium">{c.name}</span>
+                    <span className="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5">{c.etapa ?? "—"}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ===== BLOCO DE PROMOÇÕES MANUAIS ===== */}
+        {loadingPendentes && (
+          <div className="flex items-center gap-2 text-muted-foreground py-4 justify-center">
+            <Loader2 className="h-4 w-4 animate-spin" /> Verificando promoções pendentes...
+          </div>
+        )}
+
+        {!loadingPendentes && pendentes.length > 0 && (
+          <div className="rounded-lg border border-warning/40 bg-warning/5 p-4">
+            <div className="flex items-center gap-2 mb-1">
+              <AlertTriangle className="h-5 w-5 text-warning" />
+              <span className="font-bold text-warning">Promoções Pendentes — {pendentes.length} aluno{pendentes.length !== 1 ? "s" : ""}</span>
+            </div>
+            <p className="text-xs text-muted-foreground mb-4">
+              Esses alunos ultrapassaram o limite de {3} faltas (não justificadas + meses sem missa) no ano {anoAtual}.
+              Decida manualmente se cada um será promovido ou retido.
+            </p>
+            <div className="space-y-3">
+              {pendentes.map((p) => (
+                <div key={p.id} className="rounded-lg border border-border bg-card p-3">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div>
+                      <p className="font-semibold text-sm">{p.students?.name ?? "—"}</p>
+                      <p className="text-xs text-muted-foreground">{p.students?.class_name ?? "—"}</p>
                     </div>
-                    {classStats && (
-                      <div className="text-right shrink-0">
-                        <p className="text-xs text-muted-foreground">{classStats.alunos} alunos</p>
-                        <p
-                          className={cn(
-                            "text-sm font-bold mt-0.5",
-                            classStats.presencaMedia >= 75 ? "text-success" :
-                            classStats.presencaMedia >= 50 ? "text-warning" : "text-destructive"
-                          )}
-                        >
-                          {classStats.presencaMedia}% presença
-                        </p>
-                      </div>
-                    )}
+                    <div className="text-right text-xs">
+                      <p className="text-destructive font-semibold">{p.score_faltas} faltas equiv.</p>
+                      <p className="text-muted-foreground">{p.faltas_nao_justificadas} NJ · {p.meses_sem_missa} meses s/ missa</p>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-success/50 text-success hover:bg-success/10"
+                      onClick={() => decisionMutation.mutate({ id: p.id, decisao: "promovido" })}
+                      disabled={decisionMutation.isPending}
+                    >
+                      <CheckCircle className="h-3.5 w-3.5 mr-1" /> Promover
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="flex-1 border-destructive/50 text-destructive hover:bg-destructive/10"
+                      onClick={() => decisionMutation.mutate({ id: p.id, decisao: "retido" })}
+                      disabled={decisionMutation.isPending}
+                    >
+                      <XCircle className="h-3.5 w-3.5 mr-1" /> Reter
+                    </Button>
                   </div>
                 </div>
-              );
-            })}
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground mt-3 text-center">
+              Este bloco desaparece automaticamente quando todas as decisões forem tomadas.
+            </p>
+          </div>
+        )}
+
+        {/* Botão novo ano catequético */}
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <GraduationCap className="h-5 w-5 text-primary" />
+            <span className="font-bold text-primary">Encerrar Ano Catequético</span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Encerra o ano {anoAtual}, promove os alunos aptos automaticamente e permite que você decida o destino dos demais.
+          </p>
+          <Button className="w-full" variant="outline" onClick={() => navigate("/ano-letivo")}>
+            <GraduationCap className="h-4 w-4 mr-2" /> Iniciar encerramento do ano
+          </Button>
         </div>
-      )}
+
+      </div>
     </div>
   );
 }
