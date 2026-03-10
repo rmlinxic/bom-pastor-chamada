@@ -2,7 +2,7 @@ import { createContext, useContext, useState, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
 const SALT = "bom_pastor_catequese";
-const SESSION_KEY = "bom_pastor_session_v2";
+const SESSION_KEY = "bom_pastor_session_v3";
 const db = supabase as any;
 
 async function hashPassword(password: string): Promise<string> {
@@ -21,13 +21,17 @@ export interface CatequistaUser {
   etapa: string | null;
   paroquia_id: string | null;
   paroquia_nome: string | null;
+  is_coordenador: boolean;
 }
 
 interface AuthContextType {
   user: CatequistaUser | null;
   isAuthenticated: boolean;
   isAdmin: boolean;
+  /** true se role=coordenador OU se catequista com is_coordenador=true */
   isCoordinator: boolean;
+  /** true se tem role=catequista (independente de ser coordenador também) */
+  isCatequista: boolean;
   login: (username: string, password: string) => Promise<{ error: string | null }>;
   logout: () => void;
 }
@@ -37,6 +41,7 @@ const AuthContext = createContext<AuthContextType>({
   isAuthenticated: false,
   isAdmin: false,
   isCoordinator: false,
+  isCatequista: false,
   login: async () => ({ error: null }),
   logout: () => {},
 });
@@ -59,24 +64,19 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { data, error } = await db
         .from("catequistas")
-        .select("id, name, username, role, etapa, paroquia_id, paroquias(nome)")
+        .select("id, name, username, role, etapa, paroquia_id, is_coordenador, paroquias(nome)")
         .eq("username", username.toLowerCase().trim())
         .eq("password_hash", hash)
         .eq("active", true)
         .maybeSingle();
 
       if (error) {
-        if (error.code === "42P01") {
-          return {
-            error: "Sistema não configurado. Execute a migração SQL no Supabase.",
-          };
-        }
+        if (error.code === "42P01")
+          return { error: "Sistema não configurado. Execute a migração SQL no Supabase." };
         return { error: "Erro ao acessar o banco de dados." };
       }
 
-      if (!data) {
-        return { error: "Usuário ou senha incorretos." };
-      }
+      if (!data) return { error: "Usuário ou senha incorretos." };
 
       const sessionUser: CatequistaUser = {
         id: data.id,
@@ -86,6 +86,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         etapa: data.etapa ?? null,
         paroquia_id: data.paroquia_id ?? null,
         paroquia_nome: data.paroquias?.nome ?? null,
+        is_coordenador: data.is_coordenador ?? false,
       };
 
       localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
@@ -100,13 +101,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const isCoordinator = user?.role === "coordenador" || user?.is_coordenador === true;
+  const isCatequista = user?.role === "catequista";
+
   return (
     <AuthContext.Provider
       value={{
         user,
         isAuthenticated: !!user,
         isAdmin: user?.role === "admin",
-        isCoordinator: user?.role === "coordenador",
+        isCoordinator,
+        isCatequista,
         login,
         logout,
       }}
