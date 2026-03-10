@@ -1,418 +1,219 @@
-import { useState, useRef, useMemo } from "react";
+import { useState } from "react";
 import {
-  UserPlus, Pencil, History, ArrowLeft, Trash2, Upload, FileDown,
-  BookOpen, AlertTriangle, Building2, User,
+  Plus, Search, Edit, Trash2, ChevronDown, ChevronUp,
+  CheckCircle, XCircle, AlertTriangle, Clock,
 } from "lucide-react";
-import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger,
-} from "@/components/ui/dialog";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import PageHeader from "@/components/PageHeader";
-import {
-  useStudents, useAddStudent, useUpdateStudent, useDeleteStudent,
-  useStudentAttendanceHistory, useImportStudents,
-} from "@/hooks/useStudents";
-import { useCatequistas } from "@/hooks/useCatequistas";
-import { useParoquias } from "@/hooks/useParoquias";
-import { useAuth } from "@/contexts/AuthContext";
-import { toast } from "sonner";
+import { useStudents, useDeleteStudent } from "@/hooks/useStudents";
+import { useAllAttendance } from "@/hooks/useAttendance";
+import StudentForm from "@/components/StudentForm";
+import { format, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
+import { cn } from "@/lib/utils";
 
-const statusLabels: Record<string, string> = {
-  presente: "Presente",
-  falta_justificada: "Falta Justificada",
-  falta_nao_justificada: "Falta Não Justificada",
+const STATUS_ICON: Record<string, { icon: typeof CheckCircle; color: string; label: string }> = {
+  presente: { icon: CheckCircle, color: "text-success", label: "P" },
+  falta_nao_justificada: { icon: XCircle, color: "text-destructive", label: "FN" },
+  falta_justificada: { icon: AlertTriangle, color: "text-warning", label: "FJ" },
 };
-const statusColors: Record<string, string> = {
-  presente: "text-success",
-  falta_justificada: "text-warning",
-  falta_nao_justificada: "text-destructive",
-};
-
-function readCSVWithFallback(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const tryEncoding = (enc: string) => {
-      const reader = new FileReader();
-      reader.onerror = () => reject(new Error("Erro ao ler o arquivo."));
-      reader.onload = (evt) => {
-        const text = (evt.target?.result as string) ?? "";
-        if (enc === "UTF-8" && text.includes("\uFFFD")) tryEncoding("Windows-1252");
-        else resolve(text);
-      };
-      reader.readAsText(file, enc);
-    };
-    tryEncoding("UTF-8");
-  });
-}
-
-function parseStudentsCSV(raw: string, requireClass = true) {
-  const lines = raw.trim().split(/\r?\n/).filter((l) => l.trim());
-  if (lines.length < 2) throw new Error("O arquivo está vazio ou não tem dados.");
-  const firstLine = lines[0];
-  const sep = (firstLine.match(/;/g) ?? []).length >= (firstLine.match(/,/g) ?? []).length ? ";" : ",";
-  const splitLine = (line: string) => line.split(sep).map((c) => c.trim().replace(/^["']|["']$/g, "").trim());
-  const headers = splitLine(firstLine).map((h) => h.toLowerCase());
-  const ALIASES: Record<string, string> = {
-    nome: "name", name: "name",
-    turma: "class_name", class: "class_name", classe: "class_name", class_name: "class_name",
-    responsavel: "parent_name", "responsável": "parent_name", parent: "parent_name",
-    parent_name: "parent_name", mae: "parent_name", "mãe": "parent_name", pai: "parent_name",
-    telefone: "phone", phone: "phone", tel: "phone", celular: "phone", fone: "phone",
-  };
-  const idx = (f: string) => headers.findIndex((h) => ALIASES[h] === f);
-  const nameIdx = idx("name"); const classIdx = idx("class_name");
-  const parentIdx = idx("parent_name"); const phoneIdx = idx("phone");
-  if (nameIdx === -1) throw new Error('Coluna "Nome" não encontrada.');
-  if (requireClass && classIdx === -1) throw new Error('Coluna "Turma" não encontrada.');
-  const students = [];
-  for (let i = 1; i < lines.length; i++) {
-    const cols = splitLine(lines[i]);
-    const name = cols[nameIdx] ?? "";
-    if (!name) continue;
-    students.push({
-      name,
-      class_name: classIdx >= 0 ? (cols[classIdx] ?? "") : "",
-      parent_name: parentIdx >= 0 ? (cols[parentIdx] ?? "") : "",
-      phone: phoneIdx >= 0 ? (cols[phoneIdx] ?? "") : "",
-    });
-  }
-  if (students.length === 0) throw new Error("Nenhum aluno válido encontrado.");
-  return students;
-}
-
-function downloadTemplate(includeClass: boolean) {
-  const headers = includeClass ? ["Nome", "Turma", "Responsavel", "Telefone"] : ["Nome", "Responsavel", "Telefone"];
-  const rows = includeClass
-    ? [headers, ["João Silva", "Crisma 2025", "Maria Silva", "(41) 99999-0001"]]
-    : [headers, ["João Silva", "Maria Silva", "(41) 99999-0001"]];
-  const csv = rows.map((r) => r.join(",")).join("\n");
-  const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a"); a.href = url; a.download = "modelo-alunos.csv"; a.click();
-  URL.revokeObjectURL(url);
-}
 
 export default function Students() {
-  const { user, isAdmin } = useAuth();
-  const { data: students = [] } = useStudents();
-  const { data: catequistas = [] } = useCatequistas();
-  const { data: paroquias = [] } = useParoquias();
-  const addMutation = useAddStudent();
-  const updateMutation = useUpdateStudent();
+  const { data: students = [], isLoading } = useStudents();
+  const { data: attendance = [] } = useAllAttendance();
   const deleteMutation = useDeleteStudent();
-  const importMutation = useImportStudents();
 
-  const [open, setOpen] = useState(false);
-  const [editingStudent, setEditingStudent] = useState<string | null>(null);
-  const [historyStudentId, setHistoryStudentId] = useState<string | null>(null);
-  const [selectedClass, setSelectedClass] = useState<string>("all");
-  const [selectedParoquia, setSelectedParoquia] = useState<string>("all");
-  const { data: history = [] } = useStudentAttendanceHistory(historyStudentId);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [search, setSearch] = useState("");
+  const [showForm, setShowForm] = useState(false);
+  const [editingStudent, setEditingStudent] = useState<any>(null);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const emptyForm = { name: "", class_name: "", parent_name: "", phone: "", catequista_id: "", paroquia_id: "" };
-  const [form, setForm] = useState(emptyForm);
-
-  const catequistasAtivos = useMemo(() => catequistas.filter((c) => c.role === "catequista" && c.active), [catequistas]);
-  const availableEtapas = useMemo(() => Array.from(new Set(students.map((s: any) => s.class_name))).sort() as string[], [students]);
-
-  // Paróquias que têm pelo menos 1 aluno
-  const paroquiasComAlunos = useMemo(() => {
-    const ids = new Set(students.map((s: any) => s.paroquia_id).filter(Boolean));
-    return paroquias.filter((p) => ids.has(p.id));
-  }, [students, paroquias]);
-
-  // Turmas visíveis com o filtro de paróquia aplicado
-  const studentsFilteredByParoquia = useMemo(() =>
-    selectedParoquia === "all" ? students : students.filter((s: any) => s.paroquia_id === selectedParoquia),
-    [students, selectedParoquia]
+  const filtered = students.filter((s) =>
+    s.name.toLowerCase().includes(search.toLowerCase()) ||
+    s.class_name?.toLowerCase().includes(search.toLowerCase())
   );
-
-  const classes = useMemo(() =>
-    ["all", ...Array.from(new Set(studentsFilteredByParoquia.map((s: any) => s.class_name))).sort() as string[]],
-    [studentsFilteredByParoquia]
-  );
-
-  const filteredStudents = useMemo(() =>
-    selectedClass === "all" ? studentsFilteredByParoquia : studentsFilteredByParoquia.filter((s: any) => s.class_name === selectedClass),
-    [studentsFilteredByParoquia, selectedClass]
-  );
-
-  const openAdd = () => {
-    setEditingStudent(null);
-    setForm({ ...emptyForm, class_name: isAdmin ? "" : (user?.etapa ?? "") });
-    setOpen(true);
-  };
-
-  const openEdit = (s: any) => {
-    setEditingStudent(s.id);
-    setForm({
-      name: s.name, class_name: s.class_name, parent_name: s.parent_name,
-      phone: s.phone, catequista_id: s.catequista_id ?? "", paroquia_id: s.paroquia_id ?? "",
-    });
-    setOpen(true);
-  };
-
-  const handleCatequisSelect = (catId: string) => {
-    const cat = catequistasAtivos.find((c) => c.id === catId);
-    setForm((f) => ({ ...f, catequista_id: catId, paroquia_id: cat?.paroquia_id ?? "", class_name: cat?.etapa ?? f.class_name }));
-  };
 
   const handleDelete = (id: string, name: string) => {
-    if (window.confirm(`Deseja remover o aluno "${name}"?\nO histórico de presença será preservado.`)) deleteMutation.mutate(id);
+    if (window.confirm(`Remover "${name}"? Esta ação não pode ser desfeita.`))
+      deleteMutation.mutate(id);
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    const finalClass = isAdmin ? form.class_name : (user?.etapa ?? form.class_name);
-    if (!form.name.trim() || !finalClass.trim()) return;
-    const payload = { ...form, class_name: finalClass, catequista_id: form.catequista_id || null, paroquia_id: form.paroquia_id || null };
-    if (editingStudent) {
-      updateMutation.mutate({ id: editingStudent, ...payload }, { onSuccess: () => { setOpen(false); setForm(emptyForm); setEditingStudent(null); } });
-    } else {
-      addMutation.mutate(payload, { onSuccess: () => { setOpen(false); setForm(emptyForm); } });
-    }
+  const handleEdit = (student: any) => {
+    setEditingStudent(student);
+    setShowForm(true);
   };
 
-  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (fileInputRef.current) fileInputRef.current.value = "";
-    if (!file) return;
-    try {
-      const text = await readCSVWithFallback(file);
-      const parsed = parseStudentsCSV(text, isAdmin);
-      const studentsToImport = isAdmin ? parsed : parsed.map((s) => ({ ...s, class_name: user?.etapa ?? "" }));
-      if (window.confirm(`${studentsToImport.length} aluno(s) encontrado(s).\n\nDeseja importar todos?`)) importMutation.mutate(studentsToImport);
-    } catch (err: unknown) {
-      toast.error(err instanceof Error ? err.message : "Erro ao ler o arquivo.");
-    }
+  const handleCloseForm = () => {
+    setShowForm(false);
+    setEditingStudent(null);
   };
 
-  const isPending = addMutation.isPending || updateMutation.isPending;
+  // Histórico por aluno (do mais recente para o mais antigo)
+  const historyByStudent = (studentId: string) =>
+    attendance
+      .filter((a) => a.student_id === studentId)
+      .sort((a, b) => b.date.localeCompare(a.date))
+      .slice(0, 20); // máximo 20 registros no accordeon
 
-  if (historyStudentId) {
-    const student = students.find((s: any) => s.id === historyStudentId);
-    return (
-      <div className="pb-24">
-        <div className="px-4 pt-6 pb-4">
-          <Button variant="ghost" size="sm" onClick={() => setHistoryStudentId(null)} className="mb-2 -ml-2">
-            <ArrowLeft className="mr-1 h-4 w-4" /> Voltar
-          </Button>
-          <h1 className="text-2xl font-bold text-foreground">{student?.name}</h1>
-          <p className="text-sm text-muted-foreground">Histórico de presença</p>
-        </div>
-        <div className="px-4 space-y-2">
-          {(history as any[]).map((h) => (
-            <div key={h.id} className="flex items-center justify-between rounded-lg border border-border bg-card p-4 shadow-sm">
-              <span className="text-sm font-medium text-foreground">{h.date}</span>
-              <span className={cn("text-sm font-semibold", statusColors[h.status])}>{statusLabels[h.status] ?? h.status}</span>
-            </div>
-          ))}
-          {history.length === 0 && <p className="py-8 text-center text-muted-foreground">Nenhum registro encontrado.</p>}
-        </div>
-      </div>
-    );
-  }
+  const toggleExpand = (id: string) =>
+    setExpandedId((prev) => (prev === id ? null : id));
 
   return (
     <div className="pb-24">
       <PageHeader title="Alunos" subtitle="Gerencie os catequizandos" />
 
-      {!isAdmin && !user?.etapa && (
-        <div className="mx-4 mb-4 flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 p-4">
-          <AlertTriangle className="h-5 w-5 text-warning shrink-0 mt-0.5" />
-          <p className="text-sm text-warning">Você ainda não tem uma etapa atribuída. Contate o administrador.</p>
+      <div className="px-4 mb-4 flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar por nome ou turma..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9"
+          />
+        </div>
+        <Button onClick={() => setShowForm(true)} size="icon" className="shrink-0">
+          <Plus className="h-5 w-5" />
+        </Button>
+      </div>
+
+      {isLoading && (
+        <div className="px-4 space-y-2">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-20 rounded-lg bg-muted animate-pulse" />
+          ))}
         </div>
       )}
 
-      <div className="px-4 mb-4 space-y-2">
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button className="w-full h-12 text-base font-semibold" onClick={openAdd} disabled={!isAdmin && !user?.etapa}>
-              <UserPlus className="mr-2 h-5 w-5" /> Novo Aluno
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="mx-4 max-w-sm">
-            <DialogHeader>
-              <DialogTitle>{editingStudent ? "Editar Aluno" : "Cadastrar Aluno"}</DialogTitle>
-            </DialogHeader>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <Label htmlFor="name">Nome do Aluno</Label>
-                <Input id="name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
+      <div className="px-4 space-y-2">
+        {filtered.map((student) => {
+          const history = historyByStudent(student.id);
+          const isOpen = expandedId === student.id;
+          const presentCount = history.filter((h) => h.status === "presente").length;
+          const totalCount = history.length;
+          const pct = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : null;
+          const unjustifiedCount = history.filter((h) => h.status === "falta_nao_justificada").length;
+
+          return (
+            <div
+              key={student.id}
+              className={cn(
+                "rounded-lg border border-border bg-card shadow-sm overflow-hidden transition-all",
+                unjustifiedCount >= 2 && "border-destructive/40"
+              )}
+            >
+              {/* Header do card */}
+              <div className="flex items-center justify-between p-4 gap-3">
+                <button
+                  className="flex-1 text-left min-w-0"
+                  onClick={() => toggleExpand(student.id)}
+                >
+                  <div className="flex items-center gap-2">
+                    <p className="font-semibold text-foreground truncate">{student.name}</p>
+                    {unjustifiedCount >= 2 && (
+                      <span className="shrink-0 text-[10px] font-bold rounded-full bg-destructive/15 text-destructive px-1.5 py-0.5">
+                        {unjustifiedCount} FN
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <p className="text-xs text-muted-foreground">{student.class_name}</p>
+                    {pct !== null && (
+                      <span className={cn(
+                        "text-[10px] font-semibold rounded-full px-1.5 py-0.5",
+                        pct >= 75 ? "bg-success/15 text-success" :
+                        pct >= 50 ? "bg-warning/15 text-warning" :
+                        "bg-destructive/15 text-destructive"
+                      )}>
+                        {pct}% presença
+                      </span>
+                    )}
+                  </div>
+                </button>
+
+                <div className="flex items-center gap-1 shrink-0">
+                  <button
+                    onClick={() => toggleExpand(student.id)}
+                    className="p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                    title="Ver histórico"
+                  >
+                    {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                  </button>
+                  <button
+                    onClick={() => handleEdit(student)}
+                    className="p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+                  >
+                    <Edit className="h-4 w-4" />
+                  </button>
+                  <button
+                    onClick={() => handleDelete(student.id, student.name)}
+                    disabled={deleteMutation.isPending}
+                    className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
               </div>
-              {isAdmin ? (
-                <>
-                  <div>
-                    <Label>Catequista responsável</Label>
-                    <Select value={form.catequista_id} onValueChange={handleCatequisSelect}>
-                      <SelectTrigger><SelectValue placeholder="Selecione o catequista" /></SelectTrigger>
-                      <SelectContent>
-                        {catequistasAtivos.map((c) => (
-                          <SelectItem key={c.id} value={c.id}>
-                            {c.name}{c.etapa ? ` — ${c.etapa}` : ""}{c.paroquia_nome ? ` (${c.paroquia_nome})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div>
-                    <Label htmlFor="class_name">Etapa / Turma</Label>
-                    <Input id="class_name" value={form.class_name}
-                      onChange={(e) => setForm({ ...form, class_name: e.target.value })}
-                      placeholder="Preenchida ao selecionar catequista" list="etapas-datalist" required />
-                    <datalist id="etapas-datalist">
-                      {availableEtapas.map((e) => <option key={e} value={e} />)}
-                    </datalist>
-                  </div>
-                  {form.paroquia_id && (
-                    <div className="flex items-center gap-2 rounded-lg bg-muted/40 border border-border px-3 py-2">
-                      <Building2 className="h-4 w-4 text-primary shrink-0" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Paróquia (via catequista)</p>
-                        <p className="text-sm font-semibold text-primary">
-                          {catequistasAtivos.find((c) => c.id === form.catequista_id)?.paroquia_nome ?? "—"}
-                        </p>
-                      </div>
+
+              {/* Accordeon: histórico de presenças */}
+              {isOpen && (
+                <div className="border-t border-border bg-muted/30 px-4 py-3">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                    Histórico recente
+                    {totalCount > 0 && (
+                      <span className="ml-2 font-normal normal-case">
+                        {presentCount}/{totalCount} presenças ({pct}%)
+                      </span>
+                    )}
+                  </p>
+                  {history.length === 0 ? (
+                    <div className="flex items-center gap-2 text-muted-foreground">
+                      <Clock className="h-4 w-4" />
+                      <p className="text-sm">Nenhum registro ainda.</p>
                     </div>
-                  )}
-                </>
-              ) : (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3 rounded-lg bg-muted/40 border border-border px-3 py-3">
-                    <BookOpen className="h-4 w-4 text-primary shrink-0" />
-                    <div>
-                      <p className="text-xs text-muted-foreground">Etapa (automática)</p>
-                      <p className="text-sm font-semibold text-primary">{user?.etapa}</p>
-                    </div>
-                  </div>
-                  {user?.paroquia_id && (
-                    <div className="flex items-center gap-3 rounded-lg bg-muted/40 border border-border px-3 py-3">
-                      <Building2 className="h-4 w-4 text-primary shrink-0" />
-                      <div>
-                        <p className="text-xs text-muted-foreground">Paróquia (automática)</p>
-                        <p className="text-sm font-semibold text-primary">{user?.paroquia_nome ?? "—"}</p>
-                      </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      {history.map((rec) => {
+                        const cfg = STATUS_ICON[rec.status] ?? { icon: Clock, color: "text-muted-foreground", label: "?" };
+                        const Icon = cfg.icon;
+                        return (
+                          <div key={rec.id} className="flex items-center gap-2.5 text-sm">
+                            <Icon className={cn("h-4 w-4 shrink-0", cfg.color)} />
+                            <span className="text-muted-foreground w-24 shrink-0">
+                              {format(parseISO(rec.date), "dd MMM yyyy", { locale: ptBR })}
+                            </span>
+                            <span className={cn("text-xs font-semibold", cfg.color)}>{cfg.label}</span>
+                            {(rec as any).justification_reason && (
+                              <span className="text-xs text-muted-foreground italic truncate">{(rec as any).justification_reason}</span>
+                            )}
+                          </div>
+                        );
+                      })}
+                      {attendance.filter((a) => a.student_id === student.id).length > 20 && (
+                        <p className="text-xs text-muted-foreground mt-1">Mostrando os 20 registros mais recentes. Veja o relatório completo em Relatórios.</p>
+                      )}
                     </div>
                   )}
                 </div>
               )}
-              <div>
-                <Label htmlFor="parent_name">Nome do Responsável</Label>
-                <Input id="parent_name" value={form.parent_name} onChange={(e) => setForm({ ...form, parent_name: e.target.value })} />
-              </div>
-              <div>
-                <Label htmlFor="phone">Telefone</Label>
-                <Input id="phone" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} placeholder="(99) 99999-9999" />
-              </div>
-              <Button type="submit" className="w-full h-12" disabled={isPending}>
-                {isPending ? "Salvando..." : editingStudent ? "Atualizar" : "Cadastrar"}
-              </Button>
-            </form>
-          </DialogContent>
-        </Dialog>
-
-        <div className="flex gap-2">
-          <input ref={fileInputRef} type="file" accept=".csv,text/csv" className="hidden" onChange={handleFileChange} />
-          <Button variant="outline" className="flex-1 h-11" onClick={() => fileInputRef.current?.click()} disabled={importMutation.isPending || (!isAdmin && !user?.etapa)}>
-            <Upload className="mr-2 h-4 w-4" />{importMutation.isPending ? "Importando..." : "Importar CSV"}
-          </Button>
-          <Button variant="outline" className="flex-1 h-11" onClick={() => downloadTemplate(isAdmin)}>
-            <FileDown className="mr-2 h-4 w-4" /> Modelo
-          </Button>
-        </div>
-      </div>
-
-      {/* ===== FILTROS ===== */}
-      {isAdmin && (
-        <div className="px-4 mb-3 space-y-2">
-          {/* Filtro por paróquia */}
-          {paroquiasComAlunos.length > 0 && (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              <button
-                onClick={() => { setSelectedParoquia("all"); setSelectedClass("all"); }}
-                className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5",
-                  selectedParoquia === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-                )}
-              >
-                <Building2 className="h-3.5 w-3.5" /> Todas as paróquias
-              </button>
-              {paroquiasComAlunos.map((p) => (
-                <button key={p.id}
-                  onClick={() => { setSelectedParoquia(p.id); setSelectedClass("all"); }}
-                  className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                    selectedParoquia === p.id ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  )}
-                >
-                  {p.nome}
-                </button>
-              ))}
             </div>
-          )}
-          {/* Filtro por turma (somente após filtrar paróquia ou se houver várias turmas) */}
-          {classes.length > 2 && (
-            <div className="flex gap-2 overflow-x-auto pb-1">
-              {classes.map((c) => (
-                <button key={c} onClick={() => setSelectedClass(c)}
-                  className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                    selectedClass === c ? "bg-secondary text-secondary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  )}
-                >
-                  {c === "all" ? "Todas as turmas" : c}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      )}
+          );
+        })}
 
-      {/* Contador */}
-      {isAdmin && (
-        <p className="px-4 mb-2 text-xs text-muted-foreground">
-          {filteredStudents.length} aluno{filteredStudents.length !== 1 ? "s" : ""}
-          {selectedParoquia !== "all" && ` — ${paroquias.find((p) => p.id === selectedParoquia)?.nome}`}
-          {selectedClass !== "all" && ` • ${selectedClass}`}
-        </p>
-      )}
-
-      <div className="space-y-2 px-4">
-        {filteredStudents.map((s: any) => (
-          <div key={s.id} className="rounded-lg border border-border bg-card p-4 shadow-sm animate-fade-in">
-            <div className="flex items-start justify-between">
-              <div className="flex-1 min-w-0 pr-2">
-                <p className="font-semibold text-foreground truncate">{s.name}</p>
-                <p className="text-sm text-primary font-medium">{s.class_name}</p>
-                {isAdmin && (
-                  <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
-                    {s.catequista_nome && <span className="flex items-center gap-1"><User className="h-3 w-3" />{s.catequista_nome}</span>}
-                    {s.paroquia_nome && <span className="flex items-center gap-1"><Building2 className="h-3 w-3" />{s.paroquia_nome}</span>}
-                  </div>
-                )}
-                <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                  <span>Resp: {s.parent_name || "—"}</span>
-                  {s.phone && <span>{s.phone}</span>}
-                </div>
-              </div>
-              <div className="flex gap-1 shrink-0">
-                <Button variant="ghost" size="icon" title="Editar" onClick={() => openEdit(s)}><Pencil className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="icon" title="Histórico" onClick={() => setHistoryStudentId(s.id)}><History className="h-4 w-4" /></Button>
-                <Button variant="ghost" size="icon" title="Remover"
-                  className="text-destructive hover:text-destructive hover:bg-destructive/10"
-                  onClick={() => handleDelete(s.id, s.name)} disabled={deleteMutation.isPending}>
-                  <Trash2 className="h-4 w-4" />
-                </Button>
-              </div>
-            </div>
+        {filtered.length === 0 && !isLoading && (
+          <div className="py-10 text-center">
+            <p className="text-muted-foreground">Nenhum aluno encontrado.</p>
           </div>
-        ))}
-        {filteredStudents.length === 0 && students.length > 0 && <p className="py-8 text-center text-muted-foreground">Nenhum aluno encontrado para esse filtro.</p>}
-        {students.length === 0 && <p className="py-8 text-center text-muted-foreground">Nenhum aluno cadastrado ainda.<br />Cadastre manualmente ou importe um CSV.</p>}
+        )}
       </div>
+
+      {showForm && (
+        <StudentForm
+          student={editingStudent}
+          onClose={handleCloseForm}
+        />
+      )}
     </div>
   );
 }

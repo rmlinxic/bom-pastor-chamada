@@ -1,13 +1,7 @@
 import { useState, useMemo } from "react";
 import {
-  AlertTriangle,
-  Download,
-  Trash2,
-  Clock,
-  Church,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
+  AlertTriangle, Download, Trash2, Clock, Church,
+  CheckCircle2, ChevronLeft, ChevronRight, FileText,
 } from "lucide-react";
 import { format, getDaysInMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -16,16 +10,11 @@ import { Button } from "@/components/ui/button";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import {
-  useAllAttendance,
-  useDeleteAttendance,
-  usePendingJustifications,
-  useDeletePendingJustification,
+  useAllAttendance, useDeleteAttendance,
+  usePendingJustifications, useDeletePendingJustification,
 } from "@/hooks/useAttendance";
 import { useStudents } from "@/hooks/useStudents";
-import {
-  useMassAttendanceByMonth,
-  useDeleteMassAttendance,
-} from "@/hooks/useMassAttendance";
+import { useMassAttendanceByMonth, useDeleteMassAttendance } from "@/hooks/useMassAttendance";
 import { useAuth } from "@/contexts/AuthContext";
 
 const db = supabase as any;
@@ -35,7 +24,6 @@ const STATUS_LABELS: Record<string, string> = {
   falta_justificada: "Falta Justificada",
   falta_nao_justificada: "Falta Não Justificada",
 };
-
 const STATUS_COLORS: Record<string, string> = {
   presente: "text-success",
   falta_justificada: "text-warning",
@@ -44,18 +32,14 @@ const STATUS_COLORS: Record<string, string> = {
 
 type Tab = "presencas" | "pendentes" | "missas";
 
-function todayMonthStr() {
-  return new Date().toISOString().slice(0, 7);
+function todayMonthStr() { return new Date().toISOString().slice(0, 7); }
+function shiftMonth(m: string, d: number) {
+  const [y, mo] = m.split("-").map(Number);
+  return new Date(y, mo - 1 + d, 1).toISOString().slice(0, 7);
 }
-
-function shiftMonth(monthStr: string, delta: number): string {
-  const [y, m] = monthStr.split("-").map(Number);
-  return new Date(y, m - 1 + delta, 1).toISOString().slice(0, 7);
-}
-
-function monthLabel(monthStr: string): string {
-  const [y, m] = monthStr.split("-").map(Number);
-  return format(new Date(y, m - 1, 1), "MMMM yyyy", { locale: ptBR });
+function monthLabel(m: string) {
+  const [y, mo] = m.split("-").map(Number);
+  return format(new Date(y, mo - 1, 1), "MMMM yyyy", { locale: ptBR });
 }
 
 export default function Reports() {
@@ -67,48 +51,22 @@ export default function Reports() {
   const deletePendingMutation = useDeletePendingJustification();
   const deleteMassMutation = useDeleteMassAttendance();
 
-  // Filtros de aba de presenças
   const [selectedClass, setSelectedClass] = useState<string>("all");
   const [activeTab, setActiveTab] = useState<Tab>("presencas");
-
-  // Filtros exclusivos da aba de missas
   const [massMonth, setMassMonth] = useState(todayMonthStr);
   const [selectedMassEtapa, setSelectedMassEtapa] = useState<string>("all");
   const [exportingAnnual, setExportingAnnual] = useState(false);
 
-  // Etapas disponíveis para o filtro do admin
-  const etapas = useMemo(
-    () => Array.from(new Set(students.map((s) => s.class_name))).sort(),
-    [students]
-  );
+  const etapas = useMemo(() => Array.from(new Set(students.map((s) => s.class_name))).sort(), [students]);
 
-  // Alunos filtrados para a aba de missas
-  // Admin pode filtrar por etapa; catequista já recebe só a sua etapa via useStudents
   const massFilteredStudents = useMemo(
-    () =>
-      isAdmin && selectedMassEtapa !== "all"
-        ? students.filter((s) => s.class_name === selectedMassEtapa)
-        : students,
+    () => isAdmin && selectedMassEtapa !== "all" ? students.filter((s) => s.class_name === selectedMassEtapa) : students,
     [students, isAdmin, selectedMassEtapa]
   );
+  const massStudentIds = useMemo(() => massFilteredStudents.map((s) => s.id), [massFilteredStudents]);
+  const { data: massRecords = [] } = useMassAttendanceByMonth(massStudentIds, massMonth);
 
-  const massStudentIds = useMemo(
-    () => massFilteredStudents.map((s) => s.id),
-    [massFilteredStudents]
-  );
-
-  const { data: massRecords = [] } = useMassAttendanceByMonth(
-    massStudentIds,
-    massMonth
-  );
-
-  // -----------------------------------------------------------------------
-  // Compliance mensal
-  // -----------------------------------------------------------------------
-  const studentsWithMass = useMemo(
-    () => new Set(massRecords.map((r) => r.student_id)),
-    [massRecords]
-  );
+  const studentsWithMass = useMemo(() => new Set(massRecords.map((r) => r.student_id)), [massRecords]);
   const massCompliant = massFilteredStudents.filter((s) => studentsWithMass.has(s.id));
   const massNonCompliant = massFilteredStudents.filter((s) => !studentsWithMass.has(s.id));
 
@@ -119,71 +77,49 @@ export default function Reports() {
   const daysLeft = getDaysInMonth(today) - today.getDate();
   const endOfMonthAlert = isMassCurrentMonth && daysLeft <= 7 && massNonCompliant.length > 0;
 
-  // -----------------------------------------------------------------------
-  // Presenças regulares
-  // -----------------------------------------------------------------------
   const unjustifiedCounts: Record<string, number> = {};
   attendance.forEach((a) => {
     if (a.status === "falta_nao_justificada")
       unjustifiedCounts[a.student_id] = (unjustifiedCounts[a.student_id] || 0) + 1;
   });
 
-  const classes = [
-    "all",
-    ...Array.from(new Set(students.map((s) => s.class_name))).sort(),
-  ];
+  const classes = ["all", ...Array.from(new Set(students.map((s) => s.class_name))).sort()];
 
-  const filteredAttendance =
-    selectedClass === "all"
-      ? attendance
-      : attendance.filter((a) => {
-          const turma =
-            students.find((s) => s.id === a.student_id)?.class_name ??
-            (a as any).students?.class_name;
-          return turma === selectedClass;
-        });
+  const filteredAttendance = selectedClass === "all" ? attendance
+    : attendance.filter((a) => {
+        const turma = students.find((s) => s.id === a.student_id)?.class_name ?? (a as any).students?.class_name;
+        return turma === selectedClass;
+      });
 
-  const filteredPending =
-    selectedClass === "all"
-      ? pendingList
-      : pendingList.filter((p) => p.students?.class_name === selectedClass);
+  const filteredPending = selectedClass === "all" ? pendingList
+    : pendingList.filter((p) => p.students?.class_name === selectedClass);
 
   const alertStudents = students.filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3);
 
-  // -----------------------------------------------------------------------
-  // Helpers
-  // -----------------------------------------------------------------------
+  // ------------------------------------------------------------------ CSV helpers
   function downloadCSV(rows: (string | number)[][], filename: string) {
-    const csv = rows
-      .map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(","))
-      .join("\n");
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
+    link.href = url; link.download = filename; link.click();
     URL.revokeObjectURL(url);
   }
 
-  function handleDeleteAttendance(id: string, studentName: string, date: string) {
-    if (window.confirm(`Apagar o registro de "${studentName}" no dia ${date}?\n\nEssa ação não pode ser desfeita.`))
+  function handleDeleteAttendance(id: string, name: string, date: string) {
+    if (window.confirm(`Apagar o registro de "${name}" no dia ${date}?\nEssa ação não pode ser desfeita.`))
       deleteMutation.mutate(id);
   }
-
-  function handleDeletePending(id: string, studentName: string, date: string) {
-    if (window.confirm(`Cancelar a justificativa pendente de "${studentName}" para o dia ${date}?`))
+  function handleDeletePending(id: string, name: string, date: string) {
+    if (window.confirm(`Cancelar a justificativa pendente de "${name}" para o dia ${date}?`))
       deletePendingMutation.mutate(id);
   }
-
   function handleDeleteMass(id: string, name: string, date: string) {
     if (window.confirm(`Remover presença de "${name}" em ${date}?`))
       deleteMassMutation.mutate(id);
   }
 
-  // -----------------------------------------------------------------------
-  // Export CSV — Presenças regulares
-  // -----------------------------------------------------------------------
+  // ------------------------------------------------------------------ CSV export presenças
   function handleExportCSV() {
     const allDates = [...new Set(filteredAttendance.map((a) => a.date))].sort();
     const studentMap: Record<string, { name: string; class_name: string }> = {};
@@ -194,168 +130,170 @@ export default function Reports() {
         if (sAny?.name) studentMap[a.student_id] = { name: sAny.name, class_name: sAny.class_name ?? "-" };
       }
     });
-    const lookup: Record<string, Record<string, { status: string }>> = {};
+    const lookup: Record<string, Record<string, string>> = {};
     filteredAttendance.forEach((a) => {
       if (!lookup[a.student_id]) lookup[a.student_id] = {};
-      lookup[a.student_id][a.date] = { status: a.status };
+      lookup[a.student_id][a.date] = a.status;
     });
     const SYM: Record<string, string> = { presente: "P", falta_justificada: "FJ", falta_nao_justificada: "FN" };
-    const rel = Object.keys(lookup)
-      .map((id) => ({ id, ...studentMap[id] }))
-      .filter((s) => s.name)
+    const rel = Object.keys(lookup).map((id) => ({ id, ...studentMap[id] })).filter((s) => s.name)
       .sort((a, b) => a.class_name !== b.class_name ? a.class_name.localeCompare(b.class_name) : a.name.localeCompare(b.name));
     const pad = (n: number) => Array(Math.max(0, n)).fill("");
     const header = ["Aluno", "Turma", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Aulas", "% Presença"];
     let sumP = 0, sumFNJ = 0, sumFJ = 0, sumT = 0;
     const dataRows = rel.map((s) => {
       const rec = lookup[s.id] ?? {};
-      const p = allDates.filter((d) => rec[d]?.status === "presente").length;
-      const fnj = allDates.filter((d) => rec[d]?.status === "falta_nao_justificada").length;
-      const fj = allDates.filter((d) => rec[d]?.status === "falta_justificada").length;
+      const p = allDates.filter((d) => rec[d] === "presente").length;
+      const fnj = allDates.filter((d) => rec[d] === "falta_nao_justificada").length;
+      const fj = allDates.filter((d) => rec[d] === "falta_justificada").length;
       const t = allDates.filter((d) => !!rec[d]).length;
       sumP += p; sumFNJ += fnj; sumFJ += fj; sumT += t;
-      return [s.name, s.class_name, ...allDates.map((d) => SYM[rec[d]?.status] ?? "-"), p, fnj, fj, t, t > 0 ? `${((p / t) * 100).toFixed(1)}%` : "-"];
+      return [s.name, s.class_name, ...allDates.map((d) => SYM[rec[d]] ?? "-"), p, fnj, fj, t, t > 0 ? `${((p / t) * 100).toFixed(1)}%` : "-"];
     });
     const extra = header.length - 2;
-    const rows: (string | number)[][] = [
-      header, ...dataRows,
-      pad(header.length),
-      ["RESUMO GERAL", ...pad(header.length - 1)],
-      ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta Não Justificada", ...pad(header.length - 1)],
-      pad(header.length),
+    const rows: (string | number)[][] = [header, ...dataRows, pad(header.length),
+      ["RESUMO", ...pad(header.length - 1)], pad(header.length),
       ["Total de alunos", rel.length, ...pad(extra)],
       ["Total de presenças", sumP, ...pad(extra)],
-      ["Total de faltas não justificadas", sumFNJ, ...pad(extra)],
-      ["Total de faltas justificadas", sumFJ, ...pad(extra)],
-      ["Média geral de presença", sumT > 0 ? `${((sumP / sumT) * 100).toFixed(1)}%` : "-", ...pad(extra)],
+      ["Faltas não justificadas", sumFNJ, ...pad(extra)],
+      ["Faltas justificadas", sumFJ, ...pad(extra)],
+      ["Média geral", sumT > 0 ? `${((sumP / sumT) * 100).toFixed(1)}%` : "-", ...pad(extra)],
     ];
-    const justApplied = filteredAttendance
-      .filter((a) => a.status === "falta_justificada" && (a as any).justification_reason)
-      .map((a) => [((a as any).students?.name ?? studentMap[a.student_id]?.name ?? "-"), ((a as any).students?.class_name ?? studentMap[a.student_id]?.class_name ?? "-"), a.date, (a as any).justification_reason ?? ""])
-      .sort((a, b) => String(a[2]).localeCompare(String(b[2])));
-    const justPending = filteredPending.map((p) => [p.students?.name ?? "-", p.students?.class_name ?? "-", p.date, p.reason, new Date(p.created_at).toLocaleString("pt-BR")]);
-    if (justApplied.length > 0)
-      rows.push(pad(header.length), ["JUSTIFICATIVAS APLICADAS", ...pad(header.length - 1)], ["Aluno", "Turma", "Data", "Motivo", ...pad(header.length - 4)], ...justApplied.map((r) => [...r, ...pad(header.length - 4)]));
-    if (justPending.length > 0)
-      rows.push(pad(header.length), ["JUSTIFICATIVAS PENDENTES", ...pad(header.length - 1)], ["Aluno", "Turma", "Data", "Motivo", "Enviado em", ...pad(header.length - 5)], ...justPending.map((r) => [...r, ...pad(header.length - 5)]));
     downloadCSV(rows, `chamada-bom-pastor-${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
-  // -----------------------------------------------------------------------
-  // Export CSV — Mensal de missas
-  // -----------------------------------------------------------------------
+  // ------------------------------------------------------------------ PDF export presenças
+  function handleExportPDF() {
+    const turmaLabel = selectedClass === "all" ? "Todas as turmas" : selectedClass;
+    const allDates = [...new Set(filteredAttendance.map((a) => a.date))].sort();
+    const studentMap: Record<string, { name: string; class_name: string }> = {};
+    students.forEach((s) => { studentMap[s.id] = { name: s.name, class_name: s.class_name }; });
+    filteredAttendance.forEach((a) => {
+      const sAny = (a as any).students;
+      if (!studentMap[a.student_id] && sAny?.name)
+        studentMap[a.student_id] = { name: sAny.name, class_name: sAny.class_name ?? "-" };
+    });
+    const lookup: Record<string, Record<string, string>> = {};
+    filteredAttendance.forEach((a) => {
+      if (!lookup[a.student_id]) lookup[a.student_id] = {};
+      lookup[a.student_id][a.date] = a.status;
+    });
+    const SYM: Record<string, string> = { presente: "P", falta_justificada: "FJ", falta_nao_justificada: "FN" };
+    const SYM_COLOR: Record<string, string> = { P: "#16a34a", FJ: "#d97706", FN: "#dc2626" };
+    const rel = Object.keys(lookup).map((id) => ({ id, ...studentMap[id] })).filter((s) => s.name)
+      .sort((a, b) => a.class_name !== b.class_name ? a.class_name.localeCompare(b.class_name) : a.name.localeCompare(b.name));
+
+    const dateHeaders = allDates.map((d) => `<th style="padding:4px 6px;border:1px solid #e2e8f0;font-size:10px;white-space:nowrap">${d.slice(5)}</th>`).join("");
+    const rows = rel.map((s) => {
+      const rec = lookup[s.id] ?? {};
+      const cells = allDates.map((d) => {
+        const sym = SYM[rec[d]] ?? "-";
+        const color = SYM_COLOR[sym] ?? "#64748b";
+        return `<td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;font-size:11px;color:${color};font-weight:600">${sym}</td>`;
+      }).join("");
+      const p = allDates.filter((d) => rec[d] === "presente").length;
+      const t = allDates.filter((d) => !!rec[d]).length;
+      const pct = t > 0 ? `${((p / t) * 100).toFixed(0)}%` : "-";
+      const pctColor = t > 0 && (p / t) >= 0.75 ? "#16a34a" : t > 0 && (p / t) >= 0.5 ? "#d97706" : "#dc2626";
+      return `<tr>
+        <td style="padding:6px 8px;border:1px solid #e2e8f0;font-size:12px;white-space:nowrap">${s.name}</td>
+        <td style="padding:6px 8px;border:1px solid #e2e8f0;font-size:11px;color:#64748b">${s.class_name}</td>
+        ${cells}
+        <td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:center;font-size:12px;font-weight:700;color:${pctColor}">${pct}</td>
+      </tr>`;
+    }).join("");
+
+    const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+<title>Relatório de Presenças — ${turmaLabel}</title>
+<style>body{font-family:Arial,sans-serif;color:#1e293b;padding:20px}h1{font-size:18px;margin-bottom:2px}p{font-size:12px;color:#64748b;margin:2px 0 12px}table{border-collapse:collapse;width:100%}th{background:#f1f5f9;padding:6px 8px;border:1px solid #e2e8f0;font-size:11px;text-align:left}@media print{button{display:none}}</style>
+</head><body>
+<h1>Relatório de Presenças — Catequese Bom Pastor</h1>
+<p>Turma: <strong>${turmaLabel}</strong> &nbsp;|&nbsp; Gerado em: ${new Date().toLocaleString("pt-BR")}</p>
+<p style="margin-bottom:8px"><strong>Legenda:</strong> P = Presente &nbsp; FJ = Falta Justificada &nbsp; FN = Falta Não Justificada</p>
+<table><thead><tr>
+  <th>Aluno</th><th>Turma</th>${dateHeaders}<th style="padding:4px 6px;border:1px solid #e2e8f0">% Pres.</th>
+</tr></thead><tbody>${rows}</tbody></table>
+<br><button onclick="window.print()">Imprimir / Salvar PDF</button>
+</body></html>`;
+
+    const win = window.open("", "_blank");
+    if (win) { win.document.write(html); win.document.close(); }
+  }
+
+  // ------------------------------------------------------------------ CSV missas mensal
   function handleExportMassCSV() {
     const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` (${selectedMassEtapa})` : "";
     const mLabel = monthLabel(massMonth);
     const massDatesByStudent: Record<string, string[]> = {};
     massRecords.forEach((r) => {
       if (!massDatesByStudent[r.student_id]) massDatesByStudent[r.student_id] = [];
-      massDatesByStudent[r.student_id].push(
-        format(new Date(r.date + "T12:00:00"), "dd/MM/yyyy (EEE)", { locale: ptBR })
-      );
+      massDatesByStudent[r.student_id].push(format(new Date(r.date + "T12:00:00"), "dd/MM/yyyy (EEE)", { locale: ptBR }));
     });
-    const sorted = [
-      ...massNonCompliant.sort((a, b) => a.name.localeCompare(b.name)),
-      ...massCompliant.sort((a, b) => a.name.localeCompare(b.name)),
-    ];
+    const sorted = [...massNonCompliant.sort((a, b) => a.name.localeCompare(b.name)), ...massCompliant.sort((a, b) => a.name.localeCompare(b.name))];
     const rows: (string | number)[][] = [
       [`RELATÓRIO DE MISSAS — ${mLabel.toUpperCase()}${etapaLabel.toUpperCase()}`],
       ["Regra: mínimo 1 missa por mês"],
       [`Gerado em: ${new Date().toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" })}`],
-      [],
-      ["Aluno", "Etapa", "Qtd. Missas", "Datas no Mês", "Conformidade"],
+      [], ["Aluno", "Etapa", "Qtd. Missas", "Datas no Mês", "Conformidade"],
     ];
     sorted.forEach((s) => {
       const dates = massDatesByStudent[s.id] ?? [];
       rows.push([s.name, s.class_name, dates.length, dates.join(" | "), dates.length >= 1 ? "✓ Conforme" : "✗ Pendente"]);
     });
     const rate = massFilteredStudents.length > 0 ? `${((massCompliant.length / massFilteredStudents.length) * 100).toFixed(1)}%` : "-";
-    rows.push([], ["RESUMO"], ["Total de alunos", massFilteredStudents.length], ["Conformes (≥1 missa)", massCompliant.length], ["Pendentes (0 missas)", massNonCompliant.length], ["Taxa de conformidade", rate]);
-    if (isMassPastMonth && massNonCompliant.length > 0)
-      rows.push([], ["⚠ MÊS ENCERRADO — ALUNOS SEM NENHUM REGISTRO"], ["Aluno", "Etapa"], ...massNonCompliant.map((s) => [s.name, s.class_name]));
+    rows.push([], ["RESUMO"], ["Total de alunos", massFilteredStudents.length], ["Conformes", massCompliant.length], ["Pendentes", massNonCompliant.length], ["Taxa", rate]);
     const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
     downloadCSV(rows, `missas-bom-pastor-${massMonth}${suffix}.csv`);
   }
 
-  // -----------------------------------------------------------------------
-  // Export CSV — Anual de missas
-  // -----------------------------------------------------------------------
+  // ------------------------------------------------------------------ CSV missas anual
   async function handleExportAnnualMassCSV() {
     if (exportingAnnual || massStudentIds.length === 0) return;
     setExportingAnnual(true);
     try {
       const year = new Date().getFullYear();
-      const { data: allRecords } = await db
-        .from("mass_attendance")
-        .select("student_id, date")
-        .in("student_id", massStudentIds)
-        .gte("date", `${year}-01-01`)
-        .lte("date", `${year}-12-31`);
-
+      const { data: allRecords } = await db.from("mass_attendance").select("student_id, date")
+        .in("student_id", massStudentIds).gte("date", `${year}-01-01`).lte("date", `${year}-12-31`);
       const monthsAttended: Record<string, Set<string>> = {};
       (allRecords ?? []).forEach((r: any) => {
         if (!monthsAttended[r.student_id]) monthsAttended[r.student_id] = new Set();
         monthsAttended[r.student_id].add(r.date.slice(0, 7));
       });
-
       const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
-      const monthNames = months.map((m) => {
-        const [y, mo] = m.split("-").map(Number);
-        return format(new Date(y, mo - 1, 1), "MMM", { locale: ptBR }).toUpperCase();
-      });
-
-      const sortedStudents = [...massFilteredStudents].sort((a, b) => a.name.localeCompare(b.name));
+      const monthNames = months.map((m) => { const [y, mo] = m.split("-").map(Number); return format(new Date(y, mo - 1, 1), "MMM", { locale: ptBR }).toUpperCase(); });
+      const sorted = [...massFilteredStudents].sort((a, b) => a.name.localeCompare(b.name));
       const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` — ${selectedMassEtapa}` : "";
-
       const rows: (string | number)[][] = [
         [`RELATÓRIO ANUAL DE MISSAS — ${year}${etapaLabel}`],
         ["Regra: mínimo 1 missa por mês  |✓ = conforme  |✗ = sem registro"],
         [`Gerado em: ${new Date().toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" })}`],
-        [],
-        ["Aluno", "Etapa", ...monthNames, "Total"],
+        [], ["Aluno", "Etapa", ...monthNames, "Total"],
       ];
-
-      sortedStudents.forEach((s) => {
+      sorted.forEach((s) => {
         const attended = monthsAttended[s.id] ?? new Set();
-        const cells = months.map((m) => (attended.has(m) ? "✓" : "✗"));
+        const cells = months.map((m) => attended.has(m) ? "✓" : "✗");
         rows.push([s.name, s.class_name, ...cells, `${cells.filter((c) => c === "✓").length}/12`]);
       });
-
-      const conformesPerMonth = months.map(
-        (m) => sortedStudents.filter((s) => (monthsAttended[s.id] ?? new Set()).has(m)).length
-      );
-      rows.push(
-        [],
-        ["Conformes no mês", "", ...conformesPerMonth, ""],
-        ["% Conformidade", "", ...conformesPerMonth.map((n) =>
-          sortedStudents.length > 0 ? `${((n / sortedStudents.length) * 100).toFixed(0)}%` : "-"
-        ), ""]
-      );
-
+      const conformesPerMonth = months.map((m) => sorted.filter((s) => (monthsAttended[s.id] ?? new Set()).has(m)).length);
+      rows.push([], ["Conformes no mês", "", ...conformesPerMonth, ""],
+        ["% Conformidade", "", ...conformesPerMonth.map((n) => sorted.length > 0 ? `${((n / sorted.length) * 100).toFixed(0)}%` : "-"), ""]);
       const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
       downloadCSV(rows, `missas-anual-${year}${suffix}.csv`);
-    } finally {
-      setExportingAnnual(false);
-    }
+    } finally { setExportingAnnual(false); }
   }
 
-  // -----------------------------------------------------------------------
-  // Render
-  // -----------------------------------------------------------------------
+  // ------------------------------------------------------------------ Render
   return (
     <div className="pb-24">
       <PageHeader title="Relatórios" subtitle="Histórico detalhado de presenças" />
 
-      {/* Alerta 3+ faltas */}
       {alertStudents.length > 0 && (
         <div className="mx-4 mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
             <span className="font-semibold text-destructive">Alunos em Alerta (3+ faltas não justificadas)</span>
           </div>
-          {alertStudents.map((s) => (
-            <p key={s.id} className="text-sm text-destructive">{s.name} — {unjustifiedCounts[s.id]} faltas</p>
-          ))}
+          {alertStudents.map((s) => (<p key={s.id} className="text-sm text-destructive">{s.name} — {unjustifiedCounts[s.id]} faltas</p>))}
         </div>
       )}
 
@@ -365,53 +303,44 @@ export default function Reports() {
           const labels: Record<Tab, string> = { presencas: "Presenças", pendentes: "Pendentes", missas: "Missas" };
           const badge = tab === "pendentes" ? pendingList.length : tab === "missas" && isMassCurrentMonth ? massNonCompliant.length : 0;
           return (
-            <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={cn(
-                "flex-1 py-2.5 text-sm font-semibold rounded-lg border transition-colors relative",
-                activeTab === tab
-                  ? tab === "pendentes" ? "bg-warning text-warning-foreground border-warning" : "bg-primary text-primary-foreground border-primary"
-                  : "bg-card text-muted-foreground border-border"
+            <button key={tab} onClick={() => setActiveTab(tab)}
+              className={cn("flex-1 py-2.5 text-sm font-semibold rounded-lg border transition-colors relative",
+                activeTab === tab ? (tab === "pendentes" ? "bg-warning text-warning-foreground border-warning" : "bg-primary text-primary-foreground border-primary") : "bg-card text-muted-foreground border-border"
               )}
             >
               {labels[tab]}
-              {badge > 0 && (
-                <span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-warning text-[10px] font-bold text-warning-foreground border-2 border-background">
-                  {badge}
-                </span>
-              )}
+              {badge > 0 && (<span className="absolute -top-2 -right-2 flex h-5 w-5 items-center justify-center rounded-full bg-warning text-[10px] font-bold text-warning-foreground border-2 border-background">{badge}</span>)}
             </button>
           );
         })}
       </div>
 
-      {/* Filtro por turma — presenças e pendentes */}
+      {/* Filtro de turma + botões export */}
       {activeTab !== "missas" && (
         <div className="px-4 mb-4 flex items-center gap-3">
           <div className="flex gap-2 overflow-x-auto pb-1 flex-1">
             {classes.map((c) => (
-              <button
-                key={c}
-                onClick={() => setSelectedClass(c)}
-                className={cn(
-                  "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
+              <button key={c} onClick={() => setSelectedClass(c)}
+                className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
                   selectedClass === c ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
                 )}
-              >
-                {c === "all" ? "Todas" : c}
-              </button>
+              >{c === "all" ? "Todas" : c}</button>
             ))}
           </div>
           {activeTab === "presencas" && (
-            <Button variant="outline" size="sm" onClick={handleExportCSV} className="shrink-0" disabled={filteredAttendance.length === 0}>
-              <Download className="h-4 w-4 mr-1.5" /> CSV
-            </Button>
+            <div className="flex gap-1.5 shrink-0">
+              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredAttendance.length === 0} title="Exportar CSV">
+                <Download className="h-4 w-4 mr-1" /> CSV
+              </Button>
+              <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={filteredAttendance.length === 0} title="Exportar PDF">
+                <FileText className="h-4 w-4 mr-1" /> PDF
+              </Button>
+            </div>
           )}
         </div>
       )}
 
-      {/* ABA: PRESENÇAS */}
+      {/* ABA PRESENÇAS */}
       {activeTab === "presencas" && (
         <div className="px-4 overflow-x-auto">
           <table className="w-full text-sm">
@@ -447,26 +376,21 @@ export default function Reports() {
                     <td className="py-3 pr-2 text-muted-foreground">{a.date}</td>
                     <td className={cn("py-3 font-medium", STATUS_COLORS[a.status])}>{STATUS_LABELS[a.status] ?? a.status}</td>
                     <td className="py-3">
-                      <button
-                        onClick={() => handleDeleteAttendance(a.id, studentName, a.date)}
-                        disabled={deleteMutation.isPending}
-                        className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100"
-                      >
+                      <button onClick={() => handleDeleteAttendance(a.id, studentName, a.date)} disabled={deleteMutation.isPending}
+                        className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </td>
                   </tr>
                 );
               })}
-              {filteredAttendance.length === 0 && (
-                <tr><td colSpan={5} className="py-8 text-center text-muted-foreground">Nenhum registro de presença.</td></tr>
-              )}
+              {filteredAttendance.length === 0 && (<tr><td colSpan={5} className="py-8 text-center text-muted-foreground">Nenhum registro de presença.</td></tr>)}
             </tbody>
           </table>
         </div>
       )}
 
-      {/* ABA: PENDENTES */}
+      {/* ABA PENDENTES */}
       {activeTab === "pendentes" && (
         <div className="px-4 space-y-3">
           {filteredPending.length === 0 ? (
@@ -486,7 +410,8 @@ export default function Reports() {
                     <p className="text-sm mt-1"><span className="text-muted-foreground">Motivo: </span>{p.reason}</p>
                     <p className="text-xs text-muted-foreground mt-1">Enviado em: {new Date(p.created_at).toLocaleString("pt-BR")}</p>
                   </div>
-                  <button onClick={() => handleDeletePending(p.id, p.students?.name ?? "-", p.date)} disabled={deletePendingMutation.isPending} className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0">
+                  <button onClick={() => handleDeletePending(p.id, p.students?.name ?? "-", p.date)} disabled={deletePendingMutation.isPending}
+                    className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0">
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
@@ -496,90 +421,48 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ABA: MISSAS */}
+      {/* ABA MISSAS */}
       {activeTab === "missas" && (
         <div className="px-4">
-
-          {/* Seletor de etapa — apenas admin */}
           {isAdmin && etapas.length > 0 && (
             <div className="mb-4">
-              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                Filtrar por etapa
-              </p>
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Filtrar por etapa</p>
               <div className="flex gap-2 overflow-x-auto pb-1">
-                <button
-                  onClick={() => setSelectedMassEtapa("all")}
-                  className={cn(
-                    "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                    selectedMassEtapa === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-                  )}
-                >
-                  Todas
-                </button>
+                <button onClick={() => setSelectedMassEtapa("all")}
+                  className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors", selectedMassEtapa === "all" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+                >Todas</button>
                 {etapas.map((e) => (
-                  <button
-                    key={e}
-                    onClick={() => setSelectedMassEtapa(e)}
-                    className={cn(
-                      "shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors",
-                      selectedMassEtapa === e ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80"
-                    )}
-                  >
-                    {e}
-                  </button>
+                  <button key={e} onClick={() => setSelectedMassEtapa(e)}
+                    className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors", selectedMassEtapa === e ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground hover:bg-muted/80")}
+                  >{e}</button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Navegação de mês */}
           <div className="flex items-center justify-between mb-1">
-            <Button variant="ghost" size="icon" onClick={() => setMassMonth(shiftMonth(massMonth, -1))}>
-              <ChevronLeft className="h-5 w-5" />
-            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setMassMonth(shiftMonth(massMonth, -1))}><ChevronLeft className="h-5 w-5" /></Button>
             <div className="text-center flex-1">
               <p className="font-semibold text-foreground capitalize">{monthLabel(massMonth)}</p>
-              <p className="text-xs text-muted-foreground">
-                {massCompliant.length}/{massFilteredStudents.length} com missa
-                {isAdmin && selectedMassEtapa !== "all" && (
-                  <span className="ml-1 text-primary font-medium">({selectedMassEtapa})</span>
-                )}
-              </p>
+              <p className="text-xs text-muted-foreground">{massCompliant.length}/{massFilteredStudents.length} com missa</p>
             </div>
-            <Button variant="ghost" size="icon" onClick={() => setMassMonth(shiftMonth(massMonth, 1))} disabled={isMassCurrentMonth}>
-              <ChevronRight className="h-5 w-5" />
-            </Button>
+            <Button variant="ghost" size="icon" onClick={() => setMassMonth(shiftMonth(massMonth, 1))} disabled={isMassCurrentMonth}><ChevronRight className="h-5 w-5" /></Button>
           </div>
 
-          {/* Botões de exportação */}
           <div className="flex gap-2 mb-4 justify-center">
-            <Button
-              variant="outline" size="sm"
-              onClick={handleExportMassCSV}
-              disabled={massFilteredStudents.length === 0}
-              className="flex-1 max-w-[160px]"
-            >
+            <Button variant="outline" size="sm" onClick={handleExportMassCSV} disabled={massFilteredStudents.length === 0} className="flex-1 max-w-[160px]">
               <Download className="h-4 w-4 mr-1.5" /> Mensal
             </Button>
-            <Button
-              variant="outline" size="sm"
-              onClick={handleExportAnnualMassCSV}
-              disabled={massFilteredStudents.length === 0 || exportingAnnual}
-              className="flex-1 max-w-[160px]"
-            >
-              <Download className="h-4 w-4 mr-1.5" />
-              {exportingAnnual ? "Gerando..." : "Anual"}
+            <Button variant="outline" size="sm" onClick={handleExportAnnualMassCSV} disabled={massFilteredStudents.length === 0 || exportingAnnual} className="flex-1 max-w-[160px]">
+              <Download className="h-4 w-4 mr-1.5" />{exportingAnnual ? "Gerando..." : "Anual"}
             </Button>
           </div>
 
-          {/* Alerta fim de mês */}
           {endOfMonthAlert && (
             <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-destructive" />
-                <p className="text-sm font-semibold text-destructive">
-                  Faltam {daysLeft} dia{daysLeft !== 1 ? "s" : ""} — {massNonCompliant.length} aluno{massNonCompliant.length !== 1 ? "s" : ""} sem missa.
-                </p>
+                <p className="text-sm font-semibold text-destructive">Faltam {daysLeft} dia{daysLeft !== 1 ? "s" : ""} — {massNonCompliant.length} aluno{massNonCompliant.length !== 1 ? "s" : ""} sem missa.</p>
               </div>
             </div>
           )}
@@ -591,7 +474,6 @@ export default function Reports() {
             </div>
           )}
 
-          {/* Não-conformes */}
           {massNonCompliant.length > 0 && (
             <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 p-4">
               <p className="text-sm font-semibold text-warning mb-2">Sem registro neste mês ({massNonCompliant.length})</p>
@@ -607,7 +489,6 @@ export default function Reports() {
             </div>
           )}
 
-          {/* Conformes */}
           <div className="space-y-2">
             {massCompliant.sort((a, b) => a.name.localeCompare(b.name)).map((s) => {
               const recs = massRecords.filter((r) => r.student_id === s.id);
@@ -621,14 +502,9 @@ export default function Reports() {
                   <div className="pl-6 space-y-0.5">
                     {recs.map((r) => (
                       <div key={r.id} className="flex items-center justify-between">
-                        <span className="text-xs text-muted-foreground">
-                          {format(new Date(r.date + "T12:00:00"), "dd/MM/yyyy (EEE)", { locale: ptBR })}
-                        </span>
-                        <button
-                          onClick={() => handleDeleteMass(r.id, s.name, r.date)}
-                          disabled={deleteMassMutation.isPending}
-                          className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                        >
+                        <span className="text-xs text-muted-foreground">{format(new Date(r.date + "T12:00:00"), "dd/MM/yyyy (EEE)", { locale: ptBR })}</span>
+                        <button onClick={() => handleDeleteMass(r.id, s.name, r.date)} disabled={deleteMassMutation.isPending}
+                          className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
                           <Trash2 className="h-3 w-3" />
                         </button>
                       </div>
@@ -639,12 +515,11 @@ export default function Reports() {
             })}
           </div>
 
-          {/* Legenda */}
           <div className="mt-5 rounded-lg bg-muted/40 border border-border p-3">
             <p className="text-xs text-muted-foreground">
               <strong className="text-foreground">Regra:</strong> mínimo <strong>1 missa por mês</strong>.
-              Botão <strong>Mensal</strong> exporta o mês selecionado.
-              Botão <strong>Anual</strong> exporta a matriz completa do ano corrente.
+              <strong> Mensal</strong> exporta o mês selecionado.
+              <strong> Anual</strong> exporta a matriz completa do ano corrente.
               {isAdmin && " O filtro de etapa é aplicado em ambas as exportações."}
             </p>
           </div>
