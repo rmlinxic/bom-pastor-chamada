@@ -5,12 +5,12 @@ import {
   BarChart3,
   ShieldCheck,
   Church,
+  Building2,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
 
-/** 5 abas para catequistas (inclui Missas) */
 const CATECHIST_TABS = [
   { path: "/", icon: Home, label: "Início" },
   { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
@@ -19,7 +19,6 @@ const CATECHIST_TABS = [
   { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
 ];
 
-/** 5 abas para admin (sem Missas no nav — compliance visível nos Relatórios) */
 const ADMIN_TABS = [
   { path: "/", icon: Home, label: "Início" },
   { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
@@ -28,20 +27,26 @@ const ADMIN_TABS = [
   { path: "/admin", icon: ShieldCheck, label: "Admin" },
 ];
 
+const COORDINATOR_TABS = [
+  { path: "/", icon: Home, label: "Início" },
+  { path: "/coordenador", icon: Building2, label: "Paróquia" },
+  { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
+];
+
 export default function BottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, isCoordinator } = useAuth();
 
-  const tabs = isAdmin ? ADMIN_TABS : CATECHIST_TABS;
+  const tabs = isAdmin ? ADMIN_TABS : isCoordinator ? COORDINATOR_TABS : CATECHIST_TABS;
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
-      <div className="mx-auto grid max-w-lg grid-cols-5 items-center">
+      <div className={cn("mx-auto grid max-w-lg items-center", `grid-cols-${tabs.length}`)}>
         {tabs.map((tab) => {
           const active = location.pathname === tab.path;
           const isAdminTab = tab.path === "/admin";
-          const isMissasTab = tab.path === "/missas";
+          const isCoordTab = tab.path === "/coordenador";
           return (
             <button
               key={tab.path}
@@ -51,8 +56,8 @@ export default function BottomNav() {
                 active
                   ? isAdminTab
                     ? "text-warning font-semibold"
-                    : isMissasTab
-                    ? "text-primary font-semibold"
+                    : isCoordTab
+                    ? "text-secondary-foreground font-semibold"
                     : "text-primary font-semibold"
                   : "text-muted-foreground hover:text-foreground"
               )}
@@ -61,7 +66,8 @@ export default function BottomNav() {
                 className={cn(
                   "h-6 w-6",
                   active && isAdminTab && "text-warning",
-                  active && !isAdminTab && "text-primary"
+                  active && isCoordTab && "text-secondary-foreground",
+                  active && !isAdminTab && !isCoordTab && "text-primary"
                 )}
               />
               <span>{tab.label}</span>
