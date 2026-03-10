@@ -19,6 +19,16 @@ const CATECHIST_TABS = [
   { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
 ];
 
+// Catequista que também é coordenador: todas as abas de catequista + aba da paróquia
+const CATECHIST_COORD_TABS = [
+  { path: "/", icon: Home, label: "Início" },
+  { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
+  { path: "/missas", icon: Church, label: "Missas" },
+  { path: "/alunos", icon: Users, label: "Alunos" },
+  { path: "/coordenador", icon: Building2, label: "Paróquia" },
+  { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
+];
+
 const ADMIN_TABS = [
   { path: "/", icon: Home, label: "Início" },
   { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
@@ -36,9 +46,21 @@ const COORDINATOR_TABS = [
 export default function BottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAdmin, isCoordinator } = useAuth();
+  const { user, isAdmin, isCoordinator, isCatequista } = useAuth();
 
-  const tabs = isAdmin ? ADMIN_TABS : isCoordinator ? COORDINATOR_TABS : CATECHIST_TABS;
+  // Determina o conjunto de abas correto
+  let tabs;
+  if (isAdmin) {
+    tabs = ADMIN_TABS;
+  } else if (isCatequista && isCoordinator) {
+    // Catequista que também coordena: abas completas
+    tabs = CATECHIST_COORD_TABS;
+  } else if (isCoordinator) {
+    // Coordenador puro: apenas abas de coordenador
+    tabs = COORDINATOR_TABS;
+  } else {
+    tabs = CATECHIST_TABS;
+  }
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
