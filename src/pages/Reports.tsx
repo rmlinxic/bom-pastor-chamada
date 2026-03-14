@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import {
   AlertTriangle, Download, Trash2, Clock, Church,
   CheckCircle2, ChevronLeft, ChevronRight, FileText,
-  Pencil, X, Check,
+  Pencil, X, Check, CalendarDays,
 } from "lucide-react";
 import { format, getDaysInMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -108,6 +108,7 @@ export default function Reports() {
   const deleteMassMutation = useDeleteMassAttendance();
 
   const [selectedClass, setSelectedClass] = useState<string>("all");
+  const [selectedDate, setSelectedDate] = useState<string>("");
   const [activeTab, setActiveTab] = useState<Tab>("presencas");
   const [massMonth, setMassMonth] = useState(todayMonthStr);
   const [selectedMassEtapa, setSelectedMassEtapa] = useState<string>("all");
@@ -142,16 +143,32 @@ export default function Reports() {
 
   const classes = ["all", ...Array.from(new Set(students.map((s) => s.class_name))).sort()];
 
-  const filteredAttendance = selectedClass === "all" ? attendance
+  // Filtro por turma
+  const byClassAttendance = selectedClass === "all" ? attendance
     : attendance.filter((a) => {
         const turma = students.find((s) => s.id === a.student_id)?.class_name ?? (a as any).students?.class_name;
         return turma === selectedClass;
       });
 
+  // Filtro adicional por data específica
+  const filteredAttendance = selectedDate
+    ? byClassAttendance.filter((a) => a.date === selectedDate)
+    : byClassAttendance;
+
   const filteredPending = selectedClass === "all" ? pendingList
     : pendingList.filter((p) => p.students?.class_name === selectedClass);
 
   const alertStudents = students.filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3);
+
+  // Datas disponíveis para o seletor (apenas datas que têm registros na turma selecionada)
+  const availableDates = useMemo(
+    () => [...new Set(byClassAttendance.map((a) => a.date))].sort().reverse(),
+    [byClassAttendance]
+  );
+
+  const dateLabel = selectedDate
+    ? format(new Date(selectedDate + "T12:00:00"), "dd/MM/yyyy (EEEE)", { locale: ptBR })
+    : "";
 
   function downloadCSV(rows: (string | number)[][], filename: string) {
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
@@ -386,6 +403,63 @@ export default function Reports() {
         </div>
       )}
 
+      {/* Filtro de data — apenas na aba Presenças */}
+      {activeTab === "presencas" && (
+        <div className="px-4 mb-4">
+          <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+            <CalendarDays className="h-4 w-4 text-muted-foreground shrink-0" />
+            <div className="flex-1">
+              <label className="text-xs font-semibold text-muted-foreground uppercase tracking-wide block mb-1">
+                Filtrar por data
+              </label>
+              <div className="flex items-center gap-2">
+                <select
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="flex-1 rounded-md border border-input bg-background px-2 py-1.5 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <option value="">Todas as datas</option>
+                  {availableDates.map((d) => (
+                    <option key={d} value={d}>
+                      {format(new Date(d + "T12:00:00"), "dd/MM/yyyy (EEE)", { locale: ptBR })}
+                    </option>
+                  ))}
+                </select>
+                {selectedDate && (
+                  <button
+                    onClick={() => setSelectedDate("")}
+                    className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                    title="Limpar filtro de data"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+            </div>
+            {selectedDate && (
+              <div className="shrink-0 text-right">
+                <span className="text-xs font-semibold text-primary">
+                  {filteredAttendance.length} registro{filteredAttendance.length !== 1 ? "s" : ""}
+                </span>
+              </div>
+            )}
+          </div>
+          {selectedDate && (
+            <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Exibindo chamada de</span>
+              <span className="font-semibold text-foreground capitalize">{dateLabel}</span>
+              <span>—</span>
+              <span className="text-success font-medium">
+                {filteredAttendance.filter((a) => a.status === "presente").length} presentes
+              </span>
+              <span className="text-destructive font-medium">
+                {filteredAttendance.filter((a) => a.status === "falta_nao_justificada").length} faltaram
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
       {activeTab === "presencas" && (
         <div className="px-4 overflow-x-auto">
           <table className="w-full text-sm">
@@ -393,7 +467,7 @@ export default function Reports() {
               <tr className="border-b border-border text-left">
                 <th className="pb-2 font-semibold">Aluno</th>
                 <th className="pb-2 font-semibold">Turma</th>
-                <th className="pb-2 font-semibold">Data</th>
+                {!selectedDate && <th className="pb-2 font-semibold">Data</th>}
                 <th className="pb-2 font-semibold">Status</th>
                 <th className="pb-2 w-8"></th>
               </tr>
@@ -418,7 +492,7 @@ export default function Reports() {
                       </div>
                     </td>
                     <td className="py-3 pr-2 text-muted-foreground text-xs">{studentClass}</td>
-                    <td className="py-3 pr-2 text-muted-foreground">{a.date}</td>
+                    {!selectedDate && <td className="py-3 pr-2 text-muted-foreground">{a.date}</td>}
                     <td className={cn("py-3 font-medium", STATUS_COLORS[a.status])}>{STATUS_LABELS[a.status] ?? a.status}</td>
                     <td className="py-3">
                       <button onClick={() => handleDeleteAttendance(a.id, studentName, a.date)} disabled={deleteMutation.isPending}
@@ -429,7 +503,13 @@ export default function Reports() {
                   </tr>
                 );
               })}
-              {filteredAttendance.length === 0 && (<tr><td colSpan={5} className="py-8 text-center text-muted-foreground">Nenhum registro de presença.</td></tr>)}
+              {filteredAttendance.length === 0 && (
+                <tr>
+                  <td colSpan={selectedDate ? 4 : 5} className="py-8 text-center text-muted-foreground">
+                    {selectedDate ? `Nenhum registro para ${dateLabel}.` : "Nenhum registro de presença."}
+                  </td>
+                </tr>
+              )}
             </tbody>
           </table>
         </div>
