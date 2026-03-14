@@ -46,6 +46,19 @@ function monthLabel(m: string) {
   return format(new Date(y, mo - 1, 1), "MMMM yyyy", { locale: ptBR });
 }
 
+// Função auxiliar para aplicar estilo Times New Roman
+function applyTimesNewRomanStyle(cell: any, options: { bold?: boolean; fontSize?: number; fill?: string } = {}) {
+  if (!cell) return;
+  cell.s = {
+    font: { 
+      name: "Times New Roman",
+      bold: options.bold || false,
+      sz: options.fontSize || 11
+    },
+    ...(options.fill ? { fill: { fgColor: { rgb: options.fill } } } : {})
+  };
+}
+
 interface EditPendingProps {
   id: string;
   currentDate: string;
@@ -117,6 +130,7 @@ export default function Reports() {
   const [editingPendingId, setEditingPendingId] = useState<string | null>(null);
   const [showExportMenu, setShowExportMenu] = useState(false);
   const [showMassExportMenu, setShowMassExportMenu] = useState(false);
+  const [showAnnualExportMenu, setShowAnnualExportMenu] = useState(false);
 
   const etapas = useMemo(() => Array.from(new Set(students.map((s) => s.class_name))).sort(), [students]);
 
@@ -340,22 +354,48 @@ export default function Reports() {
 
       const wsGeral = XLSX.utils.aoa_to_sheet(geralData);
       
-      // Formatação: título em negrito
-      wsGeral['A1'].s = { font: { bold: true, sz: 14 } };
-      wsGeral['A2'].s = { font: { italic: true, sz: 10 } };
-      wsGeral['A3'].s = { font: { italic: true, sz: 9 } };
-      
-      // Header em negrito
-      const headerRow = 5;
-      const headerCols = ['A', 'B', 'C', ...allDates.map((_, i) => String.fromCharCode(68 + i)), 
-        String.fromCharCode(68 + allDates.length), String.fromCharCode(69 + allDates.length),
-        String.fromCharCode(70 + allDates.length), String.fromCharCode(71 + allDates.length),
-        String.fromCharCode(72 + allDates.length)];
-      
-      headerCols.forEach(col => {
-        const cell = wsGeral[`${col}${headerRow}`];
-        if (cell) cell.s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      });
+      // Aplicar Times New Roman em todas as células
+      const rangeGeral = XLSX.utils.decode_range(wsGeral['!ref'] || 'A1');
+      for (let R = rangeGeral.s.r; R <= rangeGeral.e.r; ++R) {
+        for (let C = rangeGeral.s.c; C <= rangeGeral.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = wsGeral[cellAddress];
+          if (cell) {
+            // Título em negrito
+            if (R === 0) {
+              applyTimesNewRomanStyle(cell, { bold: true, fontSize: 14 });
+            }
+            // Subtítulos
+            else if (R === 1 || R === 2) {
+              applyTimesNewRomanStyle(cell, { fontSize: 10 });
+            }
+            // Header em negrito com fundo
+            else if (R === 4) {
+              applyTimesNewRomanStyle(cell, { bold: true, fontSize: 11, fill: "E0E7EF" });
+            }
+            // Demais células
+            else {
+              applyTimesNewRomanStyle(cell);
+            }
+          }
+        }
+      }
+
+      // Largura automática das colunas
+      const colWidths = [];
+      for (let C = rangeGeral.s.c; C <= rangeGeral.e.c; ++C) {
+        let maxWidth = 10;
+        for (let R = rangeGeral.s.r; R <= rangeGeral.e.r; ++R) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = wsGeral[cellAddress];
+          if (cell && cell.v) {
+            const len = String(cell.v).length;
+            if (len > maxWidth) maxWidth = len;
+          }
+        }
+        colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+      }
+      wsGeral['!cols'] = colWidths;
 
       XLSX.utils.book_append_sheet(wb, wsGeral, "GERAL");
 
@@ -385,21 +425,41 @@ export default function Reports() {
 
         const wsTurma = XLSX.utils.aoa_to_sheet(turmaData);
         
-        // Formatação: título da turma em negrito
-        wsTurma['A1'].s = { font: { bold: true, sz: 14 } };
-        wsTurma['A2'].s = { font: { italic: true, sz: 10 } };
-        
-        // Header em negrito
-        const turmaHeaderRow = 4;
-        const turmaHeaderCols = ['A', 'B', ...allDates.map((_, i) => String.fromCharCode(67 + i)),
-          String.fromCharCode(67 + allDates.length), String.fromCharCode(68 + allDates.length),
-          String.fromCharCode(69 + allDates.length), String.fromCharCode(70 + allDates.length),
-          String.fromCharCode(71 + allDates.length)];
-        
-        turmaHeaderCols.forEach(col => {
-          const cell = wsTurma[`${col}${turmaHeaderRow}`];
-          if (cell) cell.s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-        });
+        // Aplicar Times New Roman em todas as células da turma
+        const rangeTurma = XLSX.utils.decode_range(wsTurma['!ref'] || 'A1');
+        for (let R = rangeTurma.s.r; R <= rangeTurma.e.r; ++R) {
+          for (let C = rangeTurma.s.c; C <= rangeTurma.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = wsTurma[cellAddress];
+            if (cell) {
+              if (R === 0) {
+                applyTimesNewRomanStyle(cell, { bold: true, fontSize: 14 });
+              } else if (R === 1) {
+                applyTimesNewRomanStyle(cell, { fontSize: 10 });
+              } else if (R === 3) {
+                applyTimesNewRomanStyle(cell, { bold: true, fontSize: 11, fill: "E0E7EF" });
+              } else {
+                applyTimesNewRomanStyle(cell);
+              }
+            }
+          }
+        }
+
+        // Largura automática das colunas
+        const colWidthsTurma = [];
+        for (let C = rangeTurma.s.c; C <= rangeTurma.e.c; ++C) {
+          let maxWidth = 10;
+          for (let R = rangeTurma.s.r; R <= rangeTurma.e.r; ++R) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = wsTurma[cellAddress];
+            if (cell && cell.v) {
+              const len = String(cell.v).length;
+              if (len > maxWidth) maxWidth = len;
+            }
+          }
+          colWidthsTurma.push({ wch: Math.min(maxWidth + 2, 50) });
+        }
+        wsTurma['!cols'] = colWidthsTurma;
 
         // Nome da aba limitado a 31 caracteres
         const sheetName = turma.length > 31 ? turma.slice(0, 28) + "..." : turma;
@@ -428,23 +488,41 @@ export default function Reports() {
 
       const ws = XLSX.utils.aoa_to_sheet(data);
       
-      // Formatação: título em negrito
-      ws['A1'].s = { font: { bold: true, sz: 14 } };
-      ws['A2'].s = { font: { italic: true, sz: 10 } };
-      ws['A3'].s = { font: { italic: true, sz: 10 } };
-      ws['A4'].s = { font: { italic: true, sz: 9 } };
-      
-      // Header em negrito
-      const headerRow = 6;
-      const headerCols = ['A', 'B', ...allDates.map((_, i) => String.fromCharCode(67 + i)),
-        String.fromCharCode(67 + allDates.length), String.fromCharCode(68 + allDates.length),
-        String.fromCharCode(69 + allDates.length), String.fromCharCode(70 + allDates.length),
-        String.fromCharCode(71 + allDates.length)];
-      
-      headerCols.forEach(col => {
-        const cell = ws[`${col}${headerRow}`];
-        if (cell) cell.s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      });
+      // Aplicar Times New Roman em todas as células
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = ws[cellAddress];
+          if (cell) {
+            if (R === 0) {
+              applyTimesNewRomanStyle(cell, { bold: true, fontSize: 14 });
+            } else if (R === 1 || R === 2 || R === 3) {
+              applyTimesNewRomanStyle(cell, { fontSize: 10 });
+            } else if (R === 5) {
+              applyTimesNewRomanStyle(cell, { bold: true, fontSize: 11, fill: "E0E7EF" });
+            } else {
+              applyTimesNewRomanStyle(cell);
+            }
+          }
+        }
+      }
+
+      // Largura automática das colunas
+      const colWidths = [];
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        let maxWidth = 10;
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = ws[cellAddress];
+          if (cell && cell.v) {
+            const len = String(cell.v).length;
+            if (len > maxWidth) maxWidth = len;
+          }
+        }
+        colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+      }
+      ws['!cols'] = colWidths;
 
       XLSX.utils.book_append_sheet(wb, ws, "Relatório");
     }
@@ -671,14 +749,42 @@ ${bodyContent}
       });
 
       const wsGeral = XLSX.utils.aoa_to_sheet(geralData);
-      wsGeral['A1'].s = { font: { bold: true, sz: 14 } };
-      wsGeral['A2'].s = { font: { italic: true, sz: 10 } };
-      wsGeral['A5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      wsGeral['B5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      wsGeral['C5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      wsGeral['D5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      wsGeral['E5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      wsGeral['F5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
+      
+      // Aplicar Times New Roman
+      const rangeGeral = XLSX.utils.decode_range(wsGeral['!ref'] || 'A1');
+      for (let R = rangeGeral.s.r; R <= rangeGeral.e.r; ++R) {
+        for (let C = rangeGeral.s.c; C <= rangeGeral.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = wsGeral[cellAddress];
+          if (cell) {
+            if (R === 0) {
+              applyTimesNewRomanStyle(cell, { bold: true, fontSize: 14 });
+            } else if (R === 1 || R === 2) {
+              applyTimesNewRomanStyle(cell, { fontSize: 10 });
+            } else if (R === 4) {
+              applyTimesNewRomanStyle(cell, { bold: true, fontSize: 11, fill: "E0E7EF" });
+            } else {
+              applyTimesNewRomanStyle(cell);
+            }
+          }
+        }
+      }
+
+      // Largura automática
+      const colWidthsGeral = [];
+      for (let C = rangeGeral.s.c; C <= rangeGeral.e.c; ++C) {
+        let maxWidth = 10;
+        for (let R = rangeGeral.s.r; R <= rangeGeral.e.r; ++R) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = wsGeral[cellAddress];
+          if (cell && cell.v) {
+            const len = String(cell.v).length;
+            if (len > maxWidth) maxWidth = len;
+          }
+        }
+        colWidthsGeral.push({ wch: Math.min(maxWidth + 2, 50) });
+      }
+      wsGeral['!cols'] = colWidthsGeral;
 
       XLSX.utils.book_append_sheet(wb, wsGeral, "GERAL");
 
@@ -704,13 +810,42 @@ ${bodyContent}
         });
 
         const wsTurma = XLSX.utils.aoa_to_sheet(turmaData);
-        wsTurma['A1'].s = { font: { bold: true, sz: 14 } };
-        wsTurma['A2'].s = { font: { italic: true, sz: 10 } };
-        wsTurma['A4'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-        wsTurma['B4'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-        wsTurma['C4'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-        wsTurma['D4'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-        wsTurma['E4'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
+        
+        // Aplicar Times New Roman
+        const rangeTurma = XLSX.utils.decode_range(wsTurma['!ref'] || 'A1');
+        for (let R = rangeTurma.s.r; R <= rangeTurma.e.r; ++R) {
+          for (let C = rangeTurma.s.c; C <= rangeTurma.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = wsTurma[cellAddress];
+            if (cell) {
+              if (R === 0) {
+                applyTimesNewRomanStyle(cell, { bold: true, fontSize: 14 });
+              } else if (R === 1) {
+                applyTimesNewRomanStyle(cell, { fontSize: 10 });
+              } else if (R === 3) {
+                applyTimesNewRomanStyle(cell, { bold: true, fontSize: 11, fill: "E0E7EF" });
+              } else {
+                applyTimesNewRomanStyle(cell);
+              }
+            }
+          }
+        }
+
+        // Largura automática
+        const colWidthsTurma = [];
+        for (let C = rangeTurma.s.c; C <= rangeTurma.e.c; ++C) {
+          let maxWidth = 10;
+          for (let R = rangeTurma.s.r; R <= rangeTurma.e.r; ++R) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = wsTurma[cellAddress];
+            if (cell && cell.v) {
+              const len = String(cell.v).length;
+              if (len > maxWidth) maxWidth = len;
+            }
+          }
+          colWidthsTurma.push({ wch: Math.min(maxWidth + 2, 50) });
+        }
+        wsTurma['!cols'] = colWidthsTurma;
 
         const sheetName = turma.length > 31 ? turma.slice(0, 28) + "..." : turma;
         XLSX.utils.book_append_sheet(wb, wsTurma, sheetName);
@@ -735,13 +870,42 @@ ${bodyContent}
       });
 
       const ws = XLSX.utils.aoa_to_sheet(data);
-      ws['A1'].s = { font: { bold: true, sz: 14 } };
-      ws['A2'].s = { font: { italic: true, sz: 10 } };
-      ws['A5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      ws['B5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      ws['C5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      ws['D5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-      ws['E5'].s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
+      
+      // Aplicar Times New Roman
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      for (let R = range.s.r; R <= range.e.r; ++R) {
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = ws[cellAddress];
+          if (cell) {
+            if (R === 0) {
+              applyTimesNewRomanStyle(cell, { bold: true, fontSize: 14 });
+            } else if (R === 1 || R === 2) {
+              applyTimesNewRomanStyle(cell, { fontSize: 10 });
+            } else if (R === 4) {
+              applyTimesNewRomanStyle(cell, { bold: true, fontSize: 11, fill: "E0E7EF" });
+            } else {
+              applyTimesNewRomanStyle(cell);
+            }
+          }
+        }
+      }
+
+      // Largura automática
+      const colWidths = [];
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        let maxWidth = 10;
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+          const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+          const cell = ws[cellAddress];
+          if (cell && cell.v) {
+            const len = String(cell.v).length;
+            if (len > maxWidth) maxWidth = len;
+          }
+        }
+        colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+      }
+      ws['!cols'] = colWidths;
 
       XLSX.utils.book_append_sheet(wb, ws, "Relatório");
     }
@@ -862,12 +1026,42 @@ ${bodyContent}
         });
 
         const wsGeral = XLSX.utils.aoa_to_sheet(geralData);
-        wsGeral['A1'].s = { font: { bold: true, sz: 14 } };
-        wsGeral['A2'].s = { font: { italic: true, sz: 10 } };
-        ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N', 'O'].forEach(col => {
-          const cell = wsGeral[`${col}5`];
-          if (cell) cell.s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-        });
+        
+        // Aplicar Times New Roman
+        const rangeGeral = XLSX.utils.decode_range(wsGeral['!ref'] || 'A1');
+        for (let R = rangeGeral.s.r; R <= rangeGeral.e.r; ++R) {
+          for (let C = rangeGeral.s.c; C <= rangeGeral.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = wsGeral[cellAddress];
+            if (cell) {
+              if (R === 0) {
+                applyTimesNewRomanStyle(cell, { bold: true, fontSize: 14 });
+              } else if (R === 1 || R === 2) {
+                applyTimesNewRomanStyle(cell, { fontSize: 10 });
+              } else if (R === 4) {
+                applyTimesNewRomanStyle(cell, { bold: true, fontSize: 11, fill: "E0E7EF" });
+              } else {
+                applyTimesNewRomanStyle(cell);
+              }
+            }
+          }
+        }
+
+        // Largura automática
+        const colWidthsGeral = [];
+        for (let C = rangeGeral.s.c; C <= rangeGeral.e.c; ++C) {
+          let maxWidth = 10;
+          for (let R = rangeGeral.s.r; R <= rangeGeral.e.r; ++R) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = wsGeral[cellAddress];
+            if (cell && cell.v) {
+              const len = String(cell.v).length;
+              if (len > maxWidth) maxWidth = len;
+            }
+          }
+          colWidthsGeral.push({ wch: Math.min(maxWidth + 2, 50) });
+        }
+        wsGeral['!cols'] = colWidthsGeral;
 
         XLSX.utils.book_append_sheet(wb, wsGeral, "GERAL");
 
@@ -893,12 +1087,42 @@ ${bodyContent}
           });
 
           const wsTurma = XLSX.utils.aoa_to_sheet(turmaData);
-          wsTurma['A1'].s = { font: { bold: true, sz: 14 } };
-          wsTurma['A2'].s = { font: { italic: true, sz: 10 } };
-          ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'].forEach(col => {
-            const cell = wsTurma[`${col}4`];
-            if (cell) cell.s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-          });
+          
+          // Aplicar Times New Roman
+          const rangeTurma = XLSX.utils.decode_range(wsTurma['!ref'] || 'A1');
+          for (let R = rangeTurma.s.r; R <= rangeTurma.e.r; ++R) {
+            for (let C = rangeTurma.s.c; C <= rangeTurma.e.c; ++C) {
+              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+              const cell = wsTurma[cellAddress];
+              if (cell) {
+                if (R === 0) {
+                  applyTimesNewRomanStyle(cell, { bold: true, fontSize: 14 });
+                } else if (R === 1) {
+                  applyTimesNewRomanStyle(cell, { fontSize: 10 });
+                } else if (R === 3) {
+                  applyTimesNewRomanStyle(cell, { bold: true, fontSize: 11, fill: "E0E7EF" });
+                } else {
+                  applyTimesNewRomanStyle(cell);
+                }
+              }
+            }
+          }
+
+          // Largura automática
+          const colWidthsTurma = [];
+          for (let C = rangeTurma.s.c; C <= rangeTurma.e.c; ++C) {
+            let maxWidth = 10;
+            for (let R = rangeTurma.s.r; R <= rangeTurma.e.r; ++R) {
+              const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+              const cell = wsTurma[cellAddress];
+              if (cell && cell.v) {
+                const len = String(cell.v).length;
+                if (len > maxWidth) maxWidth = len;
+              }
+            }
+            colWidthsTurma.push({ wch: Math.min(maxWidth + 2, 50) });
+          }
+          wsTurma['!cols'] = colWidthsTurma;
 
           const sheetName = turma.length > 31 ? turma.slice(0, 28) + "..." : turma;
           XLSX.utils.book_append_sheet(wb, wsTurma, sheetName);
@@ -920,12 +1144,42 @@ ${bodyContent}
         });
 
         const ws = XLSX.utils.aoa_to_sheet(data);
-        ws['A1'].s = { font: { bold: true, sz: 14 } };
-        ws['A2'].s = { font: { italic: true, sz: 10 } };
-        ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'I', 'J', 'K', 'L', 'M', 'N'].forEach(col => {
-          const cell = ws[`${col}5`];
-          if (cell) cell.s = { font: { bold: true }, fill: { fgColor: { rgb: "E0E7EF" } } };
-        });
+        
+        // Aplicar Times New Roman
+        const range = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+        for (let R = range.s.r; R <= range.e.r; ++R) {
+          for (let C = range.s.c; C <= range.e.c; ++C) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = ws[cellAddress];
+            if (cell) {
+              if (R === 0) {
+                applyTimesNewRomanStyle(cell, { bold: true, fontSize: 14 });
+              } else if (R === 1 || R === 2) {
+                applyTimesNewRomanStyle(cell, { fontSize: 10 });
+              } else if (R === 4) {
+                applyTimesNewRomanStyle(cell, { bold: true, fontSize: 11, fill: "E0E7EF" });
+              } else {
+                applyTimesNewRomanStyle(cell);
+              }
+            }
+          }
+        }
+
+        // Largura automática
+        const colWidths = [];
+        for (let C = range.s.c; C <= range.e.c; ++C) {
+          let maxWidth = 10;
+          for (let R = range.s.r; R <= range.e.r; ++R) {
+            const cellAddress = XLSX.utils.encode_cell({ r: R, c: C });
+            const cell = ws[cellAddress];
+            if (cell && cell.v) {
+              const len = String(cell.v).length;
+              if (len > maxWidth) maxWidth = len;
+            }
+          }
+          colWidths.push({ wch: Math.min(maxWidth + 2, 50) });
+        }
+        ws['!cols'] = colWidths;
 
         XLSX.utils.book_append_sheet(wb, ws, "Relatório");
       }
@@ -1214,12 +1468,12 @@ ${bodyContent}
                 size="sm" 
                 onClick={() => setShowMassExportMenu(!showMassExportMenu)} 
                 disabled={massFilteredStudents.length === 0}
-                className="flex-1 min-w-[160px]"
+                className="flex-1 min-w-[120px]"
               >
                 <Download className="h-4 w-4 mr-1.5" /> Mensal <ChevronDown className="h-3 w-3 ml-1" />
               </Button>
               {showMassExportMenu && (
-                <div className="absolute top-full left-0 mt-1 bg-background border border-border rounded-lg shadow-lg z-10 min-w-[160px]">
+                <div className="absolute top-full left-0 mt-1 bg-background border border-border rounded-lg shadow-lg z-10 min-w-[140px]">
                   <button
                     onClick={() => { handleExportMassCSV(); setShowMassExportMenu(false); }}
                     className="w-full text-left px-4 py-2 text-sm hover:bg-muted transition-colors rounded-t-lg flex items-center gap-2"
@@ -1239,25 +1493,32 @@ ${bodyContent}
               <Button 
                 variant="outline" 
                 size="sm" 
-                onClick={handleExportAnnualMassCSV}
+                onClick={() => setShowAnnualExportMenu(!showAnnualExportMenu)}
                 disabled={massFilteredStudents.length === 0 || exportingAnnual}
-                className="flex-1 min-w-[160px]"
-                title="Exportar CSV anual"
+                className="flex-1 min-w-[120px]"
               >
-                <Download className="h-4 w-4 mr-1.5" />{exportingAnnual ? "Gerando..." : "Anual CSV"}
+                <Download className="h-4 w-4 mr-1.5" />
+                {exportingAnnual ? "Gerando..." : "Anual"}
+                <ChevronDown className="h-3 w-3 ml-1" />
               </Button>
-            </div>
-            <div className="relative">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={handleExportAnnualMassXLSX}
-                disabled={massFilteredStudents.length === 0 || exportingAnnual}
-                className="flex-1 min-w-[160px]"
-                title="Exportar XLSX anual"
-              >
-                <Download className="h-4 w-4 mr-1.5" />{exportingAnnual ? "Gerando..." : "Anual XLSX"}
-              </Button>
+              {showAnnualExportMenu && (
+                <div className="absolute top-full left-0 mt-1 bg-background border border-border rounded-lg shadow-lg z-10 min-w-[140px]">
+                  <button
+                    onClick={() => { handleExportAnnualMassCSV(); setShowAnnualExportMenu(false); }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-muted transition-colors rounded-t-lg flex items-center gap-2"
+                    disabled={exportingAnnual}
+                  >
+                    <FileText className="h-4 w-4" /> CSV
+                  </button>
+                  <button
+                    onClick={() => { handleExportAnnualMassXLSX(); setShowAnnualExportMenu(false); }}
+                    className="w-full text-left px-4 py-2 text-sm hover:bg-muted transition-colors rounded-b-lg flex items-center gap-2"
+                    disabled={exportingAnnual}
+                  >
+                    <FileText className="h-4 w-4" /> Excel (XLSX)
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
