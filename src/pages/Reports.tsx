@@ -143,14 +143,12 @@ export default function Reports() {
 
   const classes = ["all", ...Array.from(new Set(students.map((s) => s.class_name))).sort()];
 
-  // Filtro por turma
   const byClassAttendance = selectedClass === "all" ? attendance
     : attendance.filter((a) => {
         const turma = students.find((s) => s.id === a.student_id)?.class_name ?? (a as any).students?.class_name;
         return turma === selectedClass;
       });
 
-  // Filtro adicional por data específica
   const filteredAttendance = selectedDate
     ? byClassAttendance.filter((a) => a.date === selectedDate)
     : byClassAttendance;
@@ -160,7 +158,6 @@ export default function Reports() {
 
   const alertStudents = students.filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3);
 
-  // Datas disponíveis para o seletor (apenas datas que têm registros na turma selecionada)
   const availableDates = useMemo(
     () => [...new Set(byClassAttendance.map((a) => a.date))].sort().reverse(),
     [byClassAttendance]
@@ -170,12 +167,17 @@ export default function Reports() {
     ? format(new Date(selectedDate + "T12:00:00"), "dd/MM/yyyy (EEEE)", { locale: ptBR })
     : "";
 
-  function downloadCSV(rows: (string | number)[][], filename: string) {
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+  // Gera arquivo TSV (separado por tab) para compatibilidade direta com Excel/Calc/Numbers
+  function downloadTSV(rows: (string | number)[][], filename: string) {
+    const tsv = rows
+      .map((r) => r.map((c) => String(c).replace(/\t/g, " ").replace(/\n/g, " ")).join("\t"))
+      .join("\n");
+    const blob = new Blob(["\uFEFF" + tsv], { type: "text/tab-separated-values;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url; link.download = filename; link.click();
+    link.href = url;
+    link.download = filename;
+    link.click();
     URL.revokeObjectURL(url);
   }
 
@@ -231,7 +233,7 @@ export default function Reports() {
       ["Faltas justificadas", sumFJ, ...pad(extra)],
       ["Média geral", sumT > 0 ? `${((sumP / sumT) * 100).toFixed(1)}%` : "-", ...pad(extra)],
     ];
-    downloadCSV(rows, `chamada-bom-pastor-${new Date().toISOString().slice(0, 10)}.csv`);
+    downloadTSV(rows, `chamada-bom-pastor-${new Date().toISOString().slice(0, 10)}.tsv`);
   }
 
   function handleExportPDF() {
@@ -310,7 +312,7 @@ export default function Reports() {
     const rate = massFilteredStudents.length > 0 ? `${((massCompliant.length / massFilteredStudents.length) * 100).toFixed(1)}%` : "-";
     rows.push([], ["RESUMO"], ["Total de alunos", massFilteredStudents.length], ["Conformes", massCompliant.length], ["Pendentes", massNonCompliant.length], ["Taxa", rate]);
     const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
-    downloadCSV(rows, `missas-bom-pastor-${massMonth}${suffix}.csv`);
+    downloadTSV(rows, `missas-bom-pastor-${massMonth}${suffix}.tsv`);
   }
 
   async function handleExportAnnualMassCSV() {
@@ -344,7 +346,7 @@ export default function Reports() {
       rows.push([], ["Conformes no mês", "", ...conformesPerMonth, ""],
         ["% Conformidade", "", ...conformesPerMonth.map((n) => sorted.length > 0 ? `${((n / sorted.length) * 100).toFixed(0)}%` : "-"), ""]);
       const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
-      downloadCSV(rows, `missas-anual-${year}${suffix}.csv`);
+      downloadTSV(rows, `missas-anual-${year}${suffix}.tsv`);
     } finally { setExportingAnnual(false); }
   }
 
@@ -392,8 +394,8 @@ export default function Reports() {
           </div>
           {activeTab === "presencas" && (
             <div className="flex gap-1.5 shrink-0">
-              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredAttendance.length === 0} title="Exportar CSV">
-                <Download className="h-4 w-4 mr-1" /> CSV
+              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredAttendance.length === 0} title="Exportar planilha (TSV)">
+                <Download className="h-4 w-4 mr-1" /> TSV
               </Button>
               <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={filteredAttendance.length === 0} title="Exportar PDF">
                 <FileText className="h-4 w-4 mr-1" /> PDF
