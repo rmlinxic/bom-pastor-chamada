@@ -2,15 +2,12 @@ import { useState, useMemo } from "react";
 import { format, getDaysInMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import {
-  ChevronLeft, ChevronRight, Church, CalendarIcon,
+  ChevronLeft, ChevronRight, Church,
   CheckCircle2, AlertTriangle, Trash2, Clock, Filter,
+  Users, CheckSquare, Square, UserCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import { Calendar } from "@/components/ui/calendar";
-import {
-  Popover, PopoverContent, PopoverTrigger,
-} from "@/components/ui/popover";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -22,6 +19,11 @@ import {
   useMassAttendanceByMonth, useRegisterMassAttendance, useDeleteMassAttendance,
 } from "@/hooks/useMassAttendance";
 import { ETAPAS } from "@/lib/etapas";
+import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
+import { useQueryClient } from "@tanstack/react-query";
+
+const db = supabase as any;
 
 function todayMonthStr() { return new Date().toISOString().slice(0, 7); }
 function shiftMonth(m: string, d: number) {
@@ -35,17 +37,17 @@ function monthLabel(m: string) {
 
 export default function Missas() {
   const { user, isCoordinator, isAdmin } = useAuth();
+  const queryClient = useQueryClient();
   const { data: allStudents = [] } = useStudents();
 
-  const [selectedStudentId, setSelectedStudentId] = useState("");
-  const [selectedDate, setSelectedDate] = useState<Date | undefined>();
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectedDate, setSelectedDate] = useState<string>("");
+  const [isSaving, setIsSaving] = useState(false);
   const [currentMonth, setCurrentMonth] = useState(todayMonthStr);
-  // Coordenador/admin podem filtrar por etapa
   const [filtroEtapa, setFiltroEtapa] = useState<string>("all");
 
   const canFilterEtapa = isCoordinator || isAdmin;
 
-  // Aplica filtro de etapa se coordenador/admin selecionou uma
   const students = useMemo(() => {
     if (!canFilterEtapa || filtroEtapa === "all") return allStudents;
     return allStudents.filter((s) => s.class_name === filtroEtapa);
@@ -54,7 +56,6 @@ export default function Missas() {
   const studentIds = useMemo(() => allStudents.map((s) => s.id), [allStudents]);
 
   const { data: massRecords = [], isLoading } = useMassAttendanceByMonth(studentIds, currentMonth);
-  const registerMutation = useRegisterMassAttendance();
   const deleteMutation = useDeleteMassAttendance();
 
   const today = new Date();
@@ -63,13 +64,11 @@ export default function Missas() {
   const isPastMonth = currentMonth < thisMonth;
   const daysLeft = getDaysInMonth(today) - today.getDate();
 
-  // filtra registros para os alunos visíveis (respeitando filtro de etapa)
   const visibleStudentIds = useMemo(() => new Set(students.map((s) => s.id)), [students]);
   const visibleMassRecords = useMemo(
     () => massRecords.filter((r) => visibleStudentIds.has(r.student_id)),
     [massRecords, visibleStudentIds]
   );
-
   const studentsWithMass = useMemo(
     () => new Set(visibleMassRecords.map((r) => r.student_id)),
     [visibleMassRecords]
@@ -89,13 +88,72 @@ export default function Missas() {
 
   const isEndOfMonthAlert = isCurrentMonth && daysLeft <= 7 && studentsWithoutMass.length > 0;
 
-  const handleRegister = () => {
-    if (!selectedStudentId || !selectedDate) return;
-    registerMutation.mutate(
-      { studentId: selectedStudentId, date: format(selectedDate, "yyyy-MM-dd") },
-      { onSuccess: () => { setSelectedStudentId(""); setSelectedDate(undefined); } }
-    );
-  };
+  // Lista de alunos exibida no formulário (todos, não filtrado por etapa)
+  const formStudents = useMemo(
+    () => [...allStudents].sort((a, b) =>
+      a.class_name !== b.class_name
+        ? a.class_name.localeCompare(b.class_name)
+        : a.name.localeCompare(b.name)
+    ),
+    [allStudents]
+  );
+
+  // Agrupar por etapa para exibir no formulário
+  const byEtapa = useMemo(() => {
+    const map: Record<string, typeof formStudents> = {};
+    formStudents.forEach((s) => {
+      if (!map[s.class_name]) map[s.class_name] = [];
+      map[s.class_name].push(s);
+    });
+    return map;
+  }, [formStudents]);
+
+  const allFormIds = useMemo(() => formStudents.map((s) => s.id), [formStudents]);
+  const allSelected = allFormIds.length > 0 && allFormIds.every((id) => selectedIds.has(id));
+  const someSelected = selectedIds.size > 0 && !allSelected;
+
+  function toggleStudent(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  }
+
+  function toggleEtapa(ids: string[]) {
+    const allChecked = ids.every((id) => selectedIds.has(id));
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      ids.forEach((id) => allChecked ? next.delete(id) : next.add(id));
+      return next;
+    });
+  }
+
+  function toggleAll() {
+    setSelectedIds(allSelected ? new Set() : new Set(allFormIds));
+  }
+
+  async function handleRegisterMultiple() {
+    if (selectedIds.size === 0 || !selectedDate || isSaving) return;
+    setIsSaving(true);
+    try {
+      const dateStr = selectedDate;
+      const rows = Array.from(selectedIds).map((student_id) => ({ student_id, date: dateStr }));
+      // upsert para evitar duplicatas (student_id + date)
+      const { error } = await db
+        .from("mass_attendance")
+        .upsert(rows, { onConflict: "student_id,date", ignoreDuplicates: true });
+      if (error) throw error;
+      toast.success(`${rows.length} presença${rows.length !== 1 ? "s" : ""} registrada${rows.length !== 1 ? "s" : ""} com sucesso!`);
+      setSelectedIds(new Set());
+      setSelectedDate("");
+      queryClient.invalidateQueries({ queryKey: ["mass-attendance"] });
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erro ao registrar presenças.");
+    } finally {
+      setIsSaving(false);
+    }
+  }
 
   const handleDelete = (id: string, name: string, date: string) => {
     if (window.confirm(`Remover presença de "${name}" em ${date}?`)) deleteMutation.mutate(id);
@@ -104,6 +162,10 @@ export default function Missas() {
   const subtitle = canFilterEtapa
     ? (filtroEtapa === "all" ? "Toda a paróquia" : filtroEtapa)
     : (user?.etapa ?? "sua etapa");
+
+  const dateLabel = selectedDate
+    ? format(new Date(selectedDate + "T12:00:00"), "dd/MM/yyyy (EEEE)", { locale: ptBR })
+    : "";
 
   return (
     <div className="pb-24">
@@ -125,49 +187,130 @@ export default function Missas() {
         </div>
       )}
 
-      {/* Formulário de registro */}
-      <div className="mx-4 mb-5 rounded-lg border border-border bg-card p-4 shadow-sm space-y-4">
-        <div className="flex items-center gap-2">
+      {/* Formulário de registro múltiplo */}
+      <div className="mx-4 mb-5 rounded-lg border border-border bg-card shadow-sm overflow-hidden">
+        <div className="flex items-center gap-2 px-4 py-3 border-b border-border bg-muted/30">
           <Church className="h-4 w-4 text-primary" />
           <span className="text-sm font-semibold">Registrar Presença</span>
         </div>
-        <div className="space-y-1.5">
-          <Label>Aluno</Label>
-          <Select value={selectedStudentId} onValueChange={setSelectedStudentId}>
-            <SelectTrigger>
-              <SelectValue placeholder="Selecione o aluno" />
-            </SelectTrigger>
-            <SelectContent>
-              {allStudents.length === 0 && (
-                <div className="px-3 py-4 text-sm text-center text-muted-foreground">Nenhum aluno cadastrado.</div>
-              )}
-              {allStudents.map((s) => (
-                <SelectItem key={s.id} value={s.id}>
-                  {s.name}{canFilterEtapa ? ` — ${s.class_name}` : ""}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="space-y-1.5">
+
+        {/* Data da missa */}
+        <div className="px-4 pt-4 pb-3 border-b border-border/50 space-y-1.5">
           <Label>Data da Missa</Label>
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !selectedDate && "text-muted-foreground")}>
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {selectedDate ? format(selectedDate, "PPP", { locale: ptBR }) : "Selecione a data"}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0" align="start">
-              <Calendar mode="single" selected={selectedDate} onSelect={setSelectedDate}
-                disabled={(d) => d > today} initialFocus className="p-3 pointer-events-auto" />
-            </PopoverContent>
-          </Popover>
+          <input
+            type="date"
+            value={selectedDate}
+            max={today.toISOString().slice(0, 10)}
+            onChange={(e) => setSelectedDate(e.target.value)}
+            className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          />
+          {selectedDate && (
+            <p className="text-xs text-muted-foreground capitalize">{dateLabel}</p>
+          )}
         </div>
-        <Button className="w-full h-11" onClick={handleRegister}
-          disabled={!selectedStudentId || !selectedDate || registerMutation.isPending}>
-          {registerMutation.isPending ? "Registrando..." : "Confirmar Presença"}
-        </Button>
+
+        {/* Cabeçalho da lista de alunos */}
+        <div className="flex items-center justify-between px-4 py-2 border-b border-border/50">
+          <div className="flex items-center gap-2">
+            <Users className="h-4 w-4 text-muted-foreground" />
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Alunos</span>
+          </div>
+          <button
+            onClick={toggleAll}
+            className="flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"
+          >
+            {allSelected
+              ? <><CheckSquare className="h-4 w-4" /> Desmarcar todos</>
+              : <><Square className="h-4 w-4" /> Selecionar todos</>
+            }
+          </button>
+        </div>
+
+        {/* Lista agrupada por etapa */}
+        <div className="max-h-72 overflow-y-auto divide-y divide-border/40">
+          {Object.entries(byEtapa).map(([etapa, etapaStudents]) => {
+            const etapaIds = etapaStudents.map((s) => s.id);
+            const allEtapaChecked = etapaIds.every((id) => selectedIds.has(id));
+            return (
+              <div key={etapa}>
+                {/* Linha de etapa (clica para marcar todos da etapa) */}
+                <button
+                  onClick={() => toggleEtapa(etapaIds)}
+                  className="w-full flex items-center gap-2 px-4 py-2 bg-muted/50 hover:bg-muted transition-colors text-left"
+                >
+                  <span className={cn(
+                    "flex h-4 w-4 items-center justify-center rounded border text-[10px] font-bold transition-colors",
+                    allEtapaChecked ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground"
+                  )}>
+                    {allEtapaChecked ? "✓" : ""}
+                  </span>
+                  <span className="text-xs font-semibold text-muted-foreground">{etapa}</span>
+                  <span className="ml-auto text-xs text-muted-foreground">
+                    {etapaIds.filter((id) => selectedIds.has(id)).length}/{etapaIds.length}
+                  </span>
+                </button>
+                {/* Alunos da etapa */}
+                {etapaStudents.map((s) => {
+                  const checked = selectedIds.has(s.id);
+                  const jaTemNestaMissa = selectedDate
+                    ? (recordsByStudent[s.id] ?? []).some((r) => r.date === selectedDate)
+                    : false;
+                  return (
+                    <button
+                      key={s.id}
+                      onClick={() => toggleStudent(s.id)}
+                      className={cn(
+                        "w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors",
+                        checked ? "bg-primary/8" : "hover:bg-muted/40",
+                        jaTemNestaMissa && "opacity-60"
+                      )}
+                    >
+                      <span className={cn(
+                        "flex h-5 w-5 shrink-0 items-center justify-center rounded border-2 transition-colors",
+                        checked ? "bg-primary border-primary text-primary-foreground" : "border-muted-foreground bg-background"
+                      )}>
+                        {checked && <span className="text-xs font-bold">✓</span>}
+                      </span>
+                      <span className={cn("flex-1 text-sm font-medium", checked && "text-primary")}>
+                        {s.name}
+                      </span>
+                      {jaTemNestaMissa && (
+                        <span className="text-[10px] text-success font-semibold bg-success/10 rounded-full px-2 py-0.5">
+                          já registrada
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {formStudents.length === 0 && (
+            <p className="px-4 py-6 text-sm text-center text-muted-foreground">Nenhum aluno cadastrado.</p>
+          )}
+        </div>
+
+        {/* Rodapé com contador e botão */}
+        <div className="px-4 py-3 border-t border-border bg-muted/20">
+          {selectedIds.size > 0 && (
+            <p className="text-xs text-muted-foreground mb-2">
+              <span className="font-semibold text-primary">{selectedIds.size} aluno{selectedIds.size !== 1 ? "s" : ""}</span> selecionado{selectedIds.size !== 1 ? "s" : ""}
+              {selectedDate && <> para <span className="font-semibold text-foreground capitalize">{dateLabel}</span></>}
+            </p>
+          )}
+          <Button
+            className="w-full h-11"
+            onClick={handleRegisterMultiple}
+            disabled={selectedIds.size === 0 || !selectedDate || isSaving}
+          >
+            <UserCheck className="h-4 w-4 mr-2" />
+            {isSaving
+              ? "Registrando..."
+              : selectedIds.size === 0
+              ? "Selecione aluno(s) e data"
+              : `Confirmar ${selectedIds.size} presença${selectedIds.size !== 1 ? "s" : ""}`}
+          </Button>
+        </div>
       </div>
 
       {/* Navegação de mês */}
@@ -206,11 +349,34 @@ export default function Missas() {
           </div>
           <div className="flex flex-wrap gap-2">
             {studentsWithoutMass.map((s) => (
-              <span key={s.id} className="text-xs bg-warning/20 text-warning rounded-full px-3 py-1 font-medium">
+              <button
+                key={s.id}
+                onClick={() => {
+                  setSelectedIds((prev) => {
+                    const next = new Set(prev);
+                    next.has(s.id) ? next.delete(s.id) : next.add(s.id);
+                    return next;
+                  });
+                  // Scroll para o topo
+                  window.scrollTo({ top: 0, behavior: "smooth" });
+                }}
+                className={cn(
+                  "text-xs rounded-full px-3 py-1 font-medium transition-colors",
+                  selectedIds.has(s.id)
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-warning/20 text-warning hover:bg-warning/40"
+                )}
+                title="Clique para selecionar no formulário"
+              >
                 {s.name}{canFilterEtapa && filtroEtapa === "all" ? ` (${s.class_name})` : ""}
-              </span>
+              </button>
             ))}
           </div>
+          {studentsWithoutMass.length > 0 && (
+            <p className="text-xs text-muted-foreground mt-2">
+              Clique em um aluno para selecioná-lo rapidamente no formulário acima.
+            </p>
+          )}
         </div>
       )}
 
