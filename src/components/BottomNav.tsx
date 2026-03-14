@@ -15,7 +15,7 @@ const CATECHIST_TABS = [
   { path: "/", icon: Home, label: "Início" },
   { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
   { path: "/missas", icon: Church, label: "Missas" },
-  { path: "/alunos", icon: Users, label: "Alunos" },
+  { path: "/alunos", icon: Users, label: "Catequizandos" },
   { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
 ];
 
@@ -24,7 +24,7 @@ const CATECHIST_COORD_TABS = [
   { path: "/", icon: Home, label: "Início" },
   { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
   { path: "/missas", icon: Church, label: "Missas" },
-  { path: "/alunos", icon: Users, label: "Alunos" },
+  { path: "/alunos", icon: Users, label: "Catequizandos" },
   { path: "/coordenador", icon: Building2, label: "Paróquia" },
   { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
 ];
@@ -32,7 +32,7 @@ const CATECHIST_COORD_TABS = [
 const ADMIN_TABS = [
   { path: "/", icon: Home, label: "Início" },
   { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
-  { path: "/alunos", icon: Users, label: "Alunos" },
+  { path: "/alunos", icon: Users, label: "Catequizandos" },
   { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
   { path: "/admin", icon: ShieldCheck, label: "Admin" },
 ];

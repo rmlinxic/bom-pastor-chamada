@@ -74,7 +74,7 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm">
       <div className="w-full max-w-lg rounded-t-2xl bg-background p-6 pb-10 shadow-xl animate-in slide-in-from-bottom duration-200">
         <div className="flex items-center justify-between mb-5">
-          <h2 className="text-lg font-bold">{isEditing ? "Editar Aluno" : "Novo Aluno"}</h2>
+          <h2 className="text-lg font-bold">{isEditing ? "Editar Catequizando" : "Novo Catequizando"}</h2>
           <button onClick={onClose}
             className="p-1.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted transition-colors">
             <X className="h-5 w-5" />
@@ -82,7 +82,7 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
         </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1">
-            <label className="text-sm font-medium">Nome do aluno *</label>
+            <label className="text-sm font-medium">Nome do catequizando *</label>
             <Input
               value={form.name}
               onChange={(e) => setForm((p) => ({ ...p, name: e.target.value }))}

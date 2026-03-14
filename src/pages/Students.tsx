@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import {
   Plus, Search, Edit, Trash2, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, AlertTriangle, Clock, Upload,
+  CheckCircle, XCircle, AlertTriangle, Clock, Upload, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,21 @@ const STATUS_ICON: Record<string, { icon: typeof CheckCircle; color: string; lab
   falta_nao_justificada: { icon: XCircle, color: "text-destructive", label: "FN" },
   falta_justificada: { icon: AlertTriangle, color: "text-warning", label: "FJ" },
 };
+
+const CSV_TEMPLATE = `nome,turma,responsavel,telefone
+João da Silva,Primeira Etapa,Maria da Silva,(41) 99999-1111
+Ana Souza,Segunda Etapa,Carlos Souza,(41) 99999-2222
+`;
+
+function downloadCSVTemplate() {
+  const blob = new Blob([CSV_TEMPLATE], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "modelo_importacao_catequizandos.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function Students() {
   const { data: students = [], isLoading } = useStudents();
@@ -92,11 +107,9 @@ export default function Students() {
       importMutation.mutate(records);
     };
     reader.readAsText(file);
-    // reset input
     e.target.value = "";
   };
 
-  // Histórico por catequizando (do mais recente para o mais antigo)
   const historyByStudent = (studentId: string) =>
     attendance
       .filter((a) => a.student_id === studentId)
@@ -120,6 +133,19 @@ export default function Students() {
             className="pl-9"
           />
         </div>
+
+        {/* Botão baixar modelo CSV */}
+        <Button
+          variant="outline"
+          size="icon"
+          className="shrink-0"
+          title="Baixar modelo CSV"
+          onClick={downloadCSVTemplate}
+        >
+          <Download className="h-5 w-5" />
+        </Button>
+
+        {/* Botão importar via CSV */}
         <Button
           variant="outline"
           size="icon"
@@ -137,6 +163,8 @@ export default function Students() {
           className="hidden"
           onChange={handleCSVChange}
         />
+
+        {/* Botão novo catequizando */}
         <Button onClick={() => setShowForm(true)} size="icon" className="shrink-0">
           <Plus className="h-5 w-5" />
         </Button>

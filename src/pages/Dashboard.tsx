@@ -50,27 +50,20 @@ export default function Dashboard() {
   const { data: catequistas = [] } = useCatequistas();
 
   // ---------- estado de filtro ----------
-  // Para catequista+coordenador e coordenador: default = própria etapa ("own")
-  // Para admin: default = "all"
   const defaultScope: Scope = isAdmin ? { kind: "all" } : { kind: "own" };
   const [scope, setScope] = useState<Scope>(defaultScope);
 
-  // Filtro de paróquia (1º nível) — admin e coordenador
   const [selParoquia, setSelParoquia] = useState<string>("all");
-  // Filtro de etapa (2º nível)
   const [selEtapa, setSelEtapa] = useState<string>("all");
 
-  // Quando muda paróquia, reseta etapa
   useEffect(() => { setSelEtapa("all"); }, [selParoquia]);
 
-  // Monta o scope a partir dos selects
   useEffect(() => {
     if (isAdmin) {
       if (selParoquia === "all" && selEtapa === "all") setScope({ kind: "all" });
       else if (selEtapa !== "all") setScope({ kind: "etapa", etapa: selEtapa, paroquia_id: selParoquia === "all" ? undefined : selParoquia });
       else setScope({ kind: "paroquia", paroquia_id: selParoquia });
     } else if (isCoordinator) {
-      // coordenador puro ou catequista+coord
       const myParoquia = user?.paroquia_id ?? null;
       if (selEtapa === "own") setScope({ kind: "own" });
       else if (selEtapa === "paroquia") setScope(myParoquia ? { kind: "paroquia", paroquia_id: myParoquia } : { kind: "own" });
@@ -79,7 +72,6 @@ export default function Dashboard() {
     }
   }, [selParoquia, selEtapa, isAdmin, isCoordinator, user?.paroquia_id]);
 
-  // Etapas disponíveis para o filtro de etapa
   const etapasDisponiveis = useMemo(() => {
     const paroqId = isAdmin ? (selParoquia === "all" ? null : selParoquia) : (user?.paroquia_id ?? null);
     const cats = catequistas.filter((c) =>
@@ -101,9 +93,10 @@ export default function Dashboard() {
         .eq("active", true);
 
       if (scope.kind === "own") {
-        // Apenas alunos do próprio catequista
         studentsQuery = studentsQuery.or(
-          `catequista_id.eq.${user!.id},and(catequista_id.is.null,class_name.eq.${user?.etapa ?? "__nenhuma__"})`
+          `catequista_id.eq.${user!.id},and(catequista_id.is.null,class_name.eq.${
+            user?.etapa ?? "__nenhuma__"
+          })`
         );
       } else if (scope.kind === "paroquia") {
         studentsQuery = studentsQuery.eq("paroquia_id", scope.paroquia_id);
@@ -111,7 +104,6 @@ export default function Dashboard() {
         studentsQuery = studentsQuery.eq("class_name", scope.etapa);
         if (scope.paroquia_id) studentsQuery = studentsQuery.eq("paroquia_id", scope.paroquia_id);
       }
-      // "all": sem filtro adicional
 
       const studentsRes = await studentsQuery;
       const totalStudents = studentsRes.count ?? 0;
@@ -176,7 +168,6 @@ export default function Dashboard() {
   const pendingCount = stats?.pendingList?.length ?? 0;
   const missasPendingCount = stats?.studentsWithoutMass?.length ?? 0;
 
-  // ---------- label do escopo atual ----------
   const scopeLabel = useMemo(() => {
     if (scope.kind === "own") return user?.etapa ? `Etapa: ${user.etapa}` : "Minha etapa";
     if (scope.kind === "all") return "Todas as paróquias";
@@ -185,7 +176,6 @@ export default function Dashboard() {
     return "";
   }, [scope, paroquias, user?.etapa]);
 
-  // Catequista simples: sem filtros
   const isCatequistaOnly = isCatequista && !isCoordinator;
 
   return (
@@ -211,7 +201,6 @@ export default function Dashboard() {
       {!isCatequistaOnly && (
         <div className="px-4 mb-4 space-y-2">
 
-          {/* Admin: filtro de paróquia */}
           {isAdmin && paroquiasAtivas.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
               <button onClick={() => setSelParoquia("all")}
@@ -231,10 +220,8 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Coordenador puro: chips de escopo */}
           {isCoordinator && !isAdmin && (
             <div className="flex gap-2 overflow-x-auto pb-1">
-              {/* Minha etapa (só se for também catequista) */}
               {isCatequista && user?.etapa && (
                 <button onClick={() => setSelEtapa("own")}
                   className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5",
@@ -244,7 +231,6 @@ export default function Dashboard() {
                   <BookOpen className="h-3.5 w-3.5" /> {user.etapa}
                 </button>
               )}
-              {/* Paróquia toda */}
               <button onClick={() => setSelEtapa("paroquia")}
                 className={cn("shrink-0 rounded-full px-4 py-1.5 text-sm font-medium transition-colors flex items-center gap-1.5",
                   selEtapa === "paroquia" ? "bg-primary text-primary-foreground" : "bg-muted text-muted-foreground"
@@ -255,7 +241,6 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Filtro de etapa (2º nível) — aparece para admin e coordenador */}
           {etapasDisponiveis.length > 0 && (isAdmin || (isCoordinator && !isAdmin)) && (
             <div>
               <Select
@@ -279,7 +264,7 @@ export default function Dashboard() {
 
       {/* Cards */}
       <div className="grid grid-cols-2 gap-3 px-4">
-        <StatCard label="Total de Alunos" value={stats?.totalStudents ?? 0} icon={Users} />
+        <StatCard label="Total de Catequizandos" value={stats?.totalStudents ?? 0} icon={Users} />
         <StatCard label="Presenças" value={stats?.present ?? 0} icon={CheckCircle} variant="success" />
         <StatCard label="Faltas Justificadas" value={stats?.justified ?? 0} icon={AlertTriangle} variant="warning" />
         <StatCard label="Faltas Não Justificadas" value={stats?.unjustified ?? 0} icon={XCircle} variant="destructive" />
@@ -290,10 +275,10 @@ export default function Dashboard() {
         <div className="mx-4 mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
           <div className="flex items-center gap-2 mb-1">
             <XCircle className="h-5 w-5 text-destructive" />
-            <span className="font-bold text-destructive">Alunos com Faltas Recorrentes</span>
+            <span className="font-bold text-destructive">Catequizandos com Faltas Recorrentes</span>
           </div>
           <p className="text-xs text-muted-foreground mb-3">
-            Alunos com 2 ou mais faltas não justificadas. Considere entrar em contato com o responsável.
+            Catequizandos com 2 ou mais faltas não justificadas. Considere entrar em contato com o responsável.
           </p>
           <div className="space-y-2">
             {stats!.alertStudents.map((s) => {
@@ -331,12 +316,14 @@ export default function Dashboard() {
             <div className="flex items-center gap-2 mb-1">
               <Church className={`h-5 w-5 ${stats?.massEndOfMonthAlert ? "text-destructive" : "text-warning"}`} />
               <span className={`font-bold ${stats?.massEndOfMonthAlert ? "text-destructive" : "text-warning"}`}>
-                {stats?.massEndOfMonthAlert ? `⚠️ Fim do mês — Missas pendentes` : `Missas — ${missasPendingCount} aluno${missasPendingCount !== 1 ? "s" : ""} sem registro`}
+                {stats?.massEndOfMonthAlert
+                  ? `⚠️ Fim do mês — Missas pendentes`
+                  : `Missas — ${missasPendingCount} catequizando${missasPendingCount !== 1 ? "s" : ""} sem registro`}
               </span>
             </div>
             <p className={`text-sm ${stats?.massEndOfMonthAlert ? "text-destructive" : "text-warning"}`}>
               {stats?.massEndOfMonthAlert ? `Faltam ${stats.daysLeftInMonth} dia${stats.daysLeftInMonth !== 1 ? "s" : ""} para fechar o mês. ` : ""}
-              {missasPendingCount} aluno{missasPendingCount !== 1 ? "s" : ""} ainda não{missasPendingCount !== 1 ? " foram" : " foi"} à missa este mês.
+              {missasPendingCount} catequizando{missasPendingCount !== 1 ? "s" : ""} ainda não{missasPendingCount !== 1 ? " foram" : " foi"} à missa este mês.
               <span className="ml-1 underline underline-offset-2 text-xs">Ver missas →</span>
             </p>
             {stats!.studentsWithoutMass.length <= 5 && (
@@ -361,7 +348,7 @@ export default function Dashboard() {
           <div className="space-y-1">
             {stats!.pendingList.map((p: any) => (
               <p key={p.id} className="text-sm font-medium text-foreground">
-                {(p.students as any)?.name ?? "Aluno"} <span className="text-muted-foreground font-normal">— {p.date}</span>
+                {(p.students as any)?.name ?? "Catequizando"} <span className="text-muted-foreground font-normal">— {p.date}</span>
               </p>
             ))}
           </div>
