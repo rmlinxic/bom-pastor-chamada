@@ -22,7 +22,6 @@ export function useAttendanceByDate(date: string) {
 
 /**
  * Busca os IDs de todos os alunos ativos de uma paróquia.
- * Usado para filtrar attendance/justifications sem depender do join.
  */
 async function getParoquiaStudentIds(paroquiaId: string): Promise<string[]> {
   const { data } = await db
@@ -39,7 +38,6 @@ export function useAllAttendance() {
   return useQuery({
     queryKey: ["attendance-all", user?.id, user?.etapa, user?.paroquia_id, isCoordinator],
     queryFn: async () => {
-      // Admin: busca tudo direto
       if (isAdmin) {
         const { data, error } = await supabase
           .from("attendance")
@@ -49,7 +47,6 @@ export function useAllAttendance() {
         return data ?? [];
       }
 
-      // Coordenador: busca pelos IDs dos alunos da paróquia (não depende do paroquia_id no join)
       if (isCoordinator && user?.paroquia_id) {
         const studentIds = await getParoquiaStudentIds(user.paroquia_id);
         if (studentIds.length === 0) return [];
@@ -62,9 +59,7 @@ export function useAllAttendance() {
         return data ?? [];
       }
 
-      // Catequista: apenas sua etapa
       if (user?.id) {
-        // Busca os IDs dos seus alunos
         const { data: myStudents } = await db
           .from("students")
           .select("id")
@@ -95,7 +90,6 @@ export function usePendingJustifications() {
   return useQuery({
     queryKey: ["pending-justifications", user?.id, user?.etapa, user?.paroquia_id, isCoordinator],
     queryFn: async () => {
-      // Admin: tudo
       if (isAdmin) {
         const { data, error } = await db
           .from("pending_justifications")
@@ -105,7 +99,6 @@ export function usePendingJustifications() {
         return (data ?? []) as any[];
       }
 
-      // Coordenador: pelos IDs dos alunos da paróquia
       if (isCoordinator && user?.paroquia_id) {
         const studentIds = await getParoquiaStudentIds(user.paroquia_id);
         if (studentIds.length === 0) return [];
@@ -118,7 +111,6 @@ export function usePendingJustifications() {
         return (data ?? []) as any[];
       }
 
-      // Catequista: pelos IDs dos seus alunos
       if (user?.id) {
         const { data: myStudents } = await db
           .from("students")
@@ -160,6 +152,55 @@ export function useDeletePendingJustification() {
       toast.success("Justificativa pendente removida.");
     },
     onError: () => toast.error("Erro ao remover justificativa."),
+  });
+}
+
+/** Atualiza o motivo de uma justificativa pendente (enviada pelos pais) */
+export function useUpdatePendingJustification() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+      const { error } = await db
+        .from("pending_justifications")
+        .update({ reason })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pending-justifications"] });
+      toast.success("Justificativa atualizada.");
+    },
+    onError: () => toast.error("Erro ao atualizar justificativa."),
+  });
+}
+
+/** Atualiza um registro individual de chamada já salvo (status + motivo de justificativa) */
+export function useUpdateAttendanceRecord() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({
+      id,
+      status,
+      justification_reason,
+    }: {
+      id: string;
+      status: string;
+      justification_reason: string | null;
+    }) => {
+      const { error } = await supabase
+        .from("attendance")
+        .update({ status, justification_reason })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["attendance-all"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["student-history"] });
+      toast.success("Registro atualizado com sucesso!");
+    },
+    onError: () => toast.error("Erro ao atualizar registro."),
   });
 }
 
@@ -268,7 +309,7 @@ export function useSubmitJustification() {
 
       if (existing) {
         if (existing.status === "presente") {
-          throw new Error("O aluno estava presente nessa data.");
+          throw new Error("O catequizando estava presente nessa data.");
         }
         if (existing.status === "falta_justificada") {
           throw new Error("Essa falta já está justificada.");
