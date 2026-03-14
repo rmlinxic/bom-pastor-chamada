@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 
 const db = supabase as any;
 
-/** Hook autenticado: coordenador vê toda a paróquia, catequista vê só seus alunos, admin vê tudo */
+/** Hook autenticado: coordenador vê toda a paróquia, catequista vê só seus catequizandos, admin vê tudo */
 export function useStudents() {
   const { user, isAdmin, isCoordinator } = useAuth();
 
@@ -25,7 +25,7 @@ export function useStudents() {
         // Coordenador (puro ou catequista+coordenador): filtra por paróquia
         query = query.eq("paroquia_id", user.paroquia_id);
       } else if (user?.id) {
-        // Catequista: apenas seus alunos
+        // Catequista: apenas seus catequizandos
         query = query.or(
           `catequista_id.eq.${user.id},and(catequista_id.is.null,class_name.eq.${
             user.etapa ?? "__nenhuma__"
@@ -89,9 +89,9 @@ export function useAddStudent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
       queryClient.invalidateQueries({ queryKey: ["students-public"] });
-      toast.success("Aluno cadastrado com sucesso!");
+      toast.success("Catequizando cadastrado com sucesso!");
     },
-    onError: () => toast.error("Erro ao cadastrar aluno."),
+    onError: () => toast.error("Erro ao cadastrar catequizando."),
   });
 }
 
@@ -123,9 +123,9 @@ export function useUpdateStudent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
       queryClient.invalidateQueries({ queryKey: ["students-public"] });
-      toast.success("Aluno atualizado com sucesso!");
+      toast.success("Catequizando atualizado com sucesso!");
     },
-    onError: () => toast.error("Erro ao atualizar aluno."),
+    onError: () => toast.error("Erro ao atualizar catequizando."),
   });
 }
 
@@ -142,9 +142,9 @@ export function useDeleteStudent() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
       queryClient.invalidateQueries({ queryKey: ["students-public"] });
-      toast.success("Aluno removido.");
+      toast.success("Catequizando removido.");
     },
-    onError: () => toast.error("Erro ao remover aluno."),
+    onError: () => toast.error("Erro ao remover catequizando."),
   });
 }
 
@@ -189,7 +189,7 @@ export function useImportStudents() {
     onSuccess: (count) => {
       queryClient.invalidateQueries({ queryKey: ["students"] });
       queryClient.invalidateQueries({ queryKey: ["students-public"] });
-      toast.success(`${count} aluno(s) importado(s) com sucesso!`);
+      toast.success(`${count} catequizando(s) importado(s) com sucesso!`);
     },
     onError: (err: Error) => {
       toast.error(`Erro ao importar: ${err.message}`);

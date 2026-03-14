@@ -1,17 +1,18 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   Plus, Search, Edit, Trash2, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, AlertTriangle, Clock,
+  CheckCircle, XCircle, AlertTriangle, Clock, Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PageHeader from "@/components/PageHeader";
-import { useStudents, useDeleteStudent } from "@/hooks/useStudents";
+import { useStudents, useDeleteStudent, useImportStudents } from "@/hooks/useStudents";
 import { useAllAttendance } from "@/hooks/useAttendance";
 import StudentForm from "@/components/StudentForm";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
+import { toast } from "sonner";
 
 const STATUS_ICON: Record<string, { icon: typeof CheckCircle; color: string; label: string }> = {
   presente: { icon: CheckCircle, color: "text-success", label: "P" },
@@ -23,11 +24,13 @@ export default function Students() {
   const { data: students = [], isLoading } = useStudents();
   const { data: attendance = [] } = useAllAttendance();
   const deleteMutation = useDeleteStudent();
+  const importMutation = useImportStudents();
 
   const [search, setSearch] = useState("");
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<any>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const csvInputRef = useRef<HTMLInputElement>(null);
 
   const filtered = students.filter((s) =>
     s.name.toLowerCase().includes(search.toLowerCase()) ||
@@ -35,7 +38,7 @@ export default function Students() {
   );
 
   const handleDelete = (id: string, name: string) => {
-    if (window.confirm(`Remover "${name}"? Esta ação não pode ser desfeita.`))
+    if (window.confirm(`Remover catequizando "${name}"? Esta ação não pode ser desfeita.`))
       deleteMutation.mutate(id);
   };
 
@@ -49,19 +52,63 @@ export default function Students() {
     setEditingStudent(null);
   };
 
-  // Histórico por aluno (do mais recente para o mais antigo)
+  const handleCSVChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      const lines = text.split(/\r?\n/).filter(Boolean);
+      if (lines.length < 2) {
+        toast.error("CSV vazio ou sem dados.");
+        return;
+      }
+      const header = lines[0].split(",").map((h) => h.trim().toLowerCase().replace(/["']/g, ""));
+      const nameIdx = header.findIndex((h) => h === "nome" || h === "name");
+      const classIdx = header.findIndex((h) => h === "turma" || h === "class_name");
+      const parentIdx = header.findIndex((h) => h === "responsavel" || h === "parent_name");
+      const phoneIdx = header.findIndex((h) => h === "telefone" || h === "phone");
+
+      if (nameIdx === -1) {
+        toast.error('CSV precisa ter coluna "nome" ou "name".');
+        return;
+      }
+
+      const records = lines.slice(1).map((line) => {
+        const cols = line.split(",").map((c) => c.trim().replace(/^"|"$/g, ""));
+        return {
+          name: cols[nameIdx] ?? "",
+          class_name: classIdx !== -1 ? (cols[classIdx] ?? "") : "",
+          parent_name: parentIdx !== -1 ? (cols[parentIdx] ?? "") : "",
+          phone: phoneIdx !== -1 ? (cols[phoneIdx] ?? "") : "",
+        };
+      }).filter((r) => r.name.length > 0);
+
+      if (records.length === 0) {
+        toast.error("Nenhum catequizando válido encontrado no CSV.");
+        return;
+      }
+
+      importMutation.mutate(records);
+    };
+    reader.readAsText(file);
+    // reset input
+    e.target.value = "";
+  };
+
+  // Histórico por catequizando (do mais recente para o mais antigo)
   const historyByStudent = (studentId: string) =>
     attendance
       .filter((a) => a.student_id === studentId)
       .sort((a, b) => b.date.localeCompare(a.date))
-      .slice(0, 20); // máximo 20 registros no accordeon
+      .slice(0, 20);
 
   const toggleExpand = (id: string) =>
     setExpandedId((prev) => (prev === id ? null : id));
 
   return (
     <div className="pb-24">
-      <PageHeader title="Alunos" subtitle="Gerencie os catequizandos" />
+      <PageHeader title="Catequizandos" subtitle="Gerencie os catequizandos" />
 
       <div className="px-4 mb-4 flex gap-2">
         <div className="relative flex-1">
@@ -73,6 +120,23 @@ export default function Students() {
             className="pl-9"
           />
         </div>
+        <Button
+          variant="outline"
+          size="icon"
+          className="shrink-0"
+          title="Importar via CSV"
+          onClick={() => csvInputRef.current?.click()}
+          disabled={importMutation.isPending}
+        >
+          <Upload className="h-5 w-5" />
+        </Button>
+        <input
+          ref={csvInputRef}
+          type="file"
+          accept=".csv,text/csv"
+          className="hidden"
+          onChange={handleCSVChange}
+        />
         <Button onClick={() => setShowForm(true)} size="icon" className="shrink-0">
           <Plus className="h-5 w-5" />
         </Button>
@@ -203,7 +267,7 @@ export default function Students() {
 
         {filtered.length === 0 && !isLoading && (
           <div className="py-10 text-center">
-            <p className="text-muted-foreground">Nenhum aluno encontrado.</p>
+            <p className="text-muted-foreground">Nenhum catequizando encontrado.</p>
           </div>
         )}
       </div>
