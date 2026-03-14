@@ -20,10 +20,6 @@ export function useAttendanceByDate(date: string) {
   });
 }
 
-/**
- * Busca os IDs de todos os alunos ativos de uma paróquia.
- * Usado para filtrar attendance/justifications sem depender do join.
- */
 async function getParoquiaStudentIds(paroquiaId: string): Promise<string[]> {
   const { data } = await db
     .from("students")
@@ -39,7 +35,6 @@ export function useAllAttendance() {
   return useQuery({
     queryKey: ["attendance-all", user?.id, user?.etapa, user?.paroquia_id, isCoordinator],
     queryFn: async () => {
-      // Admin: busca tudo direto
       if (isAdmin) {
         const { data, error } = await supabase
           .from("attendance")
@@ -49,7 +44,6 @@ export function useAllAttendance() {
         return data ?? [];
       }
 
-      // Coordenador: busca pelos IDs dos alunos da paróquia (não depende do paroquia_id no join)
       if (isCoordinator && user?.paroquia_id) {
         const studentIds = await getParoquiaStudentIds(user.paroquia_id);
         if (studentIds.length === 0) return [];
@@ -62,9 +56,7 @@ export function useAllAttendance() {
         return data ?? [];
       }
 
-      // Catequista: apenas sua etapa
       if (user?.id) {
-        // Busca os IDs dos seus alunos
         const { data: myStudents } = await db
           .from("students")
           .select("id")
@@ -95,7 +87,6 @@ export function usePendingJustifications() {
   return useQuery({
     queryKey: ["pending-justifications", user?.id, user?.etapa, user?.paroquia_id, isCoordinator],
     queryFn: async () => {
-      // Admin: tudo
       if (isAdmin) {
         const { data, error } = await db
           .from("pending_justifications")
@@ -105,7 +96,6 @@ export function usePendingJustifications() {
         return (data ?? []) as any[];
       }
 
-      // Coordenador: pelos IDs dos alunos da paróquia
       if (isCoordinator && user?.paroquia_id) {
         const studentIds = await getParoquiaStudentIds(user.paroquia_id);
         if (studentIds.length === 0) return [];
@@ -118,7 +108,6 @@ export function usePendingJustifications() {
         return (data ?? []) as any[];
       }
 
-      // Catequista: pelos IDs dos seus alunos
       if (user?.id) {
         const { data: myStudents } = await db
           .from("students")
@@ -160,6 +149,25 @@ export function useDeletePendingJustification() {
       toast.success("Justificativa pendente removida.");
     },
     onError: () => toast.error("Erro ao remover justificativa."),
+  });
+}
+
+export function useUpdatePendingJustification() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, date, reason }: { id: string; date: string; reason: string }) => {
+      const { error } = await db
+        .from("pending_justifications")
+        .update({ date, reason })
+        .eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["pending-justifications"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      toast.success("Justificativa atualizada com sucesso.");
+    },
+    onError: () => toast.error("Erro ao atualizar justificativa."),
   });
 }
 
@@ -268,7 +276,7 @@ export function useSubmitJustification() {
 
       if (existing) {
         if (existing.status === "presente") {
-          throw new Error("O aluno estava presente nessa data.");
+          throw new Error("O catequizando estava presente nessa data.");
         }
         if (existing.status === "falta_justificada") {
           throw new Error("Essa falta já está justificada.");
