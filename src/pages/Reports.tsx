@@ -25,7 +25,7 @@ const db = supabase as any;
 const STATUS_LABELS: Record<string, string> = {
   presente: "Presente",
   falta_justificada: "Falta Justificada",
-  falta_nao_justificada: "Falta Não Justificada",
+  falta_nao_justificada: "Falta N\u00e3o Justificada",
 };
 const STATUS_COLORS: Record<string, string> = {
   presente: "text-success",
@@ -98,7 +98,8 @@ function EditPendingForm({ id, currentDate, currentReason, onCancel }: EditPendi
 }
 
 export default function Reports() {
-  const { isAdmin } = useAuth();
+  const { isAdmin, isCoordinator } = useAuth();
+  const showGrouped = isAdmin || isCoordinator;
   const { data: students = [] } = useStudents();
   const { data: attendance = [] } = useAllAttendance();
   const { data: pendingList = [] } = usePendingJustifications();
@@ -175,8 +176,22 @@ export default function Reports() {
     URL.revokeObjectURL(url);
   }
 
+  function buildStudentMap(source: typeof attendance) {
+    const map: Record<string, { name: string; class_name: string; paroquia_nome: string }> = {};
+    students.forEach((s) => {
+      map[s.id] = { name: s.name, class_name: s.class_name, paroquia_nome: (s as any).paroquia_nome ?? "Sem par\u00f3quia" };
+    });
+    source.forEach((a) => {
+      if (!map[a.student_id]) {
+        const sAny = (a as any).students;
+        if (sAny?.name) map[a.student_id] = { name: sAny.name, class_name: sAny.class_name ?? "-", paroquia_nome: sAny.paroquias?.nome ?? "Sem par\u00f3quia" };
+      }
+    });
+    return map;
+  }
+
   function handleDeleteAttendance(id: string, name: string, date: string) {
-    if (window.confirm(`Apagar o registro de "${name}" no dia ${date}?\nEssa ação não pode ser desfeita.`))
+    if (window.confirm(`Apagar o registro de "${name}" no dia ${date}?\nEssa a\u00e7\u00e3o n\u00e3o pode ser desfeita.`))
       deleteMutation.mutate(id);
   }
   function handleDeletePending(id: string, name: string, date: string) {
@@ -184,62 +199,101 @@ export default function Reports() {
       deletePendingMutation.mutate(id);
   }
   function handleDeleteMass(id: string, name: string, date: string) {
-    if (window.confirm(`Remover presença de "${name}" em ${date}?`))
+    if (window.confirm(`Remover presen\u00e7a de "${name}" em ${date}?`))
       deleteMassMutation.mutate(id);
   }
 
   function handleExportCSV() {
     const allDates = [...new Set(filteredAttendance.map((a) => a.date))].sort();
-    const studentMap: Record<string, { name: string; class_name: string }> = {};
-    students.forEach((s) => { studentMap[s.id] = { name: s.name, class_name: s.class_name }; });
-    filteredAttendance.forEach((a) => {
-      if (!studentMap[a.student_id]) {
-        const sAny = (a as any).students;
-        if (sAny?.name) studentMap[a.student_id] = { name: sAny.name, class_name: sAny.class_name ?? "-" };
-      }
-    });
+    const studentMap = buildStudentMap(filteredAttendance);
     const lookup: Record<string, Record<string, string>> = {};
     filteredAttendance.forEach((a) => {
       if (!lookup[a.student_id]) lookup[a.student_id] = {};
       lookup[a.student_id][a.date] = a.status;
     });
     const SYM: Record<string, string> = { presente: "P", falta_justificada: "FJ", falta_nao_justificada: "FN" };
-    const rel = Object.keys(lookup).map((id) => ({ id, ...studentMap[id] })).filter((s) => s.name)
-      .sort((a, b) => a.class_name !== b.class_name ? a.class_name.localeCompare(b.class_name) : a.name.localeCompare(b.name));
     const pad = (n: number) => Array(Math.max(0, n)).fill("");
-    const header = ["Aluno", "Turma", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Aulas", "% Presença"];
-    let sumP = 0, sumFNJ = 0, sumFJ = 0, sumT = 0;
-    const dataRows = rel.map((s) => {
-      const rec = lookup[s.id] ?? {};
-      const p = allDates.filter((d) => rec[d] === "presente").length;
-      const fnj = allDates.filter((d) => rec[d] === "falta_nao_justificada").length;
-      const fj = allDates.filter((d) => rec[d] === "falta_justificada").length;
-      const t = allDates.filter((d) => !!rec[d]).length;
-      sumP += p; sumFNJ += fnj; sumFJ += fj; sumT += t;
-      return [s.name, s.class_name, ...allDates.map((d) => SYM[rec[d]] ?? "-"), p, fnj, fj, t, t > 0 ? `${((p / t) * 100).toFixed(1)}%` : "-"];
-    });
-    const extra = header.length - 2;
-    const rows: (string | number)[][] = [header, ...dataRows, pad(header.length),
-      ["RESUMO", ...pad(header.length - 1)], pad(header.length),
-      ["Total de alunos", rel.length, ...pad(extra)],
-      ["Total de presenças", sumP, ...pad(extra)],
-      ["Faltas não justificadas", sumFNJ, ...pad(extra)],
-      ["Faltas justificadas", sumFJ, ...pad(extra)],
-      ["Média geral", sumT > 0 ? `${((sumP / sumT) * 100).toFixed(1)}%` : "-", ...pad(extra)],
+    const colCount = 2 + allDates.length + 5;
+    const header = ["Aluno", "Turma", ...allDates, "Presen\u00e7as", "Faltas NJ", "Faltas Justif.", "Total Aulas", "% Presen\u00e7a"];
+
+    const rel = Object.keys(lookup)
+      .map((id) => ({ id, ...studentMap[id] }))
+      .filter((s) => s.name)
+      .sort((a, b) =>
+        (a.paroquia_nome ?? "").localeCompare(b.paroquia_nome ?? "") ||
+        a.class_name.localeCompare(b.class_name) ||
+        a.name.localeCompare(b.name)
+      );
+
+    const rows: (string | number)[][] = [
+      ["RELAT\u00d3RIO DE PRESEN\u00c7AS \u2014 CATEQUESE BOM PASTOR"],
+      [`Gerado em: ${new Date().toLocaleString("pt-BR")}`],
+      ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta N\u00e3o Justificada"],
+      pad(colCount),
     ];
+
+    if (showGrouped && selectedClass === "all") {
+      const byParoquia = new Map<string, typeof rel>();
+      rel.forEach((s) => {
+        const p = s.paroquia_nome ?? "Sem par\u00f3quia";
+        if (!byParoquia.has(p)) byParoquia.set(p, []);
+        byParoquia.get(p)!.push(s);
+      });
+      let grandP = 0, grandFNJ = 0, grandFJ = 0, grandT = 0, grandAlunos = 0;
+      byParoquia.forEach((pStudents, paroquia) => {
+        rows.push([`\u25a0 PAR\u00d3QUIA: ${paroquia.toUpperCase()}`, ...pad(colCount - 1)]);
+        rows.push(pad(colCount));
+        const byTurma = new Map<string, typeof rel>();
+        pStudents.forEach((s) => {
+          if (!byTurma.has(s.class_name)) byTurma.set(s.class_name, []);
+          byTurma.get(s.class_name)!.push(s);
+        });
+        let parP = 0, parFNJ = 0, parFJ = 0, parT = 0;
+        byTurma.forEach((tStudents, turma) => {
+          rows.push([`  TURMA: ${turma}`, ...pad(colCount - 1)]);
+          rows.push(header);
+          let tP = 0, tFNJ = 0, tFJ = 0, tT = 0;
+          tStudents.forEach((s) => {
+            const rec = lookup[s.id] ?? {};
+            const p = allDates.filter((d) => rec[d] === "presente").length;
+            const fnj = allDates.filter((d) => rec[d] === "falta_nao_justificada").length;
+            const fj = allDates.filter((d) => rec[d] === "falta_justificada").length;
+            const t = allDates.filter((d) => !!rec[d]).length;
+            tP += p; tFNJ += fnj; tFJ += fj; tT += t;
+            rows.push([s.name, s.class_name, ...allDates.map((d) => SYM[rec[d]] ?? "-"), p, fnj, fj, t, t > 0 ? `${((p / t) * 100).toFixed(1)}%` : "-"]);
+          });
+          rows.push([`  Subtotal ${turma}`, tStudents.length, ...pad(allDates.length), tP, tFNJ, tFJ, tT, tT > 0 ? `${((tP / tT) * 100).toFixed(1)}%` : "-"]);
+          rows.push(pad(colCount));
+          parP += tP; parFNJ += tFNJ; parFJ += tFJ; parT += tT;
+        });
+        rows.push([`  RESUMO ${paroquia}`, pStudents.length, ...pad(allDates.length), parP, parFNJ, parFJ, parT, parT > 0 ? `${((parP / parT) * 100).toFixed(1)}%` : "-"]);
+        rows.push(pad(colCount));
+        grandP += parP; grandFNJ += parFNJ; grandFJ += parFJ; grandT += parT; grandAlunos += pStudents.length;
+      });
+      rows.push(pad(colCount));
+      rows.push(["\u25ba RESUMO GERAL", grandAlunos, ...pad(allDates.length), grandP, grandFNJ, grandFJ, grandT, grandT > 0 ? `${((grandP / grandT) * 100).toFixed(1)}%` : "-"]);
+    } else {
+      rows.push(header);
+      let sumP = 0, sumFNJ = 0, sumFJ = 0, sumT = 0;
+      rel.forEach((s) => {
+        const rec = lookup[s.id] ?? {};
+        const p = allDates.filter((d) => rec[d] === "presente").length;
+        const fnj = allDates.filter((d) => rec[d] === "falta_nao_justificada").length;
+        const fj = allDates.filter((d) => rec[d] === "falta_justificada").length;
+        const t = allDates.filter((d) => !!rec[d]).length;
+        sumP += p; sumFNJ += fnj; sumFJ += fj; sumT += t;
+        rows.push([s.name, s.class_name, ...allDates.map((d) => SYM[rec[d]] ?? "-"), p, fnj, fj, t, t > 0 ? `${((p / t) * 100).toFixed(1)}%` : "-"]);
+      });
+      rows.push(pad(colCount));
+      rows.push(["RESUMO", rel.length, ...pad(allDates.length), sumP, sumFNJ, sumFJ, sumT, sumT > 0 ? `${((sumP / sumT) * 100).toFixed(1)}%` : "-"]);
+    }
     downloadCSV(rows, `chamada-bom-pastor-${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
   function handleExportPDF() {
     const turmaLabel = selectedClass === "all" ? "Todas as turmas" : selectedClass;
     const allDates = [...new Set(filteredAttendance.map((a) => a.date))].sort();
-    const studentMap: Record<string, { name: string; class_name: string }> = {};
-    students.forEach((s) => { studentMap[s.id] = { name: s.name, class_name: s.class_name }; });
-    filteredAttendance.forEach((a) => {
-      const sAny = (a as any).students;
-      if (!studentMap[a.student_id] && sAny?.name)
-        studentMap[a.student_id] = { name: sAny.name, class_name: sAny.class_name ?? "-" };
-    });
+    const studentMap = buildStudentMap(filteredAttendance);
     const lookup: Record<string, Record<string, string>> = {};
     filteredAttendance.forEach((a) => {
       if (!lookup[a.student_id]) lookup[a.student_id] = {};
@@ -247,37 +301,106 @@ export default function Reports() {
     });
     const SYM: Record<string, string> = { presente: "P", falta_justificada: "FJ", falta_nao_justificada: "FN" };
     const SYM_COLOR: Record<string, string> = { P: "#16a34a", FJ: "#d97706", FN: "#dc2626" };
-    const rel = Object.keys(lookup).map((id) => ({ id, ...studentMap[id] })).filter((s) => s.name)
-      .sort((a, b) => a.class_name !== b.class_name ? a.class_name.localeCompare(b.class_name) : a.name.localeCompare(b.name));
-    const dateHeaders = allDates.map((d) => `<th style="padding:4px 6px;border:1px solid #e2e8f0;font-size:10px;white-space:nowrap">${d.slice(5)}</th>`).join("");
-    const rows = rel.map((s) => {
-      const rec = lookup[s.id] ?? {};
-      const cells = allDates.map((d) => {
-        const sym = SYM[rec[d]] ?? "-";
-        const color = SYM_COLOR[sym] ?? "#64748b";
-        return `<td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;font-size:11px;color:${color};font-weight:600">${sym}</td>`;
+
+    const allRel = Object.keys(lookup)
+      .map((id) => ({ id, ...studentMap[id] }))
+      .filter((s) => s.name)
+      .sort((a, b) =>
+        (a.paroquia_nome ?? "").localeCompare(b.paroquia_nome ?? "") ||
+        a.class_name.localeCompare(b.class_name) ||
+        a.name.localeCompare(b.name)
+      );
+
+    const dateHeaders = allDates
+      .map((d) => `<th style="padding:4px 6px;border:1px solid #e2e8f0;font-size:10px;white-space:nowrap">${d.slice(5)}</th>`)
+      .join("");
+
+    function buildTableRows(list: typeof allRel) {
+      return list.map((s) => {
+        const rec = lookup[s.id] ?? {};
+        const cells = allDates.map((d) => {
+          const sym = SYM[rec[d]] ?? "-";
+          const color = SYM_COLOR[sym] ?? "#64748b";
+          return `<td style="padding:4px 6px;border:1px solid #e2e8f0;text-align:center;font-size:11px;color:${color};font-weight:600">${sym}</td>`;
+        }).join("");
+        const p = allDates.filter((d) => rec[d] === "presente").length;
+        const t = allDates.filter((d) => !!rec[d]).length;
+        const pct = t > 0 ? `${((p / t) * 100).toFixed(0)}%` : "-";
+        const pctColor = t > 0 && (p / t) >= 0.75 ? "#16a34a" : t > 0 && (p / t) >= 0.5 ? "#d97706" : "#dc2626";
+        return `<tr>
+          <td style="padding:6px 8px;border:1px solid #e2e8f0;font-size:12px;white-space:nowrap">${s.name}</td>
+          <td style="padding:6px 8px;border:1px solid #e2e8f0;font-size:11px;color:#64748b">${s.class_name}</td>
+          ${cells}
+          <td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:center;font-size:12px;font-weight:700;color:${pctColor}">${pct}</td>
+        </tr>`;
       }).join("");
-      const p = allDates.filter((d) => rec[d] === "presente").length;
-      const t = allDates.filter((d) => !!rec[d]).length;
-      const pct = t > 0 ? `${((p / t) * 100).toFixed(0)}%` : "-";
-      const pctColor = t > 0 && (p / t) >= 0.75 ? "#16a34a" : t > 0 && (p / t) >= 0.5 ? "#d97706" : "#dc2626";
-      return `<tr>
-        <td style="padding:6px 8px;border:1px solid #e2e8f0;font-size:12px;white-space:nowrap">${s.name}</td>
-        <td style="padding:6px 8px;border:1px solid #e2e8f0;font-size:11px;color:#64748b">${s.class_name}</td>
-        ${cells}
-        <td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:center;font-size:12px;font-weight:700;color:${pctColor}">${pct}</td>
-      </tr>`;
-    }).join("");
+    }
+
+    let bodyContent = "";
+
+    if (showGrouped && selectedClass === "all") {
+      const byParoquia = new Map<string, typeof allRel>();
+      allRel.forEach((s) => {
+        const p = s.paroquia_nome ?? "Sem par\u00f3quia";
+        if (!byParoquia.has(p)) byParoquia.set(p, []);
+        byParoquia.get(p)!.push(s);
+      });
+      byParoquia.forEach((pStudents, paroquia) => {
+        bodyContent += `<div style="margin-top:28px">
+          <div style="background:#1e3a5f;color:#fff;padding:8px 14px;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;letter-spacing:.5px">
+            \u26ea PAR\u00d3QUIA: ${paroquia.toUpperCase()}
+          </div>`;
+        const byTurma = new Map<string, typeof allRel>();
+        pStudents.forEach((s) => {
+          if (!byTurma.has(s.class_name)) byTurma.set(s.class_name, []);
+          byTurma.get(s.class_name)!.push(s);
+        });
+        byTurma.forEach((tStudents, turma) => {
+          const tP = tStudents.reduce((acc, s) => acc + allDates.filter((d) => (lookup[s.id] ?? {})[d] === "presente").length, 0);
+          const tT = tStudents.reduce((acc, s) => acc + allDates.filter((d) => !!(lookup[s.id] ?? {})[d]).length, 0);
+          const tPct = tT > 0 ? `${((tP / tT) * 100).toFixed(0)}%` : "-";
+          bodyContent += `<div style="margin-top:10px">
+            <div style="background:#e0e7ef;padding:5px 12px;font-size:11px;font-weight:700;color:#1e3a5f;border-left:4px solid #1e3a5f">
+              TURMA: ${turma} &nbsp;&nbsp; (${tStudents.length} alunos &nbsp;\u2022&nbsp; m\u00e9dia: ${tPct})
+            </div>
+            <table style="border-collapse:collapse;width:100%;margin-bottom:4px">
+              <thead><tr>
+                <th style="background:#f1f5f9;padding:6px 8px;border:1px solid #e2e8f0;font-size:11px;text-align:left">Aluno</th>
+                <th style="background:#f1f5f9;padding:6px 8px;border:1px solid #e2e8f0;font-size:11px">Turma</th>
+                ${dateHeaders}
+                <th style="background:#f1f5f9;padding:4px 6px;border:1px solid #e2e8f0;font-size:11px">% Pres.</th>
+              </tr></thead>
+              <tbody>${buildTableRows(tStudents)}</tbody>
+            </table>
+          </div>`;
+        });
+        const parP = pStudents.reduce((acc, s) => acc + allDates.filter((d) => (lookup[s.id] ?? {})[d] === "presente").length, 0);
+        const parT = pStudents.reduce((acc, s) => acc + allDates.filter((d) => !!(lookup[s.id] ?? {})[d]).length, 0);
+        const parPct = parT > 0 ? `${((parP / parT) * 100).toFixed(0)}%` : "-";
+        bodyContent += `<div style="padding:5px 12px;background:#f8fafc;border:1px solid #e2e8f0;font-size:11px;color:#475569">
+          Resumo da par\u00f3quia: <strong>${pStudents.length}</strong> alunos &nbsp;\u2022&nbsp; m\u00e9dia geral: <strong>${parPct}</strong>
+        </div></div>`;
+      });
+    } else {
+      bodyContent = `<table style="border-collapse:collapse;width:100%">
+        <thead><tr>
+          <th style="background:#f1f5f9;padding:6px 8px;border:1px solid #e2e8f0;font-size:11px;text-align:left">Aluno</th>
+          <th style="background:#f1f5f9;padding:6px 8px;border:1px solid #e2e8f0;font-size:11px">Turma</th>
+          ${dateHeaders}
+          <th style="background:#f1f5f9;padding:4px 6px;border:1px solid #e2e8f0;font-size:11px">% Pres.</th>
+        </tr></thead>
+        <tbody>${buildTableRows(allRel)}</tbody>
+      </table>`;
+    }
+
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Relatório de Presenças — ${turmaLabel}</title>
-<style>body{font-family:Arial,sans-serif;color:#1e293b;padding:20px}h1{font-size:18px;margin-bottom:2px}p{font-size:12px;color:#64748b;margin:2px 0 12px}table{border-collapse:collapse;width:100%}th{background:#f1f5f9;padding:6px 8px;border:1px solid #e2e8f0;font-size:11px;text-align:left}@media print{button{display:none}}</style>
+<title>Relat\u00f3rio de Presen\u00e7as \u2014 ${turmaLabel}</title>
+<style>body{font-family:Arial,sans-serif;color:#1e293b;padding:20px}h1{font-size:18px;margin-bottom:2px}p.sub{font-size:12px;color:#64748b;margin:2px 0 12px}th{text-align:left}@media print{button{display:none}}</style>
 </head><body>
-<h1>Relatório de Presenças — Catequese Bom Pastor</h1>
-<p>Turma: <strong>${turmaLabel}</strong> &nbsp;|&nbsp; Gerado em: ${new Date().toLocaleString("pt-BR")}</p>
-<p style="margin-bottom:8px"><strong>Legenda:</strong> P = Presente &nbsp; FJ = Falta Justificada &nbsp; FN = Falta Não Justificada</p>
-<table><thead><tr>
-  <th>Aluno</th><th>Turma</th>${dateHeaders}<th style="padding:4px 6px;border:1px solid #e2e8f0">% Pres.</th>
-</tr></thead><tbody>${rows}</tbody></table>
+<h1>Relat\u00f3rio de Presen\u00e7as \u2014 Catequese Bom Pastor</h1>
+<p class="sub">Turma: <strong>${turmaLabel}</strong> &nbsp;|&nbsp; Gerado em: ${new Date().toLocaleString("pt-BR")}</p>
+<p class="sub" style="margin-bottom:12px"><strong>Legenda:</strong> P = Presente &nbsp; FJ = Falta Justificada &nbsp; FN = Falta N\u00e3o Justificada</p>
+${bodyContent}
 <br><button onclick="window.print()">Imprimir / Salvar PDF</button>
 </body></html>`;
     const win = window.open("", "_blank");
@@ -292,19 +415,62 @@ export default function Reports() {
       if (!massDatesByStudent[r.student_id]) massDatesByStudent[r.student_id] = [];
       massDatesByStudent[r.student_id].push(format(new Date(r.date + "T12:00:00"), "dd/MM/yyyy (EEE)", { locale: ptBR }));
     });
-    const sorted = [...massNonCompliant.sort((a, b) => a.name.localeCompare(b.name)), ...massCompliant.sort((a, b) => a.name.localeCompare(b.name))];
     const rows: (string | number)[][] = [
-      [`RELATÓRIO DE MISSAS — ${mLabel.toUpperCase()}${etapaLabel.toUpperCase()}`],
-      ["Regra: mínimo 1 missa por mês"],
+      [`RELAT\u00d3RIO DE MISSAS \u2014 ${mLabel.toUpperCase()}${etapaLabel.toUpperCase()}`],
+      ["Regra: m\u00ednimo 1 missa por m\u00eas"],
       [`Gerado em: ${new Date().toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" })}`],
-      [], ["Aluno", "Etapa", "Qtd. Missas", "Datas no Mês", "Conformidade"],
+      [],
     ];
-    sorted.forEach((s) => {
-      const dates = massDatesByStudent[s.id] ?? [];
-      rows.push([s.name, s.class_name, dates.length, dates.join(" | "), dates.length >= 1 ? "✓ Conforme" : "✗ Pendente"]);
-    });
-    const rate = massFilteredStudents.length > 0 ? `${((massCompliant.length / massFilteredStudents.length) * 100).toFixed(1)}%` : "-";
-    rows.push([], ["RESUMO"], ["Total de alunos", massFilteredStudents.length], ["Conformes", massCompliant.length], ["Pendentes", massNonCompliant.length], ["Taxa", rate]);
+    const sorted = [...massFilteredStudents].sort((a, b) =>
+      ((a as any).paroquia_nome ?? "").localeCompare((b as any).paroquia_nome ?? "") ||
+      a.class_name.localeCompare(b.class_name) ||
+      a.name.localeCompare(b.name)
+    );
+    if (showGrouped && selectedMassEtapa === "all") {
+      const byParoquia = new Map<string, typeof sorted>();
+      sorted.forEach((s) => {
+        const p = (s as any).paroquia_nome ?? "Sem par\u00f3quia";
+        if (!byParoquia.has(p)) byParoquia.set(p, []);
+        byParoquia.get(p)!.push(s);
+      });
+      let grandTotal = 0, grandConf = 0;
+      byParoquia.forEach((pStudents, paroquia) => {
+        rows.push([`\u25a0 PAR\u00d3QUIA: ${paroquia.toUpperCase()}`]);
+        rows.push(["Aluno", "Etapa", "Qtd. Missas", "Datas no M\u00eas", "Conformidade"]);
+        const byTurma = new Map<string, typeof sorted>();
+        pStudents.forEach((s) => {
+          if (!byTurma.has(s.class_name)) byTurma.set(s.class_name, []);
+          byTurma.get(s.class_name)!.push(s);
+        });
+        let parConf = 0;
+        byTurma.forEach((tStudents, turma) => {
+          rows.push([`  TURMA: ${turma}`]);
+          tStudents.forEach((s) => {
+            const dates = massDatesByStudent[s.id] ?? [];
+            const conf = dates.length >= 1;
+            if (conf) parConf++;
+            rows.push([s.name, s.class_name, dates.length, dates.join(" | "), conf ? "\u2713 Conforme" : "\u2717 Pendente"]);
+          });
+          rows.push([]);
+        });
+        const parRate = pStudents.length > 0 ? `${((parConf / pStudents.length) * 100).toFixed(1)}%` : "-";
+        rows.push([`  Resumo ${paroquia}`, pStudents.length, "", "", `Conformes: ${parConf}/${pStudents.length} (${parRate})`]);
+        rows.push([]);
+        grandTotal += pStudents.length; grandConf += parConf;
+      });
+      const grandRate = grandTotal > 0 ? `${((grandConf / grandTotal) * 100).toFixed(1)}%` : "-";
+      rows.push(["\u25ba RESUMO GERAL", grandTotal, "", "", `Conformes: ${grandConf}/${grandTotal} (${grandRate})`]);
+    } else {
+      rows.push(["Aluno", "Etapa", "Qtd. Missas", "Datas no M\u00eas", "Conformidade"]);
+      const pendentes = sorted.filter((s) => !(massDatesByStudent[s.id]?.length >= 1));
+      const conformes = sorted.filter((s) => (massDatesByStudent[s.id]?.length ?? 0) >= 1);
+      [...pendentes, ...conformes].forEach((s) => {
+        const dates = massDatesByStudent[s.id] ?? [];
+        rows.push([s.name, s.class_name, dates.length, dates.join(" | "), dates.length >= 1 ? "\u2713 Conforme" : "\u2717 Pendente"]);
+      });
+      const rate = massFilteredStudents.length > 0 ? `${((massCompliant.length / massFilteredStudents.length) * 100).toFixed(1)}%` : "-";
+      rows.push([], ["RESUMO"], ["Total de alunos", massFilteredStudents.length], ["Conformes", massCompliant.length], ["Pendentes", massNonCompliant.length], ["Taxa", rate]);
+    }
     const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
     downloadCSV(rows, `missas-bom-pastor-${massMonth}${suffix}.csv`);
   }
@@ -323,22 +489,59 @@ export default function Reports() {
       });
       const months = Array.from({ length: 12 }, (_, i) => `${year}-${String(i + 1).padStart(2, "0")}`);
       const monthNames = months.map((m) => { const [y, mo] = m.split("-").map(Number); return format(new Date(y, mo - 1, 1), "MMM", { locale: ptBR }).toUpperCase(); });
-      const sorted = [...massFilteredStudents].sort((a, b) => a.name.localeCompare(b.name));
-      const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` — ${selectedMassEtapa}` : "";
+      const sorted = [...massFilteredStudents].sort((a, b) =>
+        ((a as any).paroquia_nome ?? "").localeCompare((b as any).paroquia_nome ?? "") ||
+        a.class_name.localeCompare(b.class_name) ||
+        a.name.localeCompare(b.name)
+      );
+      const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` \u2014 ${selectedMassEtapa}` : "";
       const rows: (string | number)[][] = [
-        [`RELATÓRIO ANUAL DE MISSAS — ${year}${etapaLabel}`],
-        ["Regra: mínimo 1 missa por mês  |✓ = conforme  |✗ = sem registro"],
+        [`RELAT\u00d3RIO ANUAL DE MISSAS \u2014 ${year}${etapaLabel}`],
+        ["Regra: m\u00ednimo 1 missa por m\u00eas  |\u2713 = conforme  |\u2717 = sem registro"],
         [`Gerado em: ${new Date().toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" })}`],
-        [], ["Aluno", "Etapa", ...monthNames, "Total"],
+        [],
       ];
-      sorted.forEach((s) => {
-        const attended = monthsAttended[s.id] ?? new Set();
-        const cells = months.map((m) => attended.has(m) ? "✓" : "✗");
-        rows.push([s.name, s.class_name, ...cells, `${cells.filter((c) => c === "✓").length}/12`]);
-      });
-      const conformesPerMonth = months.map((m) => sorted.filter((s) => (monthsAttended[s.id] ?? new Set()).has(m)).length);
-      rows.push([], ["Conformes no mês", "", ...conformesPerMonth, ""],
-        ["% Conformidade", "", ...conformesPerMonth.map((n) => sorted.length > 0 ? `${((n / sorted.length) * 100).toFixed(0)}%` : "-"), ""]);
+      const header = ["Aluno", "Etapa", ...monthNames, "Total"];
+      if (showGrouped && selectedMassEtapa === "all") {
+        const byParoquia = new Map<string, typeof sorted>();
+        sorted.forEach((s) => {
+          const p = (s as any).paroquia_nome ?? "Sem par\u00f3quia";
+          if (!byParoquia.has(p)) byParoquia.set(p, []);
+          byParoquia.get(p)!.push(s);
+        });
+        byParoquia.forEach((pStudents, paroquia) => {
+          rows.push([`\u25a0 PAR\u00d3QUIA: ${paroquia.toUpperCase()}`]);
+          const byTurma = new Map<string, typeof sorted>();
+          pStudents.forEach((s) => {
+            if (!byTurma.has(s.class_name)) byTurma.set(s.class_name, []);
+            byTurma.get(s.class_name)!.push(s);
+          });
+          byTurma.forEach((tStudents, turma) => {
+            rows.push([`  TURMA: ${turma}`]);
+            rows.push(header);
+            tStudents.forEach((s) => {
+              const attended = monthsAttended[s.id] ?? new Set();
+              const cells = months.map((m) => attended.has(m) ? "\u2713" : "\u2717");
+              rows.push([s.name, s.class_name, ...cells, `${cells.filter((c) => c === "\u2713").length}/12`]);
+            });
+            const tConf = months.map((m) => tStudents.filter((s) => (monthsAttended[s.id] ?? new Set()).has(m)).length);
+            rows.push([`  % ${turma}`, "", ...tConf.map((n) => tStudents.length > 0 ? `${((n / tStudents.length) * 100).toFixed(0)}%` : "-"), ""]);
+            rows.push([]);
+          });
+        });
+        const conformesPerMonth = months.map((m) => sorted.filter((s) => (monthsAttended[s.id] ?? new Set()).has(m)).length);
+        rows.push(["\u25ba RESUMO GERAL", "", ...conformesPerMonth.map((n) => sorted.length > 0 ? `${((n / sorted.length) * 100).toFixed(0)}%` : "-"), ""]);
+      } else {
+        rows.push(header);
+        sorted.forEach((s) => {
+          const attended = monthsAttended[s.id] ?? new Set();
+          const cells = months.map((m) => attended.has(m) ? "\u2713" : "\u2717");
+          rows.push([s.name, s.class_name, ...cells, `${cells.filter((c) => c === "\u2713").length}/12`]);
+        });
+        const conformesPerMonth = months.map((m) => sorted.filter((s) => (monthsAttended[s.id] ?? new Set()).has(m)).length);
+        rows.push([], ["Conformes no m\u00eas", "", ...conformesPerMonth, ""],
+          ["% Conformidade", "", ...conformesPerMonth.map((n) => sorted.length > 0 ? `${((n / sorted.length) * 100).toFixed(0)}%` : "-"), ""]);
+      }
       const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
       downloadCSV(rows, `missas-anual-${year}${suffix}.csv`);
     } finally { setExportingAnnual(false); }
@@ -346,21 +549,21 @@ export default function Reports() {
 
   return (
     <div className="pb-24">
-      <PageHeader title="Relatórios" subtitle="Histórico detalhado de presenças" />
+      <PageHeader title="Relat\u00f3rios" subtitle="Hist\u00f3rico detalhado de presen\u00e7as" />
 
       {alertStudents.length > 0 && (
         <div className="mx-4 mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
-            <span className="font-semibold text-destructive">Alunos em Alerta (3+ faltas não justificadas)</span>
+            <span className="font-semibold text-destructive">Alunos em Alerta (3+ faltas n\u00e3o justificadas)</span>
           </div>
-          {alertStudents.map((s) => (<p key={s.id} className="text-sm text-destructive">{s.name} — {unjustifiedCounts[s.id]} faltas</p>))}
+          {alertStudents.map((s) => (<p key={s.id} className="text-sm text-destructive">{s.name} \u2014 {unjustifiedCounts[s.id]} faltas</p>))}
         </div>
       )}
 
       <div className="px-4 mb-4 flex gap-2">
         {(["presencas", "pendentes", "missas"] as Tab[]).map((tab) => {
-          const labels: Record<Tab, string> = { presencas: "Presenças", pendentes: "Pendentes", missas: "Missas" };
+          const labels: Record<Tab, string> = { presencas: "Presen\u00e7as", pendentes: "Pendentes", missas: "Missas" };
           const badge = tab === "pendentes" ? pendingList.length : tab === "missas" && isMassCurrentMonth ? massNonCompliant.length : 0;
           return (
             <button key={tab} onClick={() => setActiveTab(tab)}
@@ -443,7 +646,7 @@ export default function Reports() {
             <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
               <span>Exibindo chamada de</span>
               <span className="font-semibold text-foreground capitalize">{dateLabel}</span>
-              <span>—</span>
+              <span>\u2014</span>
               <span className="text-success font-medium">
                 {filteredAttendance.filter((a) => a.status === "presente").length} presentes
               </span>
@@ -501,7 +704,7 @@ export default function Reports() {
               {filteredAttendance.length === 0 && (
                 <tr>
                   <td colSpan={selectedDate ? 4 : 5} className="py-8 text-center text-muted-foreground">
-                    {selectedDate ? `Nenhum registro para ${dateLabel}.` : "Nenhum registro de presença."}
+                    {selectedDate ? `Nenhum registro para ${dateLabel}.` : "Nenhum registro de presen\u00e7a."}
                   </td>
                 </tr>
               )}
@@ -516,7 +719,7 @@ export default function Reports() {
             <div className="py-10 text-center">
               <Clock className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
               <p className="text-muted-foreground text-sm">Nenhuma justificativa pendente.</p>
-              <p className="text-xs text-muted-foreground mt-1">Quando os pais enviarem antes da chamada, aparecerão aqui.</p>
+              <p className="text-xs text-muted-foreground mt-1">Quando os pais enviarem antes da chamada, aparecer\u00e3o aqui.</p>
             </div>
           ) : (
             filteredPending.map((p) => (
@@ -607,7 +810,7 @@ export default function Reports() {
             <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-destructive" />
-                <p className="text-sm font-semibold text-destructive">Faltam {daysLeft} dia{daysLeft !== 1 ? "s" : ""} — {massNonCompliant.length} aluno{massNonCompliant.length !== 1 ? "s" : ""} sem missa.</p>
+                <p className="text-sm font-semibold text-destructive">Faltam {daysLeft} dia{daysLeft !== 1 ? "s" : ""} \u2014 {massNonCompliant.length} aluno{massNonCompliant.length !== 1 ? "s" : ""} sem missa.</p>
               </div>
             </div>
           )}
@@ -621,13 +824,13 @@ export default function Reports() {
 
           {massNonCompliant.length > 0 && (
             <div className="mb-4 rounded-lg border border-warning/30 bg-warning/5 p-4">
-              <p className="text-sm font-semibold text-warning mb-2">Sem registro neste mês ({massNonCompliant.length})</p>
+              <p className="text-sm font-semibold text-warning mb-2">Sem registro neste m\u00eas ({massNonCompliant.length})</p>
               <div className="space-y-1">
                 {massNonCompliant.sort((a, b) => a.name.localeCompare(b.name)).map((s) => (
                   <div key={s.id} className="flex items-center gap-2 text-sm">
                     <Clock className="h-3.5 w-3.5 text-warning shrink-0" />
                     <span className="text-warning font-medium">{s.name}</span>
-                    {isMassPastMonth && <span className="text-xs text-destructive font-semibold ml-auto">Mês encerrado</span>}
+                    {isMassPastMonth && <span className="text-xs text-destructive font-semibold ml-auto">M\u00eas encerrado</span>}
                   </div>
                 ))}
               </div>
@@ -642,7 +845,7 @@ export default function Reports() {
                   <div className="flex items-center gap-2 mb-1">
                     <CheckCircle2 className="h-4 w-4 text-success shrink-0" />
                     <p className="font-semibold text-foreground flex-1">{s.name}</p>
-                    <span className="text-xs bg-success/20 text-success rounded-full px-2 py-0.5 font-medium">{recs.length}×</span>
+                    <span className="text-xs bg-success/20 text-success rounded-full px-2 py-0.5 font-medium">{recs.length}\u00d7</span>
                   </div>
                   <div className="pl-6 space-y-0.5">
                     {recs.map((r) => (
@@ -662,10 +865,10 @@ export default function Reports() {
 
           <div className="mt-5 rounded-lg bg-muted/40 border border-border p-3">
             <p className="text-xs text-muted-foreground">
-              <strong className="text-foreground">Regra:</strong> mínimo <strong>1 missa por mês</strong>.
-              <strong> Mensal</strong> exporta o mês selecionado.
+              <strong className="text-foreground">Regra:</strong> m\u00ednimo <strong>1 missa por m\u00eas</strong>.
+              <strong> Mensal</strong> exporta o m\u00eas selecionado.
               <strong> Anual</strong> exporta a matriz completa do ano corrente.
-              {isAdmin && " O filtro de etapa é aplicado em ambas as exportações."}
+              {isAdmin && " O filtro de etapa \u00e9 aplicado em ambas as exporta\u00e7\u00f5es."}
             </p>
           </div>
         </div>
