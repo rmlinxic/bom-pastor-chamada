@@ -4,14 +4,11 @@ import {
   CheckCircle2, ChevronLeft, ChevronRight, FileText,
   Pencil, X, Check,
 } from "lucide-react";
-import { format, getDaysInMonth, parseISO } from "date-fns";
+import { format, getDaysInMonth } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { CalendarIcon } from "lucide-react";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import {
@@ -22,7 +19,6 @@ import {
 import { useStudents } from "@/hooks/useStudents";
 import { useMassAttendanceByMonth, useDeleteMassAttendance } from "@/hooks/useMassAttendance";
 import { useAuth } from "@/contexts/AuthContext";
-import { sanitizeText } from "@/lib/security";
 
 const db = supabase as any;
 
@@ -49,7 +45,7 @@ function monthLabel(m: string) {
   return format(new Date(y, mo - 1, 1), "MMMM yyyy", { locale: ptBR });
 }
 
-// ---- componente inline de edição de justificativa pendente ----
+// ---- Formulário inline de edição de justificativa pendente ----
 interface EditPendingProps {
   id: string;
   currentDate: string;
@@ -57,75 +53,43 @@ interface EditPendingProps {
   onCancel: () => void;
 }
 function EditPendingForm({ id, currentDate, currentReason, onCancel }: EditPendingProps) {
-  const [date, setDate] = useState<Date>(parseISO(currentDate));
+  const [date, setDate] = useState(currentDate);
   const [reason, setReason] = useState(currentReason);
-  const [calOpen, setCalOpen] = useState(false);
   const updateMutation = useUpdatePendingJustification();
 
   const handleSave = () => {
-    const cleanReason = sanitizeText(reason.trim(), 500);
-    if (!cleanReason) return;
-    updateMutation.mutate(
-      { id, date: format(date, "yyyy-MM-dd"), reason: cleanReason },
-      { onSuccess: onCancel }
-    );
+    const clean = reason.trim().slice(0, 500);
+    if (!clean || !date) return;
+    updateMutation.mutate({ id, date, reason: clean }, { onSuccess: onCancel });
   };
 
   return (
     <div className="mt-3 space-y-3 border-t border-warning/30 pt-3">
-      {/* Seletor de data */}
       <div className="space-y-1">
         <p className="text-xs font-semibold text-muted-foreground">Nova data da falta</p>
-        <Popover open={calOpen} onOpenChange={setCalOpen}>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className={cn("w-full justify-start text-left font-normal h-9", !date && "text-muted-foreground")}>
-              <CalendarIcon className="mr-2 h-4 w-4" />
-              {date ? format(date, "PPP", { locale: ptBR }) : "Selecione a data"}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-auto p-0" align="start">
-            <Calendar
-              mode="single"
-              selected={date}
-              onSelect={(d) => { if (d) { setDate(d); setCalOpen(false); } }}
-              initialFocus
-              className="p-3 pointer-events-auto"
-            />
-          </PopoverContent>
-        </Popover>
+        <input
+          type="date"
+          value={date}
+          onChange={(e) => setDate(e.target.value)}
+          className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+        />
       </div>
-
-      {/* Motivo */}
       <div className="space-y-1">
         <p className="text-xs font-semibold text-muted-foreground">Motivo</p>
         <Textarea
           value={reason}
           onChange={(e) => setReason(e.target.value)}
-          onBlur={(e) => setReason(sanitizeText(e.target.value, 500))}
           rows={3}
           maxLength={500}
           className="text-sm"
         />
         <p className="text-xs text-muted-foreground text-right">{reason.length}/500</p>
       </div>
-
-      {/* Ações */}
       <div className="flex gap-2">
-        <Button
-          size="sm"
-          variant="outline"
-          className="flex-1"
-          onClick={onCancel}
-          disabled={updateMutation.isPending}
-        >
+        <Button size="sm" variant="outline" className="flex-1" onClick={onCancel} disabled={updateMutation.isPending}>
           <X className="h-3.5 w-3.5 mr-1" /> Cancelar
         </Button>
-        <Button
-          size="sm"
-          className="flex-1"
-          onClick={handleSave}
-          disabled={updateMutation.isPending || !reason.trim()}
-        >
+        <Button size="sm" className="flex-1" onClick={handleSave} disabled={updateMutation.isPending || !reason.trim() || !date}>
           <Check className="h-3.5 w-3.5 mr-1" />
           {updateMutation.isPending ? "Salvando..." : "Salvar"}
         </Button>
@@ -189,7 +153,6 @@ export default function Reports() {
 
   const alertStudents = students.filter((s) => (unjustifiedCounts[s.id] ?? 0) >= 3);
 
-  // ------------------------------------------------------------------ CSV helpers
   function downloadCSV(rows: (string | number)[][], filename: string) {
     const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
@@ -212,7 +175,6 @@ export default function Reports() {
       deleteMassMutation.mutate(id);
   }
 
-  // ------------------------------------------------------------------ CSV export presenças
   function handleExportCSV() {
     const allDates = [...new Set(filteredAttendance.map((a) => a.date))].sort();
     const studentMap: Record<string, { name: string; class_name: string }> = {};
@@ -232,7 +194,7 @@ export default function Reports() {
     const rel = Object.keys(lookup).map((id) => ({ id, ...studentMap[id] })).filter((s) => s.name)
       .sort((a, b) => a.class_name !== b.class_name ? a.class_name.localeCompare(b.class_name) : a.name.localeCompare(b.name));
     const pad = (n: number) => Array(Math.max(0, n)).fill("");
-    const header = ["Catequizando", "Turma", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Aulas", "% Presença"];
+    const header = ["Aluno", "Turma", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Aulas", "% Presença"];
     let sumP = 0, sumFNJ = 0, sumFJ = 0, sumT = 0;
     const dataRows = rel.map((s) => {
       const rec = lookup[s.id] ?? {};
@@ -246,7 +208,7 @@ export default function Reports() {
     const extra = header.length - 2;
     const rows: (string | number)[][] = [header, ...dataRows, pad(header.length),
       ["RESUMO", ...pad(header.length - 1)], pad(header.length),
-      ["Total de catequizandos", rel.length, ...pad(extra)],
+      ["Total de alunos", rel.length, ...pad(extra)],
       ["Total de presenças", sumP, ...pad(extra)],
       ["Faltas não justificadas", sumFNJ, ...pad(extra)],
       ["Faltas justificadas", sumFJ, ...pad(extra)],
@@ -255,7 +217,6 @@ export default function Reports() {
     downloadCSV(rows, `chamada-bom-pastor-${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
-  // ------------------------------------------------------------------ PDF export presenças
   function handleExportPDF() {
     const turmaLabel = selectedClass === "all" ? "Todas as turmas" : selectedClass;
     const allDates = [...new Set(filteredAttendance.map((a) => a.date))].sort();
@@ -275,7 +236,6 @@ export default function Reports() {
     const SYM_COLOR: Record<string, string> = { P: "#16a34a", FJ: "#d97706", FN: "#dc2626" };
     const rel = Object.keys(lookup).map((id) => ({ id, ...studentMap[id] })).filter((s) => s.name)
       .sort((a, b) => a.class_name !== b.class_name ? a.class_name.localeCompare(b.class_name) : a.name.localeCompare(b.name));
-
     const dateHeaders = allDates.map((d) => `<th style="padding:4px 6px;border:1px solid #e2e8f0;font-size:10px;white-space:nowrap">${d.slice(5)}</th>`).join("");
     const rows = rel.map((s) => {
       const rec = lookup[s.id] ?? {};
@@ -295,7 +255,6 @@ export default function Reports() {
         <td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:center;font-size:12px;font-weight:700;color:${pctColor}">${pct}</td>
       </tr>`;
     }).join("");
-
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
 <title>Relatório de Presenças — ${turmaLabel}</title>
 <style>body{font-family:Arial,sans-serif;color:#1e293b;padding:20px}h1{font-size:18px;margin-bottom:2px}p{font-size:12px;color:#64748b;margin:2px 0 12px}table{border-collapse:collapse;width:100%}th{background:#f1f5f9;padding:6px 8px;border:1px solid #e2e8f0;font-size:11px;text-align:left}@media print{button{display:none}}</style>
@@ -304,16 +263,14 @@ export default function Reports() {
 <p>Turma: <strong>${turmaLabel}</strong> &nbsp;|&nbsp; Gerado em: ${new Date().toLocaleString("pt-BR")}</p>
 <p style="margin-bottom:8px"><strong>Legenda:</strong> P = Presente &nbsp; FJ = Falta Justificada &nbsp; FN = Falta Não Justificada</p>
 <table><thead><tr>
-  <th>Catequizando</th><th>Turma</th>${dateHeaders}<th style="padding:4px 6px;border:1px solid #e2e8f0">% Pres.</th>
+  <th>Aluno</th><th>Turma</th>${dateHeaders}<th style="padding:4px 6px;border:1px solid #e2e8f0">% Pres.</th>
 </tr></thead><tbody>${rows}</tbody></table>
 <br><button onclick="window.print()">Imprimir / Salvar PDF</button>
 </body></html>`;
-
     const win = window.open("", "_blank");
     if (win) { win.document.write(html); win.document.close(); }
   }
 
-  // ------------------------------------------------------------------ CSV missas mensal
   function handleExportMassCSV() {
     const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` (${selectedMassEtapa})` : "";
     const mLabel = monthLabel(massMonth);
@@ -327,19 +284,18 @@ export default function Reports() {
       [`RELATÓRIO DE MISSAS — ${mLabel.toUpperCase()}${etapaLabel.toUpperCase()}`],
       ["Regra: mínimo 1 missa por mês"],
       [`Gerado em: ${new Date().toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" })}`],
-      [], ["Catequizando", "Etapa", "Qtd. Missas", "Datas no Mês", "Conformidade"],
+      [], ["Aluno", "Etapa", "Qtd. Missas", "Datas no Mês", "Conformidade"],
     ];
     sorted.forEach((s) => {
       const dates = massDatesByStudent[s.id] ?? [];
       rows.push([s.name, s.class_name, dates.length, dates.join(" | "), dates.length >= 1 ? "✓ Conforme" : "✗ Pendente"]);
     });
     const rate = massFilteredStudents.length > 0 ? `${((massCompliant.length / massFilteredStudents.length) * 100).toFixed(1)}%` : "-";
-    rows.push([], ["RESUMO"], ["Total de catequizandos", massFilteredStudents.length], ["Conformes", massCompliant.length], ["Pendentes", massNonCompliant.length], ["Taxa", rate]);
+    rows.push([], ["RESUMO"], ["Total de alunos", massFilteredStudents.length], ["Conformes", massCompliant.length], ["Pendentes", massNonCompliant.length], ["Taxa", rate]);
     const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
     downloadCSV(rows, `missas-bom-pastor-${massMonth}${suffix}.csv`);
   }
 
-  // ------------------------------------------------------------------ CSV missas anual
   async function handleExportAnnualMassCSV() {
     if (exportingAnnual || massStudentIds.length === 0) return;
     setExportingAnnual(true);
@@ -360,7 +316,7 @@ export default function Reports() {
         [`RELATÓRIO ANUAL DE MISSAS — ${year}${etapaLabel}`],
         ["Regra: mínimo 1 missa por mês  |✓ = conforme  |✗ = sem registro"],
         [`Gerado em: ${new Date().toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" })}`],
-        [], ["Catequizando", "Etapa", ...monthNames, "Total"],
+        [], ["Aluno", "Etapa", ...monthNames, "Total"],
       ];
       sorted.forEach((s) => {
         const attended = monthsAttended[s.id] ?? new Set();
@@ -375,7 +331,6 @@ export default function Reports() {
     } finally { setExportingAnnual(false); }
   }
 
-  // ------------------------------------------------------------------ Render
   return (
     <div className="pb-24">
       <PageHeader title="Relatórios" subtitle="Histórico detalhado de presenças" />
@@ -384,13 +339,12 @@ export default function Reports() {
         <div className="mx-4 mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
           <div className="flex items-center gap-2 mb-2">
             <AlertTriangle className="h-5 w-5 text-destructive" />
-            <span className="font-semibold text-destructive">Catequizandos em Alerta (3+ faltas não justificadas)</span>
+            <span className="font-semibold text-destructive">Alunos em Alerta (3+ faltas não justificadas)</span>
           </div>
           {alertStudents.map((s) => (<p key={s.id} className="text-sm text-destructive">{s.name} — {unjustifiedCounts[s.id]} faltas</p>))}
         </div>
       )}
 
-      {/* Abas */}
       <div className="px-4 mb-4 flex gap-2">
         {(["presencas", "pendentes", "missas"] as Tab[]).map((tab) => {
           const labels: Record<Tab, string> = { presencas: "Presenças", pendentes: "Pendentes", missas: "Missas" };
@@ -408,7 +362,6 @@ export default function Reports() {
         })}
       </div>
 
-      {/* Filtro de turma + botões export */}
       {activeTab !== "missas" && (
         <div className="px-4 mb-4 flex items-center gap-3">
           <div className="flex gap-2 overflow-x-auto pb-1 flex-1">
@@ -433,13 +386,12 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ABA PRESENÇAS */}
       {activeTab === "presencas" && (
         <div className="px-4 overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-border text-left">
-                <th className="pb-2 font-semibold">Catequizando</th>
+                <th className="pb-2 font-semibold">Aluno</th>
                 <th className="pb-2 font-semibold">Turma</th>
                 <th className="pb-2 font-semibold">Data</th>
                 <th className="pb-2 font-semibold">Status</th>
@@ -483,7 +435,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ABA PENDENTES */}
       {activeTab === "pendentes" && (
         <div className="px-4 space-y-3">
           {filteredPending.length === 0 ? (
@@ -496,23 +447,18 @@ export default function Reports() {
             filteredPending.map((p) => (
               <div key={p.id} className={cn(
                 "rounded-lg border p-4",
-                editingPendingId === p.id
-                  ? "border-primary/40 bg-primary/5"
-                  : "border-warning/30 bg-warning/5"
+                editingPendingId === p.id ? "border-primary/40 bg-primary/5" : "border-warning/30 bg-warning/5"
               )}>
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex-1 min-w-0">
                     <p className="font-semibold">{p.students?.name ?? "-"}</p>
                     <p className="text-xs text-primary font-medium">{p.students?.class_name ?? "-"}</p>
                     <p className="text-sm text-muted-foreground mt-1">
-                      Data da falta:{" "}
-                      <span className="font-medium text-foreground">{p.date}</span>
+                      Data da falta: <span className="font-medium text-foreground">{p.date}</span>
                     </p>
                     <p className="text-sm mt-1"><span className="text-muted-foreground">Motivo: </span>{p.reason}</p>
                     <p className="text-xs text-muted-foreground mt-1">Enviado em: {new Date(p.created_at).toLocaleString("pt-BR")}</p>
                   </div>
-
-                  {/* Botões editar / deletar */}
                   <div className="flex items-center gap-1 shrink-0">
                     {editingPendingId !== p.id && (
                       <button
@@ -527,14 +473,11 @@ export default function Reports() {
                       onClick={() => handleDeletePending(p.id, p.students?.name ?? "-", p.date)}
                       disabled={deletePendingMutation.isPending}
                       className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors"
-                      title="Remover justificativa"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
-
-                {/* Formulário de edição inline */}
                 {editingPendingId === p.id && (
                   <EditPendingForm
                     id={p.id}
@@ -549,7 +492,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* ABA MISSAS */}
       {activeTab === "missas" && (
         <div className="px-4">
           {isAdmin && etapas.length > 0 && (
@@ -590,7 +532,7 @@ export default function Reports() {
             <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-destructive" />
-                <p className="text-sm font-semibold text-destructive">Faltam {daysLeft} dia{daysLeft !== 1 ? "s" : ""} — {massNonCompliant.length} catequizando{massNonCompliant.length !== 1 ? "s" : ""} sem missa.</p>
+                <p className="text-sm font-semibold text-destructive">Faltam {daysLeft} dia{daysLeft !== 1 ? "s" : ""} — {massNonCompliant.length} aluno{massNonCompliant.length !== 1 ? "s" : ""} sem missa.</p>
               </div>
             </div>
           )}
@@ -598,7 +540,7 @@ export default function Reports() {
           {massFilteredStudents.length === 0 && (
             <div className="py-10 text-center">
               <Church className="h-10 w-10 text-muted-foreground mx-auto mb-3 opacity-40" />
-              <p className="text-muted-foreground text-sm">Nenhum catequizando para a etapa selecionada.</p>
+              <p className="text-muted-foreground text-sm">Nenhum aluno para a etapa selecionada.</p>
             </div>
           )}
 
