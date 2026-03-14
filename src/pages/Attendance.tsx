@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
-import { format } from "date-fns";
+import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { CalendarIcon, Check, AlertTriangle, X, Search, Info, Edit2 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -26,6 +26,11 @@ type EditingRecord = {
   studentName: string;
   status: Status;
   justification: string;
+  /** data atual do registro no banco (yyyy-MM-dd) */
+  originalDate: string;
+  /** nova data selecionada pelo usuário */
+  newDate: Date;
+  calOpen: boolean;
 };
 
 export default function Attendance() {
@@ -45,7 +50,7 @@ export default function Attendance() {
 
   const myStudentIds = useMemo(() => new Set(students.map((s) => s.id)), [students]);
   const myExistingAttendance = useMemo(
-    () => existingAttendance.filter((a: any) => myStudentIds.has(a.student_id)),
+    () => (existingAttendance as any[]).filter((a) => myStudentIds.has(a.student_id)),
     [existingAttendance, myStudentIds]
   );
 
@@ -55,7 +60,7 @@ export default function Attendance() {
 
   const getStatus = (studentId: string): Status => {
     if (statuses[studentId]) return statuses[studentId];
-    const existing = myExistingAttendance.find((a: any) => a.student_id === studentId);
+    const existing = myExistingAttendance.find((a) => a.student_id === studentId);
     return (existing?.status as Status) ?? "presente";
   };
 
@@ -81,11 +86,14 @@ export default function Attendance() {
     const existing = myExistingAttendance.find((a: any) => a.student_id === student.id);
     if (!existing) return;
     setEditingRecord({
-      id: (existing as any).id,
+      id: existing.id,
       studentId: student.id,
       studentName: student.name,
-      status: (existing as any).status as Status,
-      justification: (existing as any).justification_reason ?? "",
+      status: existing.status as Status,
+      justification: existing.justification_reason ?? "",
+      originalDate: existing.date,
+      newDate: parseISO(existing.date),
+      calOpen: false,
     });
   };
 
@@ -97,6 +105,7 @@ export default function Attendance() {
         status: editingRecord.status,
         justification_reason:
           editingRecord.status === "falta_justificada" ? editingRecord.justification : null,
+        date: format(editingRecord.newDate, "yyyy-MM-dd"),
       },
       { onSuccess: () => setEditingRecord(null) }
     );
@@ -120,7 +129,7 @@ export default function Attendance() {
 
   return (
     <div className="pb-24">
-      <PageHeader title="Chamada" subtitle="Registre a presença dos catequizandos" />
+      <PageHeader title="Chamada" subtitle="Registre a presen\u00e7a dos catequizandos" />
 
       {/* Seletor de data */}
       <div className="px-4 mb-3">
@@ -143,7 +152,7 @@ export default function Attendance() {
         </Popover>
       </div>
 
-      {/* Banner: chamada já registrada */}
+      {/* Banner: chamada j\u00e1 registrada */}
       {jaRegistrada && (
         <div className={cn(
           "mx-4 mb-3 rounded-lg border p-3 flex items-start gap-3",
@@ -152,16 +161,16 @@ export default function Attendance() {
           <Info className={cn("h-5 w-5 mt-0.5 shrink-0", editando ? "text-warning" : "text-primary")} />
           <div className="flex-1 min-w-0">
             <p className={cn("font-semibold text-sm", editando ? "text-warning" : "text-primary")}>
-              {editando ? "Modo de edição em lote — salve para confirmar" : "Chamada já registrada neste dia"}
+              {editando ? "Modo de edi\u00e7\u00e3o em lote \u2014 salve para confirmar" : "Chamada j\u00e1 registrada neste dia"}
             </p>
             {resumo && !editando && (
               <p className="text-xs text-muted-foreground mt-0.5">
-                {resumo.p} presente{resumo.p !== 1 ? "s" : ""} · {resumo.f} falta{resumo.f !== 1 ? "s" : ""} · {resumo.j} justificada{resumo.j !== 1 ? "s" : ""}
+                {resumo.p} presente{resumo.p !== 1 ? "s" : ""} \u00b7 {resumo.f} falta{resumo.f !== 1 ? "s" : ""} \u00b7 {resumo.j} justificada{resumo.j !== 1 ? "s" : ""}
               </p>
             )}
             {!editando && (
               <p className="text-xs text-muted-foreground mt-1">
-                Toque no ícone <Edit2 className="inline h-3 w-3" /> ao lado de um catequizando para editar o registro individualmente.
+                Toque no \u00edcone <Edit2 className="inline h-3 w-3" /> ao lado de um catequizando para editar individualmente.
               </p>
             )}
           </div>
@@ -206,10 +215,7 @@ export default function Attendance() {
           const Icon = config.icon;
           const hasRecord = myExistingAttendance.some((a: any) => a.student_id === student.id);
           return (
-            <div
-              key={student.id}
-              className="flex w-full items-center gap-2"
-            >
+            <div key={student.id} className="flex w-full items-center gap-2">
               <button
                 onClick={() => !bloqueado && toggleStatus(student.id)}
                 disabled={bloqueado}
@@ -227,7 +233,6 @@ export default function Attendance() {
                 </span>
               </button>
 
-              {/* Botão de edição individual — aparece só quando a chamada já foi registrada e não está no modo edição em lote */}
               {jaRegistrada && !editando && hasRecord && (
                 <button
                   onClick={() => openEditRecord(student)}
@@ -249,7 +254,7 @@ export default function Attendance() {
         )}
       </div>
 
-      {/* Botão salvar — só aparece se não bloqueado */}
+      {/* Bot\u00e3o salvar */}
       {students.length > 0 && !bloqueado && (
         <div className="fixed bottom-16 left-0 right-0 z-40 border-t border-border bg-card p-4 safe-bottom">
           <Button
@@ -257,20 +262,52 @@ export default function Attendance() {
             disabled={saveMutation.isPending}
             className="w-full h-12 text-base font-semibold"
           >
-            {saveMutation.isPending ? "Salvando..." : jaRegistrada ? "Salvar Alterações" : "Salvar Chamada"}
+            {saveMutation.isPending ? "Salvando..." : jaRegistrada ? "Salvar Altera\u00e7\u00f5es" : "Salvar Chamada"}
           </Button>
         </div>
       )}
 
-      {/* Modal: edição individual de registro */}
+      {/* Modal: edi\u00e7\u00e3o individual de registro */}
       {editingRecord && (
         <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50 p-4">
           <div className="w-full max-w-md rounded-2xl bg-card border border-border shadow-xl p-5 space-y-4 animate-fade-in">
             <div>
               <p className="font-bold text-foreground text-base">{editingRecord.studentName}</p>
               <p className="text-xs text-muted-foreground">
-                {format(date, "PPP", { locale: ptBR })}
+                Registro original: {format(parseISO(editingRecord.originalDate), "dd/MM/yyyy")}
               </p>
+            </div>
+
+            {/* Edi\u00e7\u00e3o de data do registro */}
+            <div className="space-y-1.5">
+              <p className="text-sm font-semibold text-foreground">Data do registro</p>
+              <Popover
+                open={editingRecord.calOpen}
+                onOpenChange={(open) =>
+                  setEditingRecord((prev) => prev ? { ...prev, calOpen: open } : prev)
+                }
+              >
+                <PopoverTrigger asChild>
+                  <Button variant="outline" className="w-full justify-start text-left font-normal h-9">
+                    <CalendarIcon className="mr-2 h-4 w-4" />
+                    {format(editingRecord.newDate, "PPP", { locale: ptBR })}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={editingRecord.newDate}
+                    onSelect={(d) => {
+                      if (d)
+                        setEditingRecord((prev) =>
+                          prev ? { ...prev, newDate: d, calOpen: false } : prev
+                        );
+                    }}
+                    initialFocus
+                    className="p-3 pointer-events-auto"
+                  />
+                </PopoverContent>
+              </Popover>
             </div>
 
             {/* Seletor de status */}
@@ -284,7 +321,9 @@ export default function Attendance() {
                   return (
                     <button
                       key={s}
-                      onClick={() => setEditingRecord((prev) => prev ? { ...prev, status: s } : prev)}
+                      onClick={() =>
+                        setEditingRecord((prev) => prev ? { ...prev, status: s } : prev)
+                      }
                       className={cn(
                         "flex flex-col items-center gap-1 rounded-lg border p-3 text-xs font-semibold transition-all",
                         isActive
@@ -300,16 +339,18 @@ export default function Attendance() {
               </div>
             </div>
 
-            {/* Campo de justificativa — aparece se status for falta_justificada */}
+            {/* Motivo da justificativa */}
             {editingRecord.status === "falta_justificada" && (
               <div className="space-y-1.5">
                 <p className="text-sm font-semibold text-foreground">Motivo da justificativa</p>
                 <Textarea
                   value={editingRecord.justification}
                   onChange={(e) =>
-                    setEditingRecord((prev) => prev ? { ...prev, justification: e.target.value } : prev)
+                    setEditingRecord((prev) =>
+                      prev ? { ...prev, justification: e.target.value } : prev
+                    )
                   }
-                  placeholder="Descreva o motivo da justificativa..."
+                  placeholder="Descreva o motivo..."
                   rows={3}
                   maxLength={500}
                 />

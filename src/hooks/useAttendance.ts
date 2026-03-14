@@ -11,18 +11,15 @@ export function useAttendanceByDate(date: string) {
     queryFn: async () => {
       const { data, error } = await supabase
         .from("attendance")
-        .select("*, students(name, class_name)")
+        .select("id, student_id, date, status, justification_reason, students(name, class_name)")
         .eq("date", date);
       if (error) throw error;
-      return data;
+      return data ?? [];
     },
     enabled: !!date,
   });
 }
 
-/**
- * Busca os IDs de todos os alunos ativos de uma paróquia.
- */
 async function getParoquiaStudentIds(paroquiaId: string): Promise<string[]> {
   const { data } = await db
     .from("students")
@@ -41,7 +38,7 @@ export function useAllAttendance() {
       if (isAdmin) {
         const { data, error } = await supabase
           .from("attendance")
-          .select("*, students(name, class_name, paroquia_id)")
+          .select("id, student_id, date, status, justification_reason, students(name, class_name, paroquia_id)")
           .order("date", { ascending: false });
         if (error) throw error;
         return data ?? [];
@@ -52,7 +49,7 @@ export function useAllAttendance() {
         if (studentIds.length === 0) return [];
         const { data, error } = await supabase
           .from("attendance")
-          .select("*, students(name, class_name, paroquia_id)")
+          .select("id, student_id, date, status, justification_reason, students(name, class_name, paroquia_id)")
           .in("student_id", studentIds)
           .order("date", { ascending: false });
         if (error) throw error;
@@ -71,7 +68,7 @@ export function useAllAttendance() {
         if (ids.length === 0) return [];
         const { data, error } = await supabase
           .from("attendance")
-          .select("*, students(name, class_name, paroquia_id)")
+          .select("id, student_id, date, status, justification_reason, students(name, class_name, paroquia_id)")
           .in("student_id", ids)
           .order("date", { ascending: false });
         if (error) throw error;
@@ -93,7 +90,7 @@ export function usePendingJustifications() {
       if (isAdmin) {
         const { data, error } = await db
           .from("pending_justifications")
-          .select("*, students(name, class_name, paroquia_id)")
+          .select("id, student_id, date, reason, students(name, class_name, paroquia_id)")
           .order("date", { ascending: true });
         if (error) throw error;
         return (data ?? []) as any[];
@@ -104,7 +101,7 @@ export function usePendingJustifications() {
         if (studentIds.length === 0) return [];
         const { data, error } = await db
           .from("pending_justifications")
-          .select("*, students(name, class_name, paroquia_id)")
+          .select("id, student_id, date, reason, students(name, class_name, paroquia_id)")
           .in("student_id", studentIds)
           .order("date", { ascending: true });
         if (error) throw error;
@@ -123,7 +120,7 @@ export function usePendingJustifications() {
         if (ids.length === 0) return [];
         const { data, error } = await db
           .from("pending_justifications")
-          .select("*, students(name, class_name, paroquia_id)")
+          .select("id, student_id, date, reason, students(name, class_name, paroquia_id)")
           .in("student_id", ids)
           .order("date", { ascending: true });
         if (error) throw error;
@@ -155,26 +152,44 @@ export function useDeletePendingJustification() {
   });
 }
 
-/** Atualiza o motivo de uma justificativa pendente (enviada pelos pais) */
+/**
+ * Atualiza o motivo de uma justificativa pendente (enviada pelos pais).
+ * Tamb\u00e9m suporta atualiza\u00e7\u00e3o de data e student_id caso necess\u00e1rio.
+ */
 export function useUpdatePendingJustification() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ id, reason }: { id: string; reason: string }) => {
+    mutationFn: async ({
+      id,
+      reason,
+      date,
+    }: {
+      id: string;
+      reason: string;
+      date?: string;
+    }) => {
+      const payload: any = { reason };
+      if (date) payload.date = date;
       const { error } = await db
         .from("pending_justifications")
-        .update({ reason })
+        .update(payload)
         .eq("id", id);
       if (error) throw error;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pending-justifications"] });
-      toast.success("Justificativa atualizada.");
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      toast.success("Justificativa atualizada com sucesso!");
     },
-    onError: () => toast.error("Erro ao atualizar justificativa."),
+    onError: (err: any) =>
+      toast.error(err?.message ?? "Erro ao atualizar justificativa."),
   });
 }
 
-/** Atualiza um registro individual de chamada já salvo (status + motivo de justificativa) */
+/**
+ * Atualiza um registro individual de chamada j\u00e1 salvo.
+ * Permite alterar status, motivo de justificativa e data do registro.
+ */
 export function useUpdateAttendanceRecord() {
   const queryClient = useQueryClient();
   return useMutation({
@@ -182,14 +197,18 @@ export function useUpdateAttendanceRecord() {
       id,
       status,
       justification_reason,
+      date,
     }: {
       id: string;
       status: string;
       justification_reason: string | null;
+      date?: string;
     }) => {
+      const payload: any = { status, justification_reason };
+      if (date) payload.date = date;
       const { error } = await supabase
         .from("attendance")
-        .update({ status, justification_reason })
+        .update(payload)
         .eq("id", id);
       if (error) throw error;
     },
@@ -200,7 +219,8 @@ export function useUpdateAttendanceRecord() {
       queryClient.invalidateQueries({ queryKey: ["student-history"] });
       toast.success("Registro atualizado com sucesso!");
     },
-    onError: () => toast.error("Erro ao atualizar registro."),
+    onError: (err: any) =>
+      toast.error(err?.message ?? "Erro ao atualizar registro."),
   });
 }
 
@@ -312,7 +332,7 @@ export function useSubmitJustification() {
           throw new Error("O catequizando estava presente nessa data.");
         }
         if (existing.status === "falta_justificada") {
-          throw new Error("Essa falta já está justificada.");
+          throw new Error("Essa falta j\u00e1 est\u00e1 justificada.");
         }
         const { error } = await supabase
           .from("attendance")
@@ -340,7 +360,7 @@ export function useSubmitJustification() {
       queryClient.invalidateQueries({ queryKey: ["pending-justifications"] });
       if (result.pending) {
         toast.success(
-          "Justificativa registrada! Será aplicada automaticamente quando a chamada for marcada."
+          "Justificativa registrada! Ser\u00e1 aplicada automaticamente quando a chamada for marcada."
         );
       } else {
         toast.success("Falta justificada com sucesso!");

@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import {
   Plus, Search, Edit, Trash2, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, AlertTriangle, Clock, Upload,
+  CheckCircle, XCircle, AlertTriangle, Clock, Upload, Download,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -19,6 +19,21 @@ const STATUS_ICON: Record<string, { icon: typeof CheckCircle; color: string; lab
   falta_nao_justificada: { icon: XCircle, color: "text-destructive", label: "FN" },
   falta_justificada: { icon: AlertTriangle, color: "text-warning", label: "FJ" },
 };
+
+const CSV_TEMPLATE =
+  "nome,turma,responsavel,telefone\n" +
+  "Maria da Silva,1º Ano Eucaristia,Ana da Silva,(41) 99999-1234\n" +
+  "Jo\u00e3o Santos,2º Ano Crisma,Carlos Santos,(41) 98888-5678\n";
+
+function downloadCSVTemplate() {
+  const blob = new Blob([CSV_TEMPLATE], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "modelo_catequizandos.csv";
+  a.click();
+  URL.revokeObjectURL(url);
+}
 
 export default function Students() {
   const { data: students = [], isLoading } = useStudents();
@@ -38,7 +53,7 @@ export default function Students() {
   );
 
   const handleDelete = (id: string, name: string) => {
-    if (window.confirm(`Remover catequizando "${name}"? Esta ação não pode ser desfeita.`))
+    if (window.confirm(`Remover catequizando "${name}"? Esta a\u00e7\u00e3o n\u00e3o pode ser desfeita.`))
       deleteMutation.mutate(id);
   };
 
@@ -85,18 +100,16 @@ export default function Students() {
       }).filter((r) => r.name.length > 0);
 
       if (records.length === 0) {
-        toast.error("Nenhum catequizando válido encontrado no CSV.");
+        toast.error("Nenhum catequizando v\u00e1lido encontrado no CSV.");
         return;
       }
 
       importMutation.mutate(records);
     };
     reader.readAsText(file);
-    // reset input
     e.target.value = "";
   };
 
-  // Histórico por catequizando (do mais recente para o mais antigo)
   const historyByStudent = (studentId: string) =>
     attendance
       .filter((a) => a.student_id === studentId)
@@ -120,6 +133,19 @@ export default function Students() {
             className="pl-9"
           />
         </div>
+
+        {/* Baixar modelo CSV */}
+        <Button
+          variant="outline"
+          size="icon"
+          className="shrink-0"
+          title="Baixar modelo CSV"
+          onClick={downloadCSVTemplate}
+        >
+          <Download className="h-5 w-5" />
+        </Button>
+
+        {/* Importar CSV */}
         <Button
           variant="outline"
           size="icon"
@@ -137,9 +163,20 @@ export default function Students() {
           className="hidden"
           onChange={handleCSVChange}
         />
+
         <Button onClick={() => setShowForm(true)} size="icon" className="shrink-0">
           <Plus className="h-5 w-5" />
         </Button>
+      </div>
+
+      {/* Legenda dos botões de CSV */}
+      <div className="px-4 mb-3 flex items-center gap-4 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1">
+          <Download className="h-3 w-3" /> Baixar modelo
+        </span>
+        <span className="flex items-center gap-1">
+          <Upload className="h-3 w-3" /> Importar CSV
+        </span>
       </div>
 
       {isLoading && (
@@ -167,7 +204,6 @@ export default function Students() {
                 unjustifiedCount >= 2 && "border-destructive/40"
               )}
             >
-              {/* Header do card */}
               <div className="flex items-center justify-between p-4 gap-3">
                 <button
                   className="flex-1 text-left min-w-0"
@@ -190,7 +226,7 @@ export default function Students() {
                         pct >= 50 ? "bg-warning/15 text-warning" :
                         "bg-destructive/15 text-destructive"
                       )}>
-                        {pct}% presença
+                        {pct}% presen\u00e7a
                       </span>
                     )}
                   </div>
@@ -200,7 +236,7 @@ export default function Students() {
                   <button
                     onClick={() => toggleExpand(student.id)}
                     className="p-1.5 rounded text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-                    title="Ver histórico"
+                    title="Ver hist\u00f3rico"
                   >
                     {isOpen ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                   </button>
@@ -220,14 +256,13 @@ export default function Students() {
                 </div>
               </div>
 
-              {/* Accordeon: histórico de presenças */}
               {isOpen && (
                 <div className="border-t border-border bg-muted/30 px-4 py-3">
                   <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
-                    Histórico recente
+                    Hist\u00f3rico recente
                     {totalCount > 0 && (
                       <span className="ml-2 font-normal normal-case">
-                        {presentCount}/{totalCount} presenças ({pct}%)
+                        {presentCount}/{totalCount} presen\u00e7as ({pct}%)
                       </span>
                     )}
                   </p>
@@ -255,7 +290,7 @@ export default function Students() {
                         );
                       })}
                       {attendance.filter((a) => a.student_id === student.id).length > 20 && (
-                        <p className="text-xs text-muted-foreground mt-1">Mostrando os 20 registros mais recentes. Veja o relatório completo em Relatórios.</p>
+                        <p className="text-xs text-muted-foreground mt-1">Mostrando os 20 registros mais recentes.</p>
                       )}
                     </div>
                   )}
