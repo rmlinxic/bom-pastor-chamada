@@ -22,6 +22,7 @@ const statusConfig: Record<Status, { icon: typeof Check; label: string; classNam
 export default function Attendance() {
   const [date, setDate] = useState<Date>(new Date());
   const dateStr = format(date, "yyyy-MM-dd");
+  // useStudents já filtra pelo perfil do catequista logado (apenas seus catequizandos)
   const { data: students = [] } = useStudents();
   const { data: existingAttendance = [] } = useAttendanceByDate(dateStr);
   const saveMutation = useSaveAttendance();
@@ -33,14 +34,21 @@ export default function Attendance() {
   // Reseta marcações ao trocar data
   useEffect(() => { setStatuses({}); }, [dateStr]);
 
-  // Detecta se já existe chamada registrada para esse dia
-  const jaRegistrada = existingAttendance.length > 0;
+  // Detecta se já existe chamada registrada para os catequizandos DESTE perfil nesse dia
+  // (filtra existingAttendance apenas pelos IDs dos catequizandos do usuário atual)
+  const myStudentIds = useMemo(() => new Set(students.map((s) => s.id)), [students]);
+  const myExistingAttendance = useMemo(
+    () => existingAttendance.filter((a) => myStudentIds.has(a.student_id)),
+    [existingAttendance, myStudentIds]
+  );
+
+  const jaRegistrada = myExistingAttendance.length > 0;
   const [editando, setEditando] = useState(false);
   useEffect(() => { setEditando(false); }, [dateStr]);
 
   const getStatus = (studentId: string): Status => {
     if (statuses[studentId]) return statuses[studentId];
-    const existing = existingAttendance.find((a) => a.student_id === studentId);
+    const existing = myExistingAttendance.find((a) => a.student_id === studentId);
     return (existing?.status as Status) ?? "presente";
   };
 
@@ -71,14 +79,14 @@ export default function Attendance() {
 
   const bloqueado = jaRegistrada && !editando;
 
-  // Resumo da chamada já salva
+  // Resumo da chamada já salva (apenas para os catequizandos deste perfil)
   const resumo = useMemo(() => {
     if (!jaRegistrada) return null;
-    const p = existingAttendance.filter((a) => a.status === "presente").length;
-    const f = existingAttendance.filter((a) => a.status === "falta_nao_justificada").length;
-    const j = existingAttendance.filter((a) => a.status === "falta_justificada").length;
+    const p = myExistingAttendance.filter((a) => a.status === "presente").length;
+    const f = myExistingAttendance.filter((a) => a.status === "falta_nao_justificada").length;
+    const j = myExistingAttendance.filter((a) => a.status === "falta_justificada").length;
     return { p, f, j };
-  }, [existingAttendance, jaRegistrada]);
+  }, [myExistingAttendance, jaRegistrada]);
 
   return (
     <div className="pb-24">
@@ -137,7 +145,7 @@ export default function Attendance() {
       <div className="px-4 mb-3 relative">
         <Search className="absolute left-7 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
         <Input
-          placeholder="Buscar aluno..."
+          placeholder="Buscar catequizando..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           className="pl-9 h-9"
@@ -181,10 +189,10 @@ export default function Attendance() {
         })}
 
         {filteredStudents.length === 0 && search && (
-          <p className="py-8 text-center text-muted-foreground">Nenhum aluno encontrado para "{search}".</p>
+          <p className="py-8 text-center text-muted-foreground">Nenhum catequizando encontrado para "{search}".</p>
         )}
         {students.length === 0 && (
-          <p className="py-8 text-center text-muted-foreground">Nenhum aluno cadastrado. Cadastre alunos na aba "Alunos".</p>
+          <p className="py-8 text-center text-muted-foreground">Nenhum catequizando cadastrado. Cadastre catequizandos na aba "Catequizandos".</p>
         )}
       </div>
 
