@@ -45,7 +45,6 @@ function monthLabel(m: string) {
   return format(new Date(y, mo - 1, 1), "MMMM yyyy", { locale: ptBR });
 }
 
-// ---- Formulário inline de edição de justificativa pendente ----
 interface EditPendingProps {
   id: string;
   currentDate: string;
@@ -167,17 +166,12 @@ export default function Reports() {
     ? format(new Date(selectedDate + "T12:00:00"), "dd/MM/yyyy (EEEE)", { locale: ptBR })
     : "";
 
-  // Gera arquivo TSV (separado por tab) para compatibilidade direta com Excel/Calc/Numbers
-  function downloadTSV(rows: (string | number)[][], filename: string) {
-    const tsv = rows
-      .map((r) => r.map((c) => String(c).replace(/\t/g, " ").replace(/\n/g, " ")).join("\t"))
-      .join("\n");
-    const blob = new Blob(["\uFEFF" + tsv], { type: "text/tab-separated-values;charset=utf-8;" });
+  function downloadCSV(rows: (string | number)[][], filename: string) {
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.href = url;
-    link.download = filename;
-    link.click();
+    link.href = url; link.download = filename; link.click();
     URL.revokeObjectURL(url);
   }
 
@@ -233,7 +227,7 @@ export default function Reports() {
       ["Faltas justificadas", sumFJ, ...pad(extra)],
       ["Média geral", sumT > 0 ? `${((sumP / sumT) * 100).toFixed(1)}%` : "-", ...pad(extra)],
     ];
-    downloadTSV(rows, `chamada-bom-pastor-${new Date().toISOString().slice(0, 10)}.tsv`);
+    downloadCSV(rows, `chamada-bom-pastor-${new Date().toISOString().slice(0, 10)}.csv`);
   }
 
   function handleExportPDF() {
@@ -312,7 +306,7 @@ export default function Reports() {
     const rate = massFilteredStudents.length > 0 ? `${((massCompliant.length / massFilteredStudents.length) * 100).toFixed(1)}%` : "-";
     rows.push([], ["RESUMO"], ["Total de alunos", massFilteredStudents.length], ["Conformes", massCompliant.length], ["Pendentes", massNonCompliant.length], ["Taxa", rate]);
     const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
-    downloadTSV(rows, `missas-bom-pastor-${massMonth}${suffix}.tsv`);
+    downloadCSV(rows, `missas-bom-pastor-${massMonth}${suffix}.csv`);
   }
 
   async function handleExportAnnualMassCSV() {
@@ -346,7 +340,7 @@ export default function Reports() {
       rows.push([], ["Conformes no mês", "", ...conformesPerMonth, ""],
         ["% Conformidade", "", ...conformesPerMonth.map((n) => sorted.length > 0 ? `${((n / sorted.length) * 100).toFixed(0)}%` : "-"), ""]);
       const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
-      downloadTSV(rows, `missas-anual-${year}${suffix}.tsv`);
+      downloadCSV(rows, `missas-anual-${year}${suffix}.csv`);
     } finally { setExportingAnnual(false); }
   }
 
@@ -394,8 +388,8 @@ export default function Reports() {
           </div>
           {activeTab === "presencas" && (
             <div className="flex gap-1.5 shrink-0">
-              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredAttendance.length === 0} title="Exportar planilha (TSV)">
-                <Download className="h-4 w-4 mr-1" /> TSV
+              <Button variant="outline" size="sm" onClick={handleExportCSV} disabled={filteredAttendance.length === 0} title="Exportar CSV">
+                <Download className="h-4 w-4 mr-1" /> CSV
               </Button>
               <Button variant="outline" size="sm" onClick={handleExportPDF} disabled={filteredAttendance.length === 0} title="Exportar PDF">
                 <FileText className="h-4 w-4 mr-1" /> PDF
@@ -405,7 +399,6 @@ export default function Reports() {
         </div>
       )}
 
-      {/* Filtro de data — apenas na aba Presenças */}
       {activeTab === "presencas" && (
         <div className="px-4 mb-4">
           <div className="flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
