@@ -31,14 +31,23 @@ import {
   Trash2,
   Loader2,
   X,
+  Sparkles,
+  Clock,
 } from "lucide-react";
-import { format, isSameDay, parseISO } from "date-fns";
+import {
+  format,
+  parseISO,
+  isToday,
+  isTomorrow,
+  differenceInCalendarDays,
+  startOfDay,
+} from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 
 interface Evento {
   id: string;
-  data: string; // ISO date string YYYY-MM-DD
+  data: string;
   nome: string;
   descricao: string | null;
 }
@@ -65,7 +74,6 @@ function parseCSVLine(line: string): string[] {
 
 function parseDateString(raw: string): string | null {
   const s = raw.trim();
-  // DD/MM/YYYY or DD-MM-YYYY
   const br = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
   if (br) {
     const [, d, m, y] = br;
@@ -73,7 +81,6 @@ function parseDateString(raw: string): string | null {
     const dt = new Date(year, parseInt(m) - 1, parseInt(d));
     if (!isNaN(dt.getTime())) return format(dt, "yyyy-MM-dd");
   }
-  // YYYY-MM-DD
   const iso = parseISO(s);
   if (!isNaN(iso.getTime())) return format(iso, "yyyy-MM-dd");
   return null;
@@ -99,31 +106,34 @@ function downloadCSV(eventos: Evento[]) {
   URL.revokeObjectURL(url);
 }
 
+function getEventoLabel(dataStr: string): { label: string; variant: "hoje" | "amanha" | "breve" | "futuro" } {
+  const d = parseISO(dataStr);
+  if (isToday(d)) return { label: "Hoje", variant: "hoje" };
+  if (isTomorrow(d)) return { label: "Amanhã", variant: "amanha" };
+  const diff = differenceInCalendarDays(d, startOfDay(new Date()));
+  if (diff <= 7) return { label: `Em ${diff} dias`, variant: "breve" };
+  return { label: format(d, "dd/MM", { locale: ptBR }), variant: "futuro" };
+}
+
 export default function Calendario() {
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [mesSelecionado, setMesSelecionado] = useState<Date>(new Date());
 
-  // Modal detalhe do dia
   const [diaModal, setDiaModal] = useState<Date | null>(null);
   const [eventosDoDia, setEventosDoDia] = useState<Evento[]>([]);
 
-  // Modal adicionar evento
   const [addModal, setAddModal] = useState(false);
   const [addData, setAddData] = useState("");
   const [addNome, setAddNome] = useState("");
   const [addDesc, setAddDesc] = useState("");
 
-  // Confirmação de delete
   const [deleteId, setDeleteId] = useState<string | null>(null);
-
-  // Upload CSV
   const [arrastando, setArrastando] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  // --- Load from Supabase ---
   const fetchEventos = useCallback(async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -140,7 +150,11 @@ export default function Calendario() {
 
   useEffect(() => { fetchEventos(); }, [fetchEventos]);
 
-  // --- Add single event ---
+  // Próximos 5 eventos a partir de hoje
+  const proximos = eventos
+    .filter((ev) => differenceInCalendarDays(parseISO(ev.data), startOfDay(new Date())) >= 0)
+    .slice(0, 5);
+
   const handleAddEvento = async () => {
     if (!addData || !addNome.trim()) {
       toast({ title: "Preencha a data e o nome do evento.", variant: "destructive" });
@@ -163,7 +177,6 @@ export default function Calendario() {
     }
   };
 
-  // --- Delete event ---
   const handleDelete = async (id: string) => {
     const { error } = await supabase.from("calendario_eventos").delete().eq("id", id);
     if (error) {
@@ -177,11 +190,9 @@ export default function Calendario() {
     setDeleteId(null);
   };
 
-  // --- Upload CSV ---
   const processCSV = useCallback(async (file: File) => {
     const text = await file.text();
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
-    // detect header
     const start = lines[0]?.toLowerCase().startsWith("data") ? 1 : 0;
     const novos: { data: string; nome: string; descricao: string | null }[] = [];
     for (let i = start; i < lines.length; i++) {
@@ -218,13 +229,11 @@ export default function Calendario() {
     if (file) processCSV(file);
   };
 
-  // --- Calendar helpers ---
   const diasComEvento = new Set(eventos.map((ev) => ev.data));
 
   const handleDayClick = (day: Date) => {
     const isoDay = format(day, "yyyy-MM-dd");
-    const evs = eventos.filter((ev) => ev.data === isoDay);
-    setEventosDoDia(evs);
+    setEventosDoDia(eventos.filter((ev) => ev.data === isoDay));
     setDiaModal(day);
   };
 
@@ -250,6 +259,60 @@ export default function Calendario() {
             <Plus className="h-4 w-4 mr-1" /> Novo evento
           </Button>
         </div>
+
+        {/* ── PRÓXIMOS EVENTOS ── */}
+        {!loading && proximos.length > 0 && (
+          <Card className="border-primary/30 bg-primary/5">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base flex items-center gap-2">
+                <Sparkles className="h-4 w-4 text-primary" />
+                Próximos eventos
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-2 pt-0">
+              {proximos.map((ev) => {
+                const { label, variant } = getEventoLabel(ev.data);
+                const badgeClass =
+                  variant === "hoje"
+                    ? "bg-primary text-primary-foreground"
+                    : variant === "amanha"
+                    ? "bg-orange-500 text-white"
+                    : variant === "breve"
+                    ? "bg-yellow-500 text-white"
+                    : "bg-muted text-muted-foreground";
+                return (
+                  <button
+                    key={ev.id}
+                    onClick={() => {
+                      setEventosDoDia(eventos.filter((e) => e.data === ev.data));
+                      setDiaModal(parseISO(ev.data));
+                    }}
+                    className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 bg-card border border-border hover:border-primary/40 hover:bg-primary/5 transition-all text-left"
+                  >
+                    <div className="flex-shrink-0 flex flex-col items-center w-9">
+                      <span className="text-lg font-bold text-primary leading-none">
+                        {format(parseISO(ev.data), "dd")}
+                      </span>
+                      <span className="text-[10px] text-muted-foreground uppercase leading-none">
+                        {format(parseISO(ev.data), "MMM", { locale: ptBR })}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-sm truncate">{ev.nome}</p>
+                      {ev.descricao && (
+                        <p className="text-xs text-muted-foreground line-clamp-1">{ev.descricao}</p>
+                      )}
+                    </div>
+                    <span className={`flex-shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${badgeClass}`}>
+                      <Clock className="h-3 w-3" />
+                      {label}
+                    </span>
+                  </button>
+                );
+              })}
+            </CardContent>
+          </Card>
+        )}
 
         {/* Upload / Download CSV */}
         <div className="flex gap-2">
@@ -283,7 +346,6 @@ export default function Calendario() {
           </Button>
         </div>
 
-        {/* Badge count */}
         {eventos.length > 0 && (
           <div className="flex gap-2">
             <Badge variant="secondary">{eventos.length} evento(s) no calendário</Badge>
@@ -337,9 +399,8 @@ export default function Calendario() {
                   <button
                     className="flex-1 text-left flex items-start gap-3"
                     onClick={() => {
-                      const d = parseISO(ev.data);
                       setEventosDoDia(eventos.filter((e) => e.data === ev.data));
-                      setDiaModal(d);
+                      setDiaModal(parseISO(ev.data));
                     }}
                   >
                     <div className="flex-shrink-0 w-10 h-10 rounded-md bg-primary/10 flex flex-col items-center justify-center">
@@ -425,31 +486,15 @@ export default function Calendario() {
           <div className="space-y-4 mt-2">
             <div className="space-y-1">
               <Label htmlFor="add-data">Data</Label>
-              <Input
-                id="add-data"
-                type="date"
-                value={addData}
-                onChange={(e) => setAddData(e.target.value)}
-              />
+              <Input id="add-data" type="date" value={addData} onChange={(e) => setAddData(e.target.value)} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="add-nome">Nome do evento</Label>
-              <Input
-                id="add-nome"
-                placeholder="Ex: Aula de Catequese"
-                value={addNome}
-                onChange={(e) => setAddNome(e.target.value)}
-              />
+              <Input id="add-nome" placeholder="Ex: Aula de Catequese" value={addNome} onChange={(e) => setAddNome(e.target.value)} />
             </div>
             <div className="space-y-1">
               <Label htmlFor="add-desc">Descrição (opcional)</Label>
-              <Textarea
-                id="add-desc"
-                placeholder="Ex: Tema: Os Sacramentos"
-                value={addDesc}
-                onChange={(e) => setAddDesc(e.target.value)}
-                rows={3}
-              />
+              <Textarea id="add-desc" placeholder="Ex: Tema: Os Sacramentos" value={addDesc} onChange={(e) => setAddDesc(e.target.value)} rows={3} />
             </div>
             <div className="flex gap-2">
               <Button variant="outline" className="flex-1" onClick={() => setAddModal(false)}>Cancelar</Button>
