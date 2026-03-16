@@ -33,6 +33,7 @@ import {
   X,
   Sparkles,
   Clock,
+  Lock,
 } from "lucide-react";
 import {
   format,
@@ -44,6 +45,7 @@ import {
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface Evento {
   id: string;
@@ -52,7 +54,6 @@ interface Evento {
   descricao: string | null;
 }
 
-// --- CSV helpers ---
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = "";
@@ -109,13 +110,16 @@ function downloadCSV(eventos: Evento[]) {
 function getEventoLabel(dataStr: string): { label: string; variant: "hoje" | "amanha" | "breve" | "futuro" } {
   const d = parseISO(dataStr);
   if (isToday(d)) return { label: "Hoje", variant: "hoje" };
-  if (isTomorrow(d)) return { label: "Amanhã", variant: "amanha" };
+  if (isTomorrow(d)) return { label: "Amanh\u00e3", variant: "amanha" };
   const diff = differenceInCalendarDays(d, startOfDay(new Date()));
   if (diff <= 7) return { label: `Em ${diff} dias`, variant: "breve" };
   return { label: format(d, "dd/MM", { locale: ptBR }), variant: "futuro" };
 }
 
 export default function Calendario() {
+  const { isCoordinator, isAdmin } = useAuth();
+  const podeEditar = isCoordinator || isAdmin;
+
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -138,30 +142,30 @@ export default function Calendario() {
     setLoading(true);
     const { data, error } = await supabase
       .from("calendario_eventos")
-      .select("*")
+      .select("id, data, nome, descricao")
       .order("data", { ascending: true });
     if (error) {
       toast({ title: "Erro ao carregar eventos", description: error.message, variant: "destructive" });
     } else {
-      setEventos(data ?? []);
+      setEventos((data as Evento[]) ?? []);
     }
     setLoading(false);
   }, [toast]);
 
   useEffect(() => { fetchEventos(); }, [fetchEventos]);
 
-  // Próximos 5 eventos a partir de hoje
   const proximos = eventos
     .filter((ev) => differenceInCalendarDays(parseISO(ev.data), startOfDay(new Date())) >= 0)
     .slice(0, 5);
 
   const handleAddEvento = async () => {
+    if (!podeEditar) return;
     if (!addData || !addNome.trim()) {
       toast({ title: "Preencha a data e o nome do evento.", variant: "destructive" });
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("calendario_eventos").insert({
+    const { error } = await (supabase as any).from("calendario_eventos").insert({
       data: addData,
       nome: addNome.trim(),
       descricao: addDesc.trim() || null,
@@ -178,7 +182,8 @@ export default function Calendario() {
   };
 
   const handleDelete = async (id: string) => {
-    const { error } = await supabase.from("calendario_eventos").delete().eq("id", id);
+    if (!podeEditar) return;
+    const { error } = await (supabase as any).from("calendario_eventos").delete().eq("id", id);
     if (error) {
       toast({ title: "Erro ao remover evento", description: error.message, variant: "destructive" });
     } else {
@@ -191,6 +196,7 @@ export default function Calendario() {
   };
 
   const processCSV = useCallback(async (file: File) => {
+    if (!podeEditar) return;
     const text = await file.text();
     const lines = text.split(/\r?\n/).filter((l) => l.trim());
     const start = lines[0]?.toLowerCase().startsWith("data") ? 1 : 0;
@@ -207,7 +213,7 @@ export default function Calendario() {
       return;
     }
     setSaving(true);
-    const { error } = await supabase.from("calendario_eventos").insert(novos);
+    const { error } = await (supabase as any).from("calendario_eventos").insert(novos);
     setSaving(false);
     if (error) {
       toast({ title: "Erro ao importar CSV", description: error.message, variant: "destructive" });
@@ -215,7 +221,7 @@ export default function Calendario() {
       toast({ title: `${novos.length} evento(s) importado(s) com sucesso!` });
       fetchEventos();
     }
-  }, [toast, fetchEventos]);
+  }, [toast, fetchEventos, podeEditar]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -251,22 +257,24 @@ export default function Calendario() {
           <div className="flex items-center gap-3">
             <CalendarDays className="h-7 w-7 text-primary" />
             <div>
-              <h1 className="text-2xl font-bold">Calendário da Catequese</h1>
-              <p className="text-sm text-muted-foreground">Cronograma compartilhado da paróquia</p>
+              <h1 className="text-2xl font-bold">Calend\u00e1rio da Catequese</h1>
+              <p className="text-sm text-muted-foreground">Cronograma compartilhado da par\u00f3quia</p>
             </div>
           </div>
-          <Button size="sm" onClick={() => setAddModal(true)}>
-            <Plus className="h-4 w-4 mr-1" /> Novo evento
-          </Button>
+          {podeEditar && (
+            <Button size="sm" onClick={() => setAddModal(true)}>
+              <Plus className="h-4 w-4 mr-1" /> Novo evento
+            </Button>
+          )}
         </div>
 
-        {/* ── PRÓXIMOS EVENTOS ── */}
+        {/* PR\u00d3XIMOS EVENTOS */}
         {!loading && proximos.length > 0 && (
           <Card className="border-primary/30 bg-primary/5">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
-                Próximos eventos
+                Pr\u00f3ximos eventos
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 pt-0">
@@ -314,45 +322,61 @@ export default function Calendario() {
           </Card>
         )}
 
-        {/* Upload / Download CSV */}
-        <div className="flex gap-2">
-          <Card
-            className={`flex-1 border-2 border-dashed cursor-pointer transition-colors ${
-              arrastando ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-            }`}
-            onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
-            onDragLeave={() => setArrastando(false)}
-            onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <CardContent className="flex items-center gap-3 py-4 px-4">
-              {saving ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Upload className="h-5 w-5 text-muted-foreground" />}
-              <div>
-                <p className="text-sm font-medium">Importar CSV</p>
-                <p className="text-xs text-muted-foreground">data, nome, descrição</p>
-              </div>
-              <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
-            </CardContent>
-          </Card>
-
-          <Button
-            variant="outline"
-            className="h-auto px-4 flex flex-col items-center gap-1 py-4"
-            onClick={() => downloadCSV(eventos)}
-            disabled={eventos.length === 0}
-          >
-            <Download className="h-5 w-5" />
-            <span className="text-xs">Exportar CSV</span>
-          </Button>
-        </div>
+        {/* Upload / Download CSV — s\u00f3 coordenador/admin v\u00ea */}
+        {podeEditar ? (
+          <div className="flex gap-2">
+            <Card
+              className={`flex-1 border-2 border-dashed cursor-pointer transition-colors ${
+                arrastando ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+              }`}
+              onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
+              onDragLeave={() => setArrastando(false)}
+              onDrop={handleDrop}
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <CardContent className="flex items-center gap-3 py-4 px-4">
+                {saving ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Upload className="h-5 w-5 text-muted-foreground" />}
+                <div>
+                  <p className="text-sm font-medium">Importar CSV</p>
+                  <p className="text-xs text-muted-foreground">data, nome, descri\u00e7\u00e3o</p>
+                </div>
+                <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
+              </CardContent>
+            </Card>
+            <Button
+              variant="outline"
+              className="h-auto px-4 flex flex-col items-center gap-1 py-4"
+              onClick={() => downloadCSV(eventos)}
+              disabled={eventos.length === 0}
+            >
+              <Download className="h-5 w-5" />
+              <span className="text-xs">Exportar CSV</span>
+            </Button>
+          </div>
+        ) : (
+          eventos.length > 0 && (
+            <Button
+              variant="outline"
+              className="w-full flex items-center gap-2"
+              onClick={() => downloadCSV(eventos)}
+            >
+              <Download className="h-4 w-4" /> Exportar CSV
+            </Button>
+          )
+        )}
 
         {eventos.length > 0 && (
           <div className="flex gap-2">
-            <Badge variant="secondary">{eventos.length} evento(s) no calendário</Badge>
+            <Badge variant="secondary">{eventos.length} evento(s) no calend\u00e1rio</Badge>
+            {!podeEditar && (
+              <Badge variant="outline" className="flex items-center gap-1 text-muted-foreground">
+                <Lock className="h-3 w-3" /> Somente leitura
+              </Badge>
+            )}
           </div>
         )}
 
-        {/* Calendário */}
+        {/* Calend\u00e1rio */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
@@ -384,11 +408,11 @@ export default function Calendario() {
           </CardContent>
         </Card>
 
-        {/* Lista de eventos do mês */}
+        {/* Lista de eventos do m\u00eas */}
         {eventosMes.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Eventos do mês</CardTitle>
+              <CardTitle className="text-base">Eventos do m\u00eas</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {eventosMes.map((ev) => (
@@ -418,13 +442,15 @@ export default function Calendario() {
                       )}
                     </div>
                   </button>
-                  <button
-                    onClick={() => setDeleteId(ev.id)}
-                    className="text-muted-foreground hover:text-destructive transition-colors p-1"
-                    title="Remover evento"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                  {podeEditar && (
+                    <button
+                      onClick={() => setDeleteId(ev.id)}
+                      className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                      title="Remover evento"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  )}
                 </div>
               ))}
             </CardContent>
@@ -435,7 +461,7 @@ export default function Calendario() {
           <div className="text-center py-10 text-muted-foreground">
             <CalendarDays className="h-12 w-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">Nenhum evento ainda.</p>
-            <p className="text-xs mt-1">Adicione manualmente ou importe um CSV.</p>
+            {podeEditar && <p className="text-xs mt-1">Adicione manualmente ou importe um CSV.</p>}
           </div>
         )}
       </div>
@@ -457,12 +483,14 @@ export default function Calendario() {
                 <div key={ev.id} className="rounded-lg border border-border p-3 space-y-1">
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-semibold text-sm">{ev.nome}</p>
-                    <button
-                      onClick={() => setDeleteId(ev.id)}
-                      className="text-muted-foreground hover:text-destructive transition-colors"
-                    >
-                      <Trash2 className="h-4 w-4" />
-                    </button>
+                    {podeEditar && (
+                      <button
+                        onClick={() => setDeleteId(ev.id)}
+                        className="text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </button>
+                    )}
                   </div>
                   {ev.descricao && (
                     <p className="text-xs text-muted-foreground whitespace-pre-wrap">{ev.descricao}</p>
@@ -477,43 +505,45 @@ export default function Calendario() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal: adicionar evento */}
-      <Dialog open={addModal} onOpenChange={setAddModal}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Novo evento</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 mt-2">
-            <div className="space-y-1">
-              <Label htmlFor="add-data">Data</Label>
-              <Input id="add-data" type="date" value={addData} onChange={(e) => setAddData(e.target.value)} />
+      {/* Modal: adicionar evento (s\u00f3 coordenador/admin) */}
+      {podeEditar && (
+        <Dialog open={addModal} onOpenChange={setAddModal}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle>Novo evento</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4 mt-2">
+              <div className="space-y-1">
+                <Label htmlFor="add-data">Data</Label>
+                <Input id="add-data" type="date" value={addData} onChange={(e) => setAddData(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="add-nome">Nome do evento</Label>
+                <Input id="add-nome" placeholder="Ex: Aula de Catequese" value={addNome} onChange={(e) => setAddNome(e.target.value)} />
+              </div>
+              <div className="space-y-1">
+                <Label htmlFor="add-desc">Descri\u00e7\u00e3o (opcional)</Label>
+                <Textarea id="add-desc" placeholder="Ex: Tema: Os Sacramentos" value={addDesc} onChange={(e) => setAddDesc(e.target.value)} rows={3} />
+              </div>
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => setAddModal(false)}>Cancelar</Button>
+                <Button className="flex-1" onClick={handleAddEvento} disabled={saving}>
+                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Plus className="h-4 w-4 mr-1" />}
+                  Salvar
+                </Button>
+              </div>
             </div>
-            <div className="space-y-1">
-              <Label htmlFor="add-nome">Nome do evento</Label>
-              <Input id="add-nome" placeholder="Ex: Aula de Catequese" value={addNome} onChange={(e) => setAddNome(e.target.value)} />
-            </div>
-            <div className="space-y-1">
-              <Label htmlFor="add-desc">Descrição (opcional)</Label>
-              <Textarea id="add-desc" placeholder="Ex: Tema: Os Sacramentos" value={addDesc} onChange={(e) => setAddDesc(e.target.value)} rows={3} />
-            </div>
-            <div className="flex gap-2">
-              <Button variant="outline" className="flex-1" onClick={() => setAddModal(false)}>Cancelar</Button>
-              <Button className="flex-1" onClick={handleAddEvento} disabled={saving}>
-                {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Plus className="h-4 w-4 mr-1" />}
-                Salvar
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
+          </DialogContent>
+        </Dialog>
+      )}
 
-      {/* Alert: confirmar exclusão */}
+      {/* Alert: confirmar exclus\u00e3o */}
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remover evento?</AlertDialogTitle>
             <AlertDialogDescription>
-              Esta ação não pode ser desfeita. O evento será removido para todos os catequistas.
+              Esta a\u00e7\u00e3o n\u00e3o pode ser desfeita. O evento ser\u00e1 removido para todos os catequistas.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
