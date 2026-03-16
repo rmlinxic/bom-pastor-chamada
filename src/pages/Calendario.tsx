@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -11,6 +11,7 @@ import {
   DialogContent,
   DialogHeader,
   DialogTitle,
+  DialogDescription,
 } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -22,6 +23,13 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
 import {
   Upload,
@@ -34,6 +42,7 @@ import {
   Sparkles,
   Clock,
   Lock,
+  ShieldAlert,
 } from "lucide-react";
 import {
   format,
@@ -42,6 +51,8 @@ import {
   isTomorrow,
   differenceInCalendarDays,
   startOfDay,
+  getYear,
+  getMonth,
 } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
@@ -53,6 +64,13 @@ interface Evento {
   nome: string;
   descricao: string | null;
 }
+
+type BulkMode = "mes" | "ano" | "tudo";
+
+const MESES = [
+  "Janeiro", "Fevereiro", "Mar\u00e7o", "Abril", "Maio", "Junho",
+  "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
+];
 
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
@@ -134,6 +152,15 @@ export default function Calendario() {
   const [addDesc, setAddDesc] = useState("");
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Exclus\u00e3o em massa
+  const [bulkModal, setBulkModal] = useState(false);
+  const [bulkMode, setBulkMode] = useState<BulkMode>("mes");
+  const [bulkMes, setBulkMes] = useState<string>(String(getMonth(new Date())));
+  const [bulkAno, setBulkAno] = useState<string>(String(getYear(new Date())));
+  const [bulkConfirm, setBulkConfirm] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+
   const [arrastando, setArrastando] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
@@ -153,6 +180,57 @@ export default function Calendario() {
   }, [toast]);
 
   useEffect(() => { fetchEventos(); }, [fetchEventos]);
+
+  // Anos dispon\u00edveis nos eventos
+  const anosDisponiveis = useMemo(() => {
+    const anos = new Set(eventos.map((ev) => String(getYear(parseISO(ev.data)))));
+    return Array.from(anos).sort();
+  }, [eventos]);
+
+  // Preview de quantos eventos ser\u00e3o deletados
+  const bulkPreview = useMemo(() => {
+    if (bulkMode === "tudo") return eventos.length;
+    if (bulkMode === "ano") return eventos.filter((ev) => String(getYear(parseISO(ev.data))) === bulkAno).length;
+    return eventos.filter((ev) => {
+      const d = parseISO(ev.data);
+      return String(getYear(d)) === bulkAno && String(getMonth(d)) === bulkMes;
+    }).length;
+  }, [bulkMode, bulkMes, bulkAno, eventos]);
+
+  const bulkLabel = useMemo(() => {
+    if (bulkMode === "tudo") return "todo o per\u00edodo";
+    if (bulkMode === "ano") return `ano ${bulkAno}`;
+    return `${MESES[Number(bulkMes)]} de ${bulkAno}`;
+  }, [bulkMode, bulkMes, bulkAno]);
+
+  const handleBulkDelete = async () => {
+    if (!podeEditar) return;
+    setBulkDeleting(true);
+    let query = (supabase as any).from("calendario_eventos").delete();
+    if (bulkMode === "tudo") {
+      query = query.neq("id", "00000000-0000-0000-0000-000000000000"); // deleta todos
+    } else if (bulkMode === "ano") {
+      query = query
+        .gte("data", `${bulkAno}-01-01`)
+        .lte("data", `${bulkAno}-12-31`);
+    } else {
+      const mes = String(Number(bulkMes) + 1).padStart(2, "0");
+      const ultimoDia = new Date(Number(bulkAno), Number(bulkMes) + 1, 0).getDate();
+      query = query
+        .gte("data", `${bulkAno}-${mes}-01`)
+        .lte("data", `${bulkAno}-${mes}-${ultimoDia}`);
+    }
+    const { error } = await query;
+    setBulkDeleting(false);
+    if (error) {
+      toast({ title: "Erro ao excluir eventos", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: `Eventos de ${bulkLabel} removidos com sucesso.` });
+      setBulkConfirm(false);
+      setBulkModal(false);
+      fetchEventos();
+    }
+  };
 
   const proximos = eventos
     .filter((ev) => differenceInCalendarDays(parseISO(ev.data), startOfDay(new Date())) >= 0)
@@ -281,13 +359,10 @@ export default function Calendario() {
               {proximos.map((ev) => {
                 const { label, variant } = getEventoLabel(ev.data);
                 const badgeClass =
-                  variant === "hoje"
-                    ? "bg-primary text-primary-foreground"
-                    : variant === "amanha"
-                    ? "bg-orange-500 text-white"
-                    : variant === "breve"
-                    ? "bg-yellow-500 text-white"
-                    : "bg-muted text-muted-foreground";
+                  variant === "hoje" ? "bg-primary text-primary-foreground"
+                  : variant === "amanha" ? "bg-orange-500 text-white"
+                  : variant === "breve" ? "bg-yellow-500 text-white"
+                  : "bg-muted text-muted-foreground";
                 return (
                   <button
                     key={ev.id}
@@ -298,22 +373,15 @@ export default function Calendario() {
                     className="w-full flex items-center gap-3 rounded-lg px-3 py-2.5 bg-card border border-border hover:border-primary/40 hover:bg-primary/5 transition-all text-left"
                   >
                     <div className="flex-shrink-0 flex flex-col items-center w-9">
-                      <span className="text-lg font-bold text-primary leading-none">
-                        {format(parseISO(ev.data), "dd")}
-                      </span>
-                      <span className="text-[10px] text-muted-foreground uppercase leading-none">
-                        {format(parseISO(ev.data), "MMM", { locale: ptBR })}
-                      </span>
+                      <span className="text-lg font-bold text-primary leading-none">{format(parseISO(ev.data), "dd")}</span>
+                      <span className="text-[10px] text-muted-foreground uppercase leading-none">{format(parseISO(ev.data), "MMM", { locale: ptBR })}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-semibold text-sm truncate">{ev.nome}</p>
-                      {ev.descricao && (
-                        <p className="text-xs text-muted-foreground line-clamp-1">{ev.descricao}</p>
-                      )}
+                      {ev.descricao && <p className="text-xs text-muted-foreground line-clamp-1">{ev.descricao}</p>}
                     </div>
                     <span className={`flex-shrink-0 text-[10px] font-semibold px-2 py-1 rounded-full flex items-center gap-1 ${badgeClass}`}>
-                      <Clock className="h-3 w-3" />
-                      {label}
+                      <Clock className="h-3 w-3" />{label}
                     </span>
                   </button>
                 );
@@ -322,51 +390,66 @@ export default function Calendario() {
           </Card>
         )}
 
-        {/* Upload / Download CSV — s\u00f3 coordenador/admin v\u00ea */}
+        {/* Toolbar CSV + exclus\u00e3o em massa */}
         {podeEditar ? (
-          <div className="flex gap-2">
-            <Card
-              className={`flex-1 border-2 border-dashed cursor-pointer transition-colors ${
-                arrastando ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-              }`}
-              onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
-              onDragLeave={() => setArrastando(false)}
-              onDrop={handleDrop}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              <CardContent className="flex items-center gap-3 py-4 px-4">
-                {saving ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Upload className="h-5 w-5 text-muted-foreground" />}
-                <div>
-                  <p className="text-sm font-medium">Importar CSV</p>
-                  <p className="text-xs text-muted-foreground">data, nome, descri\u00e7\u00e3o</p>
-                </div>
-                <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
-              </CardContent>
-            </Card>
-            <Button
-              variant="outline"
-              className="h-auto px-4 flex flex-col items-center gap-1 py-4"
-              onClick={() => downloadCSV(eventos)}
-              disabled={eventos.length === 0}
-            >
-              <Download className="h-5 w-5" />
-              <span className="text-xs">Exportar CSV</span>
-            </Button>
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              {/* Importar CSV */}
+              <Card
+                className={`flex-1 border-2 border-dashed cursor-pointer transition-colors ${
+                  arrastando ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+                }`}
+                onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
+                onDragLeave={() => setArrastando(false)}
+                onDrop={handleDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <CardContent className="flex items-center gap-3 py-4 px-4">
+                  {saving ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Upload className="h-5 w-5 text-muted-foreground" />}
+                  <div>
+                    <p className="text-sm font-medium">Importar CSV</p>
+                    <p className="text-xs text-muted-foreground">data, nome, descri\u00e7\u00e3o</p>
+                  </div>
+                  <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
+                </CardContent>
+              </Card>
+              {/* Exportar CSV */}
+              <Button
+                variant="outline"
+                className="h-auto px-4 flex flex-col items-center gap-1 py-4"
+                onClick={() => downloadCSV(eventos)}
+                disabled={eventos.length === 0}
+              >
+                <Download className="h-5 w-5" />
+                <span className="text-xs">Exportar</span>
+              </Button>
+              {/* Excluir em massa */}
+              <Button
+                variant="outline"
+                className="h-auto px-4 flex flex-col items-center gap-1 py-4 text-destructive border-destructive/30 hover:bg-destructive/10"
+                onClick={() => setBulkModal(true)}
+                disabled={eventos.length === 0}
+              >
+                <ShieldAlert className="h-5 w-5" />
+                <span className="text-xs">Excluir em massa</span>
+              </Button>
+            </div>
           </div>
         ) : (
+          /* Catequistas: apenas download */
           eventos.length > 0 && (
             <Button
               variant="outline"
               className="w-full flex items-center gap-2"
               onClick={() => downloadCSV(eventos)}
             >
-              <Download className="h-4 w-4" /> Exportar CSV
+              <Download className="h-4 w-4" /> Baixar cronograma CSV
             </Button>
           )
         )}
 
         {eventos.length > 0 && (
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
             <Badge variant="secondary">{eventos.length} evento(s) no calend\u00e1rio</Badge>
             {!podeEditar && (
               <Badge variant="outline" className="flex items-center gap-1 text-muted-foreground">
@@ -395,12 +478,9 @@ export default function Calendario() {
                 month={mesSelecionado}
                 onMonthChange={setMesSelecionado}
                 onDayClick={handleDayClick}
-                modifiers={{
-                  temEvento: (date) => diasComEvento.has(format(date, "yyyy-MM-dd")),
-                }}
+                modifiers={{ temEvento: (date) => diasComEvento.has(format(date, "yyyy-MM-dd")) }}
                 modifiersClassNames={{
-                  temEvento:
-                    "relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1.5 after:h-1.5 after:rounded-full after:bg-primary",
+                  temEvento: "relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1.5 after:h-1.5 after:rounded-full after:bg-primary",
                 }}
                 className="w-full"
               />
@@ -416,10 +496,7 @@ export default function Calendario() {
             </CardHeader>
             <CardContent className="space-y-2">
               {eventosMes.map((ev) => (
-                <div
-                  key={ev.id}
-                  className="flex items-start gap-3 rounded-lg p-3 border border-border hover:bg-muted transition-colors"
-                >
+                <div key={ev.id} className="flex items-start gap-3 rounded-lg p-3 border border-border hover:bg-muted transition-colors">
                   <button
                     className="flex-1 text-left flex items-start gap-3"
                     onClick={() => {
@@ -428,25 +505,18 @@ export default function Calendario() {
                     }}
                   >
                     <div className="flex-shrink-0 w-10 h-10 rounded-md bg-primary/10 flex flex-col items-center justify-center">
-                      <span className="text-xs font-bold text-primary leading-none">
-                        {format(parseISO(ev.data), "dd")}
-                      </span>
-                      <span className="text-[10px] text-primary/70 uppercase leading-none">
-                        {format(parseISO(ev.data), "MMM", { locale: ptBR })}
-                      </span>
+                      <span className="text-xs font-bold text-primary leading-none">{format(parseISO(ev.data), "dd")}</span>
+                      <span className="text-[10px] text-primary/70 uppercase leading-none">{format(parseISO(ev.data), "MMM", { locale: ptBR })}</span>
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="font-medium text-sm truncate">{ev.nome}</p>
-                      {ev.descricao && (
-                        <p className="text-xs text-muted-foreground line-clamp-1">{ev.descricao}</p>
-                      )}
+                      {ev.descricao && <p className="text-xs text-muted-foreground line-clamp-1">{ev.descricao}</p>}
                     </div>
                   </button>
                   {podeEditar && (
                     <button
                       onClick={() => setDeleteId(ev.id)}
                       className="text-muted-foreground hover:text-destructive transition-colors p-1"
-                      title="Remover evento"
                     >
                       <Trash2 className="h-4 w-4" />
                     </button>
@@ -484,17 +554,12 @@ export default function Calendario() {
                   <div className="flex items-start justify-between gap-2">
                     <p className="font-semibold text-sm">{ev.nome}</p>
                     {podeEditar && (
-                      <button
-                        onClick={() => setDeleteId(ev.id)}
-                        className="text-muted-foreground hover:text-destructive transition-colors"
-                      >
+                      <button onClick={() => setDeleteId(ev.id)} className="text-muted-foreground hover:text-destructive transition-colors">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     )}
                   </div>
-                  {ev.descricao && (
-                    <p className="text-xs text-muted-foreground whitespace-pre-wrap">{ev.descricao}</p>
-                  )}
+                  {ev.descricao && <p className="text-xs text-muted-foreground whitespace-pre-wrap">{ev.descricao}</p>}
                 </div>
               ))}
             </div>
@@ -505,13 +570,11 @@ export default function Calendario() {
         </DialogContent>
       </Dialog>
 
-      {/* Modal: adicionar evento (s\u00f3 coordenador/admin) */}
+      {/* Modal: adicionar evento */}
       {podeEditar && (
         <Dialog open={addModal} onOpenChange={setAddModal}>
           <DialogContent className="max-w-sm">
-            <DialogHeader>
-              <DialogTitle>Novo evento</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>Novo evento</DialogTitle></DialogHeader>
             <div className="space-y-4 mt-2">
               <div className="space-y-1">
                 <Label htmlFor="add-data">Data</Label>
@@ -537,22 +600,134 @@ export default function Calendario() {
         </Dialog>
       )}
 
-      {/* Alert: confirmar exclus\u00e3o */}
+      {/* Modal: exclus\u00e3o em massa */}
+      {podeEditar && (
+        <Dialog open={bulkModal} onOpenChange={(o) => { if (!o) { setBulkModal(false); setBulkConfirm(false); } }}>
+          <DialogContent className="max-w-sm">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2 text-destructive">
+                <ShieldAlert className="h-5 w-5" /> Excluir eventos em massa
+              </DialogTitle>
+              <DialogDescription>
+                Selecione o per\u00edodo e confirme. Esta a\u00e7\u00e3o \u00e9 irrevers\u00edvel.
+              </DialogDescription>
+            </DialogHeader>
+
+            <div className="space-y-4 mt-2">
+              {/* Tipo de per\u00edodo */}
+              <div className="space-y-1">
+                <Label>Per\u00edodo</Label>
+                <Select value={bulkMode} onValueChange={(v) => setBulkMode(v as BulkMode)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="mes">Um m\u00eas espec\u00edfico</SelectItem>
+                    <SelectItem value="ano">Um ano inteiro</SelectItem>
+                    <SelectItem value="tudo">Todo o per\u00edodo (limpar tudo)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Seletor de ano (sempre vis\u00edvel exceto no modo "tudo") */}
+              {bulkMode !== "tudo" && (
+                <div className="space-y-1">
+                  <Label>Ano</Label>
+                  <Select value={bulkAno} onValueChange={setBulkAno}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {anosDisponiveis.length > 0
+                        ? anosDisponiveis.map((a) => <SelectItem key={a} value={a}>{a}</SelectItem>)
+                        : <SelectItem value={bulkAno}>{bulkAno}</SelectItem>
+                      }
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Seletor de m\u00eas */}
+              {bulkMode === "mes" && (
+                <div className="space-y-1">
+                  <Label>M\u00eas</Label>
+                  <Select value={bulkMes} onValueChange={setBulkMes}>
+                    <SelectTrigger>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {MESES.map((m, i) => (
+                        <SelectItem key={i} value={String(i)}>{m}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+
+              {/* Preview */}
+              <div className={`rounded-lg px-4 py-3 text-sm flex items-center gap-2 ${
+                bulkPreview === 0 ? "bg-muted text-muted-foreground" : "bg-destructive/10 text-destructive font-semibold"
+              }`}>
+                <Trash2 className="h-4 w-4 flex-shrink-0" />
+                {bulkPreview === 0
+                  ? `Nenhum evento encontrado em ${bulkLabel}.`
+                  : `${bulkPreview} evento(s) ser\u00e3o exclu\u00eddos de ${bulkLabel}.`
+                }
+              </div>
+
+              {/* Bot\u00f5es */}
+              <div className="flex gap-2">
+                <Button variant="outline" className="flex-1" onClick={() => { setBulkModal(false); setBulkConfirm(false); }}>
+                  Cancelar
+                </Button>
+                <Button
+                  variant="destructive"
+                  className="flex-1"
+                  disabled={bulkPreview === 0 || bulkDeleting}
+                  onClick={() => setBulkConfirm(true)}
+                >
+                  {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Trash2 className="h-4 w-4 mr-1" />}
+                  Excluir
+                </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+      )}
+
+      {/* Alert: confirmar exclus\u00e3o unit\u00e1ria */}
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remover evento?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Esta a\u00e7\u00e3o n\u00e3o pode ser desfeita. O evento ser\u00e1 removido para todos os catequistas.
-            </AlertDialogDescription>
+            <AlertDialogDescription>Esta a\u00e7\u00e3o n\u00e3o pode ser desfeita.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction className="bg-destructive hover:bg-destructive/90" onClick={() => deleteId && handleDelete(deleteId)}>
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Alert: confirmar exclus\u00e3o em massa */}
+      <AlertDialog open={bulkConfirm} onOpenChange={(o) => !o && setBulkConfirm(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar exclus\u00e3o em massa?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Voc\u00ea est\u00e1 prestes a excluir <strong>{bulkPreview} evento(s)</strong> de <strong>{bulkLabel}</strong>. Esta a\u00e7\u00e3o n\u00e3o pode ser desfeita.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setBulkConfirm(false)}>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive hover:bg-destructive/90"
-              onClick={() => deleteId && handleDelete(deleteId)}
+              onClick={handleBulkDelete}
             >
-              Remover
+              {bulkDeleting ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : null}
+              Sim, excluir tudo
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
