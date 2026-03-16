@@ -47,6 +47,33 @@ export type Database = {
           },
         ]
       }
+      calendario_eventos: {
+        Row: {
+          id: string
+          data: string
+          nome: string
+          descricao: string | null
+          created_at: string
+          created_by: string | null
+        }
+        Insert: {
+          id?: string
+          data: string
+          nome: string
+          descricao?: string | null
+          created_at?: string
+          created_by?: string | null
+        }
+        Update: {
+          id?: string
+          data?: string
+          nome?: string
+          descricao?: string | null
+          created_at?: string
+          created_by?: string | null
+        }
+        Relationships: []
+      }
       students: {
         Row: {
           active: boolean
@@ -110,7 +137,7 @@ export type Tables<
     : never = never,
 > = DefaultSchemaTableNameOrOptions extends { schema: keyof Database }
   ? (Database[DefaultSchemaTableNameOrOptions["schema"]]["Tables"] &
-      Database[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
+        Database[DefaultSchemaTableNameOrOptions["schema"]]["Views"])[TableName] extends {
       Row: infer R
     }
     ? R

@@ -1,166 +1,296 @@
-import { useState, useRef, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Calendar } from "@/components/ui/calendar";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Input } from "@/components/ui/input";
+import { Textarea } from "@/components/ui/textarea";
+import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
-import { Upload, CalendarDays, X } from "lucide-react";
+import {
+  Upload,
+  Download,
+  CalendarDays,
+  Plus,
+  Trash2,
+  Loader2,
+  X,
+} from "lucide-react";
 import { format, isSameDay, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import * as XLSX from "xlsx";
+import { supabase } from "@/integrations/supabase/client";
 
-interface EventoCatequese {
-  data: Date;
+interface Evento {
+  id: string;
+  data: string; // ISO date string YYYY-MM-DD
   nome: string;
-  descricao: string;
+  descricao: string | null;
 }
 
-function parseDate(value: unknown): Date | null {
-  if (!value) return null;
-  // Excel serial number
-  if (typeof value === "number") {
-    const excelEpoch = new Date(1899, 11, 30);
-    const date = new Date(excelEpoch.getTime() + value * 86400000);
-    return isNaN(date.getTime()) ? null : date;
-  }
-  if (typeof value === "string") {
-    // Try DD/MM/YYYY
-    const brMatch = value.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
-    if (brMatch) {
-      const [, d, m, y] = brMatch;
-      const year = y.length === 2 ? 2000 + parseInt(y) : parseInt(y);
-      const date = new Date(year, parseInt(m) - 1, parseInt(d));
-      return isNaN(date.getTime()) ? null : date;
+// --- CSV helpers ---
+function parseCSVLine(line: string): string[] {
+  const result: string[] = [];
+  let current = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i];
+    if (ch === '"') {
+      if (inQuotes && line[i + 1] === '"') { current += '"'; i++; }
+      else inQuotes = !inQuotes;
+    } else if (ch === "," && !inQuotes) {
+      result.push(current.trim()); current = "";
+    } else {
+      current += ch;
     }
-    // Try ISO
-    const iso = parseISO(value);
-    return isNaN(iso.getTime()) ? null : iso;
   }
-  if (value instanceof Date) return isNaN(value.getTime()) ? null : value;
+  result.push(current.trim());
+  return result;
+}
+
+function parseDateString(raw: string): string | null {
+  const s = raw.trim();
+  // DD/MM/YYYY or DD-MM-YYYY
+  const br = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  if (br) {
+    const [, d, m, y] = br;
+    const year = y.length === 2 ? 2000 + parseInt(y) : parseInt(y);
+    const dt = new Date(year, parseInt(m) - 1, parseInt(d));
+    if (!isNaN(dt.getTime())) return format(dt, "yyyy-MM-dd");
+  }
+  // YYYY-MM-DD
+  const iso = parseISO(s);
+  if (!isNaN(iso.getTime())) return format(iso, "yyyy-MM-dd");
   return null;
 }
 
+function downloadCSV(eventos: Evento[]) {
+  const header = "data,nome,descricao";
+  const rows = eventos
+    .sort((a, b) => a.data.localeCompare(b.data))
+    .map((ev) => {
+      const d = format(parseISO(ev.data), "dd/MM/yyyy");
+      const nome = `"${(ev.nome ?? "").replace(/"/g, '""')}"`;
+      const desc = `"${(ev.descricao ?? "").replace(/"/g, '""')}"`;
+      return `${d},${nome},${desc}`;
+    });
+  const csv = [header, ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `calendario-catequese-${format(new Date(), "yyyy-MM-dd")}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function Calendario() {
-  const [eventos, setEventos] = useState<EventoCatequese[]>([]);
+  const [eventos, setEventos] = useState<Evento[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
   const [mesSelecionado, setMesSelecionado] = useState<Date>(new Date());
-  const [diaSelecionado, setDiaSelecionado] = useState<Date | undefined>(undefined);
-  const [modalAberto, setModalAberto] = useState(false);
-  const [eventosDoDia, setEventosDoDia] = useState<EventoCatequese[]>([]);
+
+  // Modal detalhe do dia
+  const [diaModal, setDiaModal] = useState<Date | null>(null);
+  const [eventosDoDia, setEventosDoDia] = useState<Evento[]>([]);
+
+  // Modal adicionar evento
+  const [addModal, setAddModal] = useState(false);
+  const [addData, setAddData] = useState("");
+  const [addNome, setAddNome] = useState("");
+  const [addDesc, setAddDesc] = useState("");
+
+  // Confirmação de delete
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+
+  // Upload CSV
   const [arrastando, setArrastando] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { toast } = useToast();
 
-  const processarPlanilha = useCallback((file: File) => {
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const data = new Uint8Array(e.target?.result as ArrayBuffer);
-        const workbook = XLSX.read(data, { type: "array", cellDates: true });
-        const sheet = workbook.Sheets[workbook.SheetNames[0]];
-        const rows: unknown[][] = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: "" });
-
-        const novosEventos: EventoCatequese[] = [];
-        // Skip first row if it looks like a header
-        const startRow = typeof rows[0]?.[0] === "string" && isNaN(Date.parse(rows[0][0] as string)) ? 1 : 0;
-
-        for (let i = startRow; i < rows.length; i++) {
-          const row = rows[i];
-          if (!row || (!row[0] && !row[1])) continue;
-          const data = parseDate(row[0]);
-          const nome = String(row[1] ?? "").trim();
-          const descricao = String(row[2] ?? "").trim();
-          if (data && nome) {
-            novosEventos.push({ data, nome, descricao });
-          }
-        }
-
-        if (novosEventos.length === 0) {
-          toast({ title: "Nenhum evento encontrado", description: "Verifique se a planilha tem data na coluna A, nome na B e descrição na C.", variant: "destructive" });
-          return;
-        }
-
-        setEventos(novosEventos);
-        toast({ title: `${novosEventos.length} evento(s) importado(s)!`, description: "O calendário foi atualizado com os eventos da planilha." });
-      } catch {
-        toast({ title: "Erro ao ler a planilha", description: "Certifique-se de que o arquivo é .xlsx ou .xls válido.", variant: "destructive" });
-      }
-    };
-    reader.readAsArrayBuffer(file);
+  // --- Load from Supabase ---
+  const fetchEventos = useCallback(async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("calendario_eventos")
+      .select("*")
+      .order("data", { ascending: true });
+    if (error) {
+      toast({ title: "Erro ao carregar eventos", description: error.message, variant: "destructive" });
+    } else {
+      setEventos(data ?? []);
+    }
+    setLoading(false);
   }, [toast]);
+
+  useEffect(() => { fetchEventos(); }, [fetchEventos]);
+
+  // --- Add single event ---
+  const handleAddEvento = async () => {
+    if (!addData || !addNome.trim()) {
+      toast({ title: "Preencha a data e o nome do evento.", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from("calendario_eventos").insert({
+      data: addData,
+      nome: addNome.trim(),
+      descricao: addDesc.trim() || null,
+    });
+    setSaving(false);
+    if (error) {
+      toast({ title: "Erro ao salvar evento", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Evento adicionado!" });
+      setAddModal(false);
+      setAddData(""); setAddNome(""); setAddDesc("");
+      fetchEventos();
+    }
+  };
+
+  // --- Delete event ---
+  const handleDelete = async (id: string) => {
+    const { error } = await supabase.from("calendario_eventos").delete().eq("id", id);
+    if (error) {
+      toast({ title: "Erro ao remover evento", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: "Evento removido." });
+      setEventos((prev) => prev.filter((e) => e.id !== id));
+      setEventosDoDia((prev) => prev.filter((e) => e.id !== id));
+      if (eventosDoDia.filter((e) => e.id !== id).length === 0) setDiaModal(null);
+    }
+    setDeleteId(null);
+  };
+
+  // --- Upload CSV ---
+  const processCSV = useCallback(async (file: File) => {
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter((l) => l.trim());
+    // detect header
+    const start = lines[0]?.toLowerCase().startsWith("data") ? 1 : 0;
+    const novos: { data: string; nome: string; descricao: string | null }[] = [];
+    for (let i = start; i < lines.length; i++) {
+      const cols = parseCSVLine(lines[i]);
+      const data = parseDateString(cols[0] ?? "");
+      const nome = (cols[1] ?? "").replace(/^"|"$/g, "").trim();
+      const descricao = (cols[2] ?? "").replace(/^"|"$/g, "").trim() || null;
+      if (data && nome) novos.push({ data, nome, descricao });
+    }
+    if (novos.length === 0) {
+      toast({ title: "Nenhum evento encontrado no CSV", description: "Formato: data,nome,descricao", variant: "destructive" });
+      return;
+    }
+    setSaving(true);
+    const { error } = await supabase.from("calendario_eventos").insert(novos);
+    setSaving(false);
+    if (error) {
+      toast({ title: "Erro ao importar CSV", description: error.message, variant: "destructive" });
+    } else {
+      toast({ title: `${novos.length} evento(s) importado(s) com sucesso!` });
+      fetchEventos();
+    }
+  }, [toast, fetchEventos]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file) processarPlanilha(file);
+    if (file) processCSV(file);
     e.target.value = "";
   };
 
   const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    setArrastando(false);
+    e.preventDefault(); setArrastando(false);
     const file = e.dataTransfer.files?.[0];
-    if (file) processarPlanilha(file);
+    if (file) processCSV(file);
   };
+
+  // --- Calendar helpers ---
+  const diasComEvento = new Set(eventos.map((ev) => ev.data));
 
   const handleDayClick = (day: Date) => {
-    const evs = eventos.filter((ev) => isSameDay(ev.data, day));
-    setDiaSelecionado(day);
+    const isoDay = format(day, "yyyy-MM-dd");
+    const evs = eventos.filter((ev) => ev.data === isoDay);
     setEventosDoDia(evs);
-    setModalAberto(true);
+    setDiaModal(day);
   };
 
-  const eventosDossMes = eventos.filter(
-    (ev) => ev.data.getMonth() === mesSelecionado.getMonth() && ev.data.getFullYear() === mesSelecionado.getFullYear()
-  );
-
-  const diasComEvento = new Set(
-    eventos.map((ev) => format(ev.data, "yyyy-MM-dd"))
-  );
+  const eventosMes = eventos.filter((ev) => {
+    const d = parseISO(ev.data);
+    return d.getMonth() === mesSelecionado.getMonth() && d.getFullYear() === mesSelecionado.getFullYear();
+  });
 
   return (
     <div className="min-h-screen bg-background pb-24">
-      <div className="container max-w-2xl mx-auto px-4 pt-6 space-y-6">
+      <div className="container max-w-2xl mx-auto px-4 pt-6 space-y-5">
+
         {/* Header */}
-        <div className="flex items-center gap-3">
-          <CalendarDays className="h-7 w-7 text-primary" />
-          <div>
-            <h1 className="text-2xl font-bold text-foreground">Calendário da Catequese</h1>
-            <p className="text-sm text-muted-foreground">Cronograma compartilhado da paróquia</p>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <CalendarDays className="h-7 w-7 text-primary" />
+            <div>
+              <h1 className="text-2xl font-bold">Calendário da Catequese</h1>
+              <p className="text-sm text-muted-foreground">Cronograma compartilhado da paróquia</p>
+            </div>
           </div>
+          <Button size="sm" onClick={() => setAddModal(true)}>
+            <Plus className="h-4 w-4 mr-1" /> Novo evento
+          </Button>
         </div>
 
-        {/* Upload de planilha */}
-        <Card
-          className={`border-2 border-dashed transition-colors cursor-pointer ${
-            arrastando ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
-          }`}
-          onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
-          onDragLeave={() => setArrastando(false)}
-          onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
-        >
-          <CardContent className="flex flex-col items-center justify-center py-6 gap-2">
-            <Upload className="h-8 w-8 text-muted-foreground" />
-            <p className="text-sm font-medium text-foreground">Importar planilha (.xlsx / .xls)</p>
-            <p className="text-xs text-muted-foreground text-center">
-              Coluna A: Data &nbsp;|&nbsp; Coluna B: Nome do evento &nbsp;|&nbsp; Coluna C: Descrição
-            </p>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xlsx,.xls"
-              className="hidden"
-              onChange={handleFileChange}
-            />
-            {eventos.length > 0 && (
-              <Badge variant="secondary" className="mt-1">
-                {eventos.length} evento(s) carregado(s)
-              </Badge>
-            )}
-          </CardContent>
-        </Card>
+        {/* Upload / Download CSV */}
+        <div className="flex gap-2">
+          <Card
+            className={`flex-1 border-2 border-dashed cursor-pointer transition-colors ${
+              arrastando ? "border-primary bg-primary/5" : "border-border hover:border-primary/50"
+            }`}
+            onDragOver={(e) => { e.preventDefault(); setArrastando(true); }}
+            onDragLeave={() => setArrastando(false)}
+            onDrop={handleDrop}
+            onClick={() => fileInputRef.current?.click()}
+          >
+            <CardContent className="flex items-center gap-3 py-4 px-4">
+              {saving ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Upload className="h-5 w-5 text-muted-foreground" />}
+              <div>
+                <p className="text-sm font-medium">Importar CSV</p>
+                <p className="text-xs text-muted-foreground">data, nome, descrição</p>
+              </div>
+              <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
+            </CardContent>
+          </Card>
 
-        {/* Calendário interativo */}
+          <Button
+            variant="outline"
+            className="h-auto px-4 flex flex-col items-center gap-1 py-4"
+            onClick={() => downloadCSV(eventos)}
+            disabled={eventos.length === 0}
+          >
+            <Download className="h-5 w-5" />
+            <span className="text-xs">Exportar CSV</span>
+          </Button>
+        </div>
+
+        {/* Badge count */}
+        {eventos.length > 0 && (
+          <div className="flex gap-2">
+            <Badge variant="secondary">{eventos.length} evento(s) no calendário</Badge>
+          </div>
+        )}
+
+        {/* Calendário */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
@@ -168,89 +298,111 @@ export default function Calendario() {
             </CardTitle>
           </CardHeader>
           <CardContent className="flex justify-center">
-            <Calendar
-              mode="single"
-              locale={ptBR}
-              month={mesSelecionado}
-              onMonthChange={setMesSelecionado}
-              onDayClick={handleDayClick}
-              modifiers={{
-                temEvento: (date) => diasComEvento.has(format(date, "yyyy-MM-dd")),
-              }}
-              modifiersClassNames={{
-                temEvento: "relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1.5 after:h-1.5 after:rounded-full after:bg-primary",
-              }}
-              className="w-full"
-            />
+            {loading ? (
+              <div className="flex items-center gap-2 py-8 text-muted-foreground">
+                <Loader2 className="h-5 w-5 animate-spin" /> Carregando...
+              </div>
+            ) : (
+              <Calendar
+                mode="single"
+                locale={ptBR}
+                month={mesSelecionado}
+                onMonthChange={setMesSelecionado}
+                onDayClick={handleDayClick}
+                modifiers={{
+                  temEvento: (date) => diasComEvento.has(format(date, "yyyy-MM-dd")),
+                }}
+                modifiersClassNames={{
+                  temEvento:
+                    "relative after:absolute after:bottom-1 after:left-1/2 after:-translate-x-1/2 after:w-1.5 after:h-1.5 after:rounded-full after:bg-primary",
+                }}
+                className="w-full"
+              />
+            )}
           </CardContent>
         </Card>
 
         {/* Lista de eventos do mês */}
-        {eventosDossMes.length > 0 && (
+        {eventosMes.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
               <CardTitle className="text-base">Eventos do mês</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
-              {eventosDossMes
-                .sort((a, b) => a.data.getTime() - b.data.getTime())
-                .map((ev, i) => (
+              {eventosMes.map((ev) => (
+                <div
+                  key={ev.id}
+                  className="flex items-start gap-3 rounded-lg p-3 border border-border hover:bg-muted transition-colors"
+                >
                   <button
-                    key={i}
+                    className="flex-1 text-left flex items-start gap-3"
                     onClick={() => {
-                      setDiaSelecionado(ev.data);
-                      setEventosDoDia(eventos.filter((e) => isSameDay(e.data, ev.data)));
-                      setModalAberto(true);
+                      const d = parseISO(ev.data);
+                      setEventosDoDia(eventos.filter((e) => e.data === ev.data));
+                      setDiaModal(d);
                     }}
-                    className="w-full text-left flex items-start gap-3 rounded-lg p-3 hover:bg-muted transition-colors border border-border"
                   >
                     <div className="flex-shrink-0 w-10 h-10 rounded-md bg-primary/10 flex flex-col items-center justify-center">
                       <span className="text-xs font-bold text-primary leading-none">
-                        {format(ev.data, "dd")}
+                        {format(parseISO(ev.data), "dd")}
                       </span>
-                      <span className="text-[10px] text-primary/70 leading-none uppercase">
-                        {format(ev.data, "MMM", { locale: ptBR })}
+                      <span className="text-[10px] text-primary/70 uppercase leading-none">
+                        {format(parseISO(ev.data), "MMM", { locale: ptBR })}
                       </span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm text-foreground truncate">{ev.nome}</p>
+                      <p className="font-medium text-sm truncate">{ev.nome}</p>
                       {ev.descricao && (
                         <p className="text-xs text-muted-foreground line-clamp-1">{ev.descricao}</p>
                       )}
                     </div>
                   </button>
-                ))}
+                  <button
+                    onClick={() => setDeleteId(ev.id)}
+                    className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                    title="Remover evento"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </button>
+                </div>
+              ))}
             </CardContent>
           </Card>
         )}
 
-        {eventos.length === 0 && (
-          <div className="text-center py-8 text-muted-foreground">
+        {!loading && eventos.length === 0 && (
+          <div className="text-center py-10 text-muted-foreground">
             <CalendarDays className="h-12 w-12 mx-auto mb-3 opacity-30" />
             <p className="text-sm">Nenhum evento ainda.</p>
-            <p className="text-xs mt-1">Importe uma planilha para preencher o calendário.</p>
+            <p className="text-xs mt-1">Adicione manualmente ou importe um CSV.</p>
           </div>
         )}
       </div>
 
-      {/* Modal de detalhes do dia */}
-      <Dialog open={modalAberto} onOpenChange={setModalAberto}>
+      {/* Modal: detalhe do dia */}
+      <Dialog open={!!diaModal} onOpenChange={(o) => !o && setDiaModal(null)}>
         <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
               <CalendarDays className="h-5 w-5 text-primary" />
-              {diaSelecionado && format(diaSelecionado, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              {diaModal && format(diaModal, "dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
             </DialogTitle>
           </DialogHeader>
           {eventosDoDia.length === 0 ? (
-            <div className="py-6 text-center text-muted-foreground">
-              <p className="text-sm">Nenhum evento neste dia.</p>
-            </div>
+            <p className="py-4 text-center text-sm text-muted-foreground">Nenhum evento neste dia.</p>
           ) : (
             <div className="space-y-3 mt-2">
-              {eventosDoDia.map((ev, i) => (
-                <div key={i} className="rounded-lg border border-border p-3 space-y-1">
-                  <p className="font-semibold text-sm text-foreground">{ev.nome}</p>
+              {eventosDoDia.map((ev) => (
+                <div key={ev.id} className="rounded-lg border border-border p-3 space-y-1">
+                  <div className="flex items-start justify-between gap-2">
+                    <p className="font-semibold text-sm">{ev.nome}</p>
+                    <button
+                      onClick={() => setDeleteId(ev.id)}
+                      className="text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </button>
+                  </div>
                   {ev.descricao && (
                     <p className="text-xs text-muted-foreground whitespace-pre-wrap">{ev.descricao}</p>
                   )}
@@ -258,11 +410,78 @@ export default function Calendario() {
               ))}
             </div>
           )}
-          <Button variant="outline" className="w-full mt-2" onClick={() => setModalAberto(false)}>
+          <Button variant="outline" className="w-full mt-2" onClick={() => setDiaModal(null)}>
             <X className="h-4 w-4 mr-1" /> Fechar
           </Button>
         </DialogContent>
       </Dialog>
+
+      {/* Modal: adicionar evento */}
+      <Dialog open={addModal} onOpenChange={setAddModal}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Novo evento</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 mt-2">
+            <div className="space-y-1">
+              <Label htmlFor="add-data">Data</Label>
+              <Input
+                id="add-data"
+                type="date"
+                value={addData}
+                onChange={(e) => setAddData(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="add-nome">Nome do evento</Label>
+              <Input
+                id="add-nome"
+                placeholder="Ex: Aula de Catequese"
+                value={addNome}
+                onChange={(e) => setAddNome(e.target.value)}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="add-desc">Descrição (opcional)</Label>
+              <Textarea
+                id="add-desc"
+                placeholder="Ex: Tema: Os Sacramentos"
+                value={addDesc}
+                onChange={(e) => setAddDesc(e.target.value)}
+                rows={3}
+              />
+            </div>
+            <div className="flex gap-2">
+              <Button variant="outline" className="flex-1" onClick={() => setAddModal(false)}>Cancelar</Button>
+              <Button className="flex-1" onClick={handleAddEvento} disabled={saving}>
+                {saving ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Plus className="h-4 w-4 mr-1" />}
+                Salvar
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Alert: confirmar exclusão */}
+      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remover evento?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta ação não pode ser desfeita. O evento será removido para todos os catequistas.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-destructive hover:bg-destructive/90"
+              onClick={() => deleteId && handleDelete(deleteId)}
+            >
+              Remover
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
