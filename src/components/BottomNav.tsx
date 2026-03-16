@@ -6,6 +6,7 @@ import {
   ShieldCheck,
   Church,
   Building2,
+  CalendarDays,
 } from "lucide-react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
@@ -16,6 +17,7 @@ const CATECHIST_TABS = [
   { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
   { path: "/missas", icon: Church, label: "Missas" },
   { path: "/alunos", icon: Users, label: "Catequizandos" },
+  { path: "/calendario", icon: CalendarDays, label: "Calendário" },
   { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
 ];
 
@@ -25,6 +27,7 @@ const CATECHIST_COORD_TABS = [
   { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
   { path: "/missas", icon: Church, label: "Missas" },
   { path: "/alunos", icon: Users, label: "Catequizandos" },
+  { path: "/calendario", icon: CalendarDays, label: "Calendário" },
   { path: "/coordenador", icon: Building2, label: "Paróquia" },
   { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
 ];
@@ -33,6 +36,7 @@ const ADMIN_TABS = [
   { path: "/", icon: Home, label: "Início" },
   { path: "/chamada", icon: ClipboardCheck, label: "Chamada" },
   { path: "/alunos", icon: Users, label: "Catequizandos" },
+  { path: "/calendario", icon: CalendarDays, label: "Calendário" },
   { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
   { path: "/admin", icon: ShieldCheck, label: "Admin" },
 ];
@@ -40,23 +44,21 @@ const ADMIN_TABS = [
 const COORDINATOR_TABS = [
   { path: "/", icon: Home, label: "Início" },
   { path: "/coordenador", icon: Building2, label: "Paróquia" },
+  { path: "/calendario", icon: CalendarDays, label: "Calendário" },
   { path: "/relatorios", icon: BarChart3, label: "Relatórios" },
 ];
 
 export default function BottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, isAdmin, isCoordinator, isCatequista } = useAuth();
+  const { isAdmin, isCoordinator, isCatequista } = useAuth();
 
-  // Determina o conjunto de abas correto
   let tabs;
   if (isAdmin) {
     tabs = ADMIN_TABS;
   } else if (isCatequista && isCoordinator) {
-    // Catequista que também coordena: abas completas
     tabs = CATECHIST_COORD_TABS;
   } else if (isCoordinator) {
-    // Coordenador puro: apenas abas de coordenador
     tabs = COORDINATOR_TABS;
   } else {
     tabs = CATECHIST_TABS;

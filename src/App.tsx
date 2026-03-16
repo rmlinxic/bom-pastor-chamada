@@ -21,6 +21,7 @@ import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
 import CoordinadorView from "./pages/CoordinadorView";
 import AnoLetivo from "./pages/AnoLetivo";
+import Calendario from "./pages/Calendario";
 import BottomNav from "./components/BottomNav";
 import ProtectedRoute from "./components/ProtectedRoute";
 import SessionGuard from "./components/SessionGuard";
@@ -75,6 +76,7 @@ function AppLayout() {
         <Route path="/alunos" element={<ProtectedRoute><Students /></ProtectedRoute>} />
         <Route path="/relatorios" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
         <Route path="/missas" element={<ProtectedRoute><Missas /></ProtectedRoute>} />
+        <Route path="/calendario" element={<ProtectedRoute><Calendario /></ProtectedRoute>} />
         <Route path="/coordenador" element={<CoordinatorRoute><CoordinadorView /></CoordinatorRoute>} />
         <Route path="/ano-letivo" element={<CoordinatorRoute><AnoLetivo /></CoordinatorRoute>} />
         <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
