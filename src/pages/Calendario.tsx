@@ -68,7 +68,7 @@ interface Evento {
 type BulkMode = "mes" | "ano" | "tudo";
 
 const MESES = [
-  "Janeiro", "Fevereiro", "Mar\u00e7o", "Abril", "Maio", "Junho",
+  "Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho",
   "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro",
 ];
 
@@ -128,7 +128,7 @@ function downloadCSV(eventos: Evento[]) {
 function getEventoLabel(dataStr: string): { label: string; variant: "hoje" | "amanha" | "breve" | "futuro" } {
   const d = parseISO(dataStr);
   if (isToday(d)) return { label: "Hoje", variant: "hoje" };
-  if (isTomorrow(d)) return { label: "Amanh\u00e3", variant: "amanha" };
+  if (isTomorrow(d)) return { label: "Amanhã", variant: "amanha" };
   const diff = differenceInCalendarDays(d, startOfDay(new Date()));
   if (diff <= 7) return { label: `Em ${diff} dias`, variant: "breve" };
   return { label: format(d, "dd/MM", { locale: ptBR }), variant: "futuro" };
@@ -153,7 +153,7 @@ export default function Calendario() {
 
   const [deleteId, setDeleteId] = useState<string | null>(null);
 
-  // Exclus\u00e3o em massa
+  // Exclusão em massa
   const [bulkModal, setBulkModal] = useState(false);
   const [bulkMode, setBulkMode] = useState<BulkMode>("mes");
   const [bulkMes, setBulkMes] = useState<string>(String(getMonth(new Date())));
@@ -181,13 +181,13 @@ export default function Calendario() {
 
   useEffect(() => { fetchEventos(); }, [fetchEventos]);
 
-  // Anos dispon\u00edveis nos eventos
+  // Anos disponíveis nos eventos
   const anosDisponiveis = useMemo(() => {
     const anos = new Set(eventos.map((ev) => String(getYear(parseISO(ev.data)))));
     return Array.from(anos).sort();
   }, [eventos]);
 
-  // Preview de quantos eventos ser\u00e3o deletados
+  // Preview de quantos eventos serão deletados
   const bulkPreview = useMemo(() => {
     if (bulkMode === "tudo") return eventos.length;
     if (bulkMode === "ano") return eventos.filter((ev) => String(getYear(parseISO(ev.data))) === bulkAno).length;
@@ -198,7 +198,7 @@ export default function Calendario() {
   }, [bulkMode, bulkMes, bulkAno, eventos]);
 
   const bulkLabel = useMemo(() => {
-    if (bulkMode === "tudo") return "todo o per\u00edodo";
+    if (bulkMode === "tudo") return "todo o período";
     if (bulkMode === "ano") return `ano ${bulkAno}`;
     return `${MESES[Number(bulkMes)]} de ${bulkAno}`;
   }, [bulkMode, bulkMes, bulkAno]);
@@ -208,7 +208,7 @@ export default function Calendario() {
     setBulkDeleting(true);
     let query = (supabase as any).from("calendario_eventos").delete();
     if (bulkMode === "tudo") {
-      query = query.neq("id", "00000000-0000-0000-0000-000000000000"); // deleta todos
+      query = query.neq("id", "00000000-0000-0000-0000-000000000000");
     } else if (bulkMode === "ano") {
       query = query
         .gte("data", `${bulkAno}-01-01`)
@@ -335,8 +335,8 @@ export default function Calendario() {
           <div className="flex items-center gap-3">
             <CalendarDays className="h-7 w-7 text-primary" />
             <div>
-              <h1 className="text-2xl font-bold">Calend\u00e1rio da Catequese</h1>
-              <p className="text-sm text-muted-foreground">Cronograma compartilhado da par\u00f3quia</p>
+              <h1 className="text-2xl font-bold">Calendário da Catequese</h1>
+              <p className="text-sm text-muted-foreground">Cronograma compartilhado da paróquia</p>
             </div>
           </div>
           {podeEditar && (
@@ -346,13 +346,13 @@ export default function Calendario() {
           )}
         </div>
 
-        {/* PR\u00d3XIMOS EVENTOS */}
+        {/* PRÓXIMOS EVENTOS */}
         {!loading && proximos.length > 0 && (
           <Card className="border-primary/30 bg-primary/5">
             <CardHeader className="pb-3">
               <CardTitle className="text-base flex items-center gap-2">
                 <Sparkles className="h-4 w-4 text-primary" />
-                Pr\u00f3ximos eventos
+                Próximos eventos
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-2 pt-0">
@@ -390,7 +390,7 @@ export default function Calendario() {
           </Card>
         )}
 
-        {/* Toolbar CSV + exclus\u00e3o em massa */}
+        {/* Toolbar CSV + exclusão em massa */}
         {podeEditar ? (
           <div className="space-y-2">
             <div className="flex gap-2">
@@ -408,7 +408,7 @@ export default function Calendario() {
                   {saving ? <Loader2 className="h-5 w-5 animate-spin text-primary" /> : <Upload className="h-5 w-5 text-muted-foreground" />}
                   <div>
                     <p className="text-sm font-medium">Importar CSV</p>
-                    <p className="text-xs text-muted-foreground">data, nome, descri\u00e7\u00e3o</p>
+                    <p className="text-xs text-muted-foreground">data, nome, descrição</p>
                   </div>
                   <input ref={fileInputRef} type="file" accept=".csv" className="hidden" onChange={handleFileChange} />
                 </CardContent>
@@ -450,7 +450,7 @@ export default function Calendario() {
 
         {eventos.length > 0 && (
           <div className="flex gap-2 flex-wrap">
-            <Badge variant="secondary">{eventos.length} evento(s) no calend\u00e1rio</Badge>
+            <Badge variant="secondary">{eventos.length} evento(s) no calendário</Badge>
             {!podeEditar && (
               <Badge variant="outline" className="flex items-center gap-1 text-muted-foreground">
                 <Lock className="h-3 w-3" /> Somente leitura
@@ -459,7 +459,7 @@ export default function Calendario() {
           </div>
         )}
 
-        {/* Calend\u00e1rio */}
+        {/* Calendário */}
         <Card>
           <CardHeader className="pb-2">
             <CardTitle className="text-base">
@@ -488,11 +488,11 @@ export default function Calendario() {
           </CardContent>
         </Card>
 
-        {/* Lista de eventos do m\u00eas */}
+        {/* Lista de eventos do mês */}
         {eventosMes.length > 0 && (
           <Card>
             <CardHeader className="pb-2">
-              <CardTitle className="text-base">Eventos do m\u00eas</CardTitle>
+              <CardTitle className="text-base">Eventos do mês</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               {eventosMes.map((ev) => (
@@ -585,7 +585,7 @@ export default function Calendario() {
                 <Input id="add-nome" placeholder="Ex: Aula de Catequese" value={addNome} onChange={(e) => setAddNome(e.target.value)} />
               </div>
               <div className="space-y-1">
-                <Label htmlFor="add-desc">Descri\u00e7\u00e3o (opcional)</Label>
+                <Label htmlFor="add-desc">Descrição (opcional)</Label>
                 <Textarea id="add-desc" placeholder="Ex: Tema: Os Sacramentos" value={addDesc} onChange={(e) => setAddDesc(e.target.value)} rows={3} />
               </div>
               <div className="flex gap-2">
@@ -600,7 +600,7 @@ export default function Calendario() {
         </Dialog>
       )}
 
-      {/* Modal: exclus\u00e3o em massa */}
+      {/* Modal: exclusão em massa */}
       {podeEditar && (
         <Dialog open={bulkModal} onOpenChange={(o) => { if (!o) { setBulkModal(false); setBulkConfirm(false); } }}>
           <DialogContent className="max-w-sm">
@@ -609,27 +609,25 @@ export default function Calendario() {
                 <ShieldAlert className="h-5 w-5" /> Excluir eventos em massa
               </DialogTitle>
               <DialogDescription>
-                Selecione o per\u00edodo e confirme. Esta a\u00e7\u00e3o \u00e9 irrevers\u00edvel.
+                Selecione o período e confirme. Esta ação é irreversível.
               </DialogDescription>
             </DialogHeader>
 
             <div className="space-y-4 mt-2">
-              {/* Tipo de per\u00edodo */}
               <div className="space-y-1">
-                <Label>Per\u00edodo</Label>
+                <Label>Período</Label>
                 <Select value={bulkMode} onValueChange={(v) => setBulkMode(v as BulkMode)}>
                   <SelectTrigger>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="mes">Um m\u00eas espec\u00edfico</SelectItem>
+                    <SelectItem value="mes">Um mês específico</SelectItem>
                     <SelectItem value="ano">Um ano inteiro</SelectItem>
-                    <SelectItem value="tudo">Todo o per\u00edodo (limpar tudo)</SelectItem>
+                    <SelectItem value="tudo">Todo o período (limpar tudo)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
 
-              {/* Seletor de ano (sempre vis\u00edvel exceto no modo "tudo") */}
               {bulkMode !== "tudo" && (
                 <div className="space-y-1">
                   <Label>Ano</Label>
@@ -647,10 +645,9 @@ export default function Calendario() {
                 </div>
               )}
 
-              {/* Seletor de m\u00eas */}
               {bulkMode === "mes" && (
                 <div className="space-y-1">
-                  <Label>M\u00eas</Label>
+                  <Label>Mês</Label>
                   <Select value={bulkMes} onValueChange={setBulkMes}>
                     <SelectTrigger>
                       <SelectValue />
@@ -664,18 +661,16 @@ export default function Calendario() {
                 </div>
               )}
 
-              {/* Preview */}
               <div className={`rounded-lg px-4 py-3 text-sm flex items-center gap-2 ${
                 bulkPreview === 0 ? "bg-muted text-muted-foreground" : "bg-destructive/10 text-destructive font-semibold"
               }`}>
                 <Trash2 className="h-4 w-4 flex-shrink-0" />
                 {bulkPreview === 0
                   ? `Nenhum evento encontrado em ${bulkLabel}.`
-                  : `${bulkPreview} evento(s) ser\u00e3o exclu\u00eddos de ${bulkLabel}.`
+                  : `${bulkPreview} evento(s) serão excluídos de ${bulkLabel}.`
                 }
               </div>
 
-              {/* Bot\u00f5es */}
               <div className="flex gap-2">
                 <Button variant="outline" className="flex-1" onClick={() => { setBulkModal(false); setBulkConfirm(false); }}>
                   Cancelar
@@ -695,12 +690,12 @@ export default function Calendario() {
         </Dialog>
       )}
 
-      {/* Alert: confirmar exclus\u00e3o unit\u00e1ria */}
+      {/* Alert: confirmar exclusão unitária */}
       <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remover evento?</AlertDialogTitle>
-            <AlertDialogDescription>Esta a\u00e7\u00e3o n\u00e3o pode ser desfeita.</AlertDialogDescription>
+            <AlertDialogDescription>Esta ação não pode ser desfeita.</AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
@@ -711,13 +706,13 @@ export default function Calendario() {
         </AlertDialogContent>
       </AlertDialog>
 
-      {/* Alert: confirmar exclus\u00e3o em massa */}
+      {/* Alert: confirmar exclusão em massa */}
       <AlertDialog open={bulkConfirm} onOpenChange={(o) => !o && setBulkConfirm(false)}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar exclus\u00e3o em massa?</AlertDialogTitle>
+            <AlertDialogTitle>Confirmar exclusão em massa?</AlertDialogTitle>
             <AlertDialogDescription>
-              Voc\u00ea est\u00e1 prestes a excluir <strong>{bulkPreview} evento(s)</strong> de <strong>{bulkLabel}</strong>. Esta a\u00e7\u00e3o n\u00e3o pode ser desfeita.
+              Você está prestes a excluir <strong>{bulkPreview} evento(s)</strong> de <strong>{bulkLabel}</strong>. Esta ação não pode ser desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
