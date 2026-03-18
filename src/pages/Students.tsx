@@ -1,14 +1,16 @@
 import { useState, useRef } from "react";
 import {
   Plus, Search, Edit, Trash2, ChevronDown, ChevronUp,
-  CheckCircle, XCircle, AlertTriangle, Clock, Upload, Download,
+  CheckCircle, XCircle, AlertTriangle, Clock, Upload, Download, FileCheck,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import PageHeader from "@/components/PageHeader";
 import { useStudents, useDeleteStudent, useImportStudents } from "@/hooks/useStudents";
 import { useAllAttendance } from "@/hooks/useAttendance";
+import { useAllDocumentos } from "@/hooks/useDocumentos";
 import StudentForm from "@/components/StudentForm";
+import DocumentosModal from "@/components/DocumentosModal";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { cn } from "@/lib/utils";
@@ -35,9 +37,16 @@ function downloadCSVTemplate() {
   URL.revokeObjectURL(url);
 }
 
+/** Retorna true se a turma exige checklist de documentos */
+function requiresDocs(className: string) {
+  const c = (className ?? "").toLowerCase();
+  return c.includes("quarta") || c.includes("4") || c.includes("crisma");
+}
+
 export default function Students() {
   const { data: students = [], isLoading } = useStudents();
   const { data: attendance = [] } = useAllAttendance();
+  const { data: documentos = [] } = useAllDocumentos();
   const deleteMutation = useDeleteStudent();
   const importMutation = useImportStudents();
 
@@ -45,6 +54,7 @@ export default function Students() {
   const [showForm, setShowForm] = useState(false);
   const [editingStudent, setEditingStudent] = useState<any>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [docStudent, setDocStudent] = useState<any>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
 
   const filtered = students.filter((s) =>
@@ -134,7 +144,6 @@ export default function Students() {
           />
         </div>
 
-        {/* Botão baixar modelo CSV */}
         <Button
           variant="outline"
           size="icon"
@@ -145,7 +154,6 @@ export default function Students() {
           <Download className="h-5 w-5" />
         </Button>
 
-        {/* Botão importar via CSV */}
         <Button
           variant="outline"
           size="icon"
@@ -164,7 +172,6 @@ export default function Students() {
           onChange={handleCSVChange}
         />
 
-        {/* Botão novo catequizando */}
         <Button onClick={() => setShowForm(true)} size="icon" className="shrink-0">
           <Plus className="h-5 w-5" />
         </Button>
@@ -187,6 +194,16 @@ export default function Students() {
           const pct = totalCount > 0 ? Math.round((presentCount / totalCount) * 100) : null;
           const unjustifiedCount = history.filter((h) => h.status === "falta_nao_justificada").length;
 
+          // Verifica estado dos documentos
+          const needsDocs = requiresDocs(student.class_name ?? "");
+          const docRecord = needsDocs ? documentos.find((d) => d.student_id === student.id) : null;
+          const isCrisma = (student.class_name ?? "").toLowerCase().includes("crisma");
+          const docsComplete = docRecord
+            ? isCrisma
+              ? docRecord.batismo && docRecord.endereco && docRecord.crisma_padrinho && docRecord.primeira_comunhao
+              : docRecord.batismo && docRecord.endereco
+            : false;
+
           return (
             <div
               key={student.id}
@@ -197,15 +214,40 @@ export default function Students() {
             >
               {/* Header do card */}
               <div className="flex items-center justify-between p-4 gap-3">
-                <button
-                  className="flex-1 text-left min-w-0"
-                  onClick={() => toggleExpand(student.id)}
-                >
+                <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <p className="font-semibold text-foreground truncate">{student.name}</p>
+                    {/* Nome: abre modal de documentos para Quarta Etapa / Crisma, histórico para o resto */}
+                    <button
+                      className={cn(
+                        "font-semibold text-foreground truncate text-left transition-colors",
+                        needsDocs && "hover:text-primary underline-offset-2 hover:underline cursor-pointer"
+                      )}
+                      onClick={() =>
+                        needsDocs ? setDocStudent(student) : toggleExpand(student.id)
+                      }
+                      title={needsDocs ? "Gerenciar documentos" : "Ver histórico"}
+                    >
+                      {student.name}
+                    </button>
                     {unjustifiedCount >= 2 && (
                       <span className="shrink-0 text-[10px] font-bold rounded-full bg-destructive/15 text-destructive px-1.5 py-0.5">
                         {unjustifiedCount} FN
+                      </span>
+                    )}
+                    {/* Badge de documentos */}
+                    {needsDocs && (
+                      <span
+                        className={cn(
+                          "shrink-0 text-[10px] font-bold rounded-full px-1.5 py-0.5 cursor-pointer",
+                          docsComplete
+                            ? "bg-green-500/15 text-green-600 dark:text-green-400"
+                            : "bg-orange-400/15 text-orange-600 dark:text-orange-400"
+                        )}
+                        onClick={() => setDocStudent(student)}
+                        title="Documentos"
+                      >
+                        <FileCheck className="h-3 w-3 inline" />
+                        {docsComplete ? " OK" : " Pendente"}
                       </span>
                     )}
                   </div>
@@ -222,7 +264,7 @@ export default function Students() {
                       </span>
                     )}
                   </div>
-                </button>
+                </div>
 
                 <div className="flex items-center gap-1 shrink-0">
                   <button
@@ -304,6 +346,14 @@ export default function Students() {
         <StudentForm
           student={editingStudent}
           onClose={handleCloseForm}
+        />
+      )}
+
+      {/* Modal de documentos */}
+      {docStudent && (
+        <DocumentosModal
+          student={docStudent}
+          onClose={() => setDocStudent(null)}
         />
       )}
     </div>
