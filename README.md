@@ -1,61 +1,57 @@
-# ⛪ Catequese Bom Pastor — Sistema de Chamada
+# Bom Pastor — Sistema de Presença
 
-App web para controle de presença de catequizandos da Paróquia Bom Pastor.
+Aplicação web para controle de presença de catequizandos da Paroquía Bom Pastor. Permite registro diário de chamadas, gerenciamento de alunos e geração de relatórios por turma, com backend em PostgreSQL via Supabase.
+
+**Deploy:** [rmlinxic.github.io/bom-pastor-chamada](https://rmlinxic.github.io/bom-pastor-chamada/)
 
 ## Funcionalidades
 
-- 🗓️ **Chamada diária** — registre presença, falta ou falta justificada por data
-- 👥 **Gerenciar alunos** — cadastrar, editar, remover e ver histórico por aluno
-- 📊 **Dashboard** — painel com estatísticas e alerta de alunos com 3+ faltas
-- 📄 **Relatórios** — histórico filtrado por turma com exportação em CSV
-- 📝 **Portal de justificativa** — página externa para pais enviarem justificativas
+- Registro de presença, falta e falta justificada por data e turma
+- Cadastro, edição e remoção de alunos com histórico individual
+- Dashboard com estatísticas de frequência e alerta para alunos com 3 ou mais faltas consecutivas
+- Exportação de histórico filtrado por turma em CSV
+- Portal externo para envio de justificativas pelos responsáveis
 
-## Tecnologias
+## Stack
 
-- [React 18](https://react.dev) + [TypeScript](https://typescriptlang.org)
-- [Vite](https://vitejs.dev) (bundler)
-- [Tailwind CSS](https://tailwindcss.com) + [shadcn/ui](https://ui.shadcn.com)
-- [Supabase](https://supabase.com) (banco de dados PostgreSQL + API)
-- [TanStack Query](https://tanstack.com/query) (cache e gerenciamento de estado)
+| Tecnologia | Papel |
+|---|---|
+| React 18 + TypeScript | Framework UI |
+| Vite | Bundler |
+| Tailwind CSS + shadcn/ui | Interface e componentes |
+| Supabase (PostgreSQL) | Banco de dados e API REST |
+| TanStack Query | Cache e gerenciamento de estado assensíncrono |
 
 ## Configuração
 
-Veja o arquivo **[SUPABASE_SETUP.md](./SUPABASE_SETUP.md)** para instruções completas de:
-- Como criar sua conta gratuita no Supabase
-- Como criar as tabelas no banco de dados
-- Como configurar o deploy no GitHub Pages
-
-## Rodando localmente
+Consulte o arquivo [`SUPABASE_SETUP.md`](./SUPABASE_SETUP.md) para instruções completas de criação das tabelas, configuração de políticas RLS e deploy no GitHub Pages.
 
 ```bash
-# 1. Instalar dependências
+# Instalar dependências
 npm install
 
-# 2. Copiar o arquivo de variáveis de ambiente
+# Configurar variáveis de ambiente
 cp .env.example .env
-# Edite o .env com suas credenciais do Supabase
+# Preencher VITE_SUPABASE_URL e VITE_SUPABASE_ANON_KEY
 
-# 3. Iniciar o servidor de desenvolvimento
+# Iniciar servidor local
 npm run dev
+# Acesso: http://localhost:8080
 ```
 
-Acesse `http://localhost:8080`
-
-## Deploy
-
-O deploy é feito automaticamente via **GitHub Actions** toda vez que você fizer push na branch `main`.
-
-App em produção: `https://rmlinxic.github.io/bom-pastor-chamada/`
-
-## Estrutura do projeto
+## Estrutura
 
 ```
 src/
-├── components/     # Componentes reutilizáveis (NavBar, Cards...)
-├── hooks/          # Lógica de dados (useStudents, useAttendance...)
-├── integrations/   # Cliente Supabase + tipos TypeScript
+├── components/     # Componentes reutilizáveis
+├── hooks/          # Lógica de dados (useStudents, useAttendance)
+├── integrations/   # Cliente Supabase e tipos TypeScript
 ├── pages/          # Páginas da aplicação
 └── lib/            # Utilitários
 supabase/
-└── migrations/     # Scripts SQL para criar o banco
+└── migrations/     # Scripts SQL de criação do banco
 ```
+
+## CI/CD
+
+O deploy é executado automaticamente via GitHub Actions a cada push na branch `main`.
