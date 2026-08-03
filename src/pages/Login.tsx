@@ -30,17 +30,15 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 py-8">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-10">
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 mb-4">
-            <Church className="h-10 w-10 text-primary" />
+    <div className="public-shell">
+      <div className="public-panel max-w-md">
+        <div className="mb-8 flex flex-col items-center">
+          <div className="brand-mark mb-5 h-20 w-20">
+            <Church className="h-10 w-10" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground text-center">Bom Pastor</h1>
-          <p className="text-sm text-muted-foreground text-center mt-1">Sistema de Chamada</p>
-          <span className="mt-2 rounded-full bg-primary/10 px-3 py-0.5 text-xs font-medium text-primary">
-            Área do Catequista
-          </span>
+          <p className="brand-kicker mb-2">Área do catequista</p>
+          <h1 className="text-center text-3xl font-bold tracking-[-0.035em] text-foreground">Catequese Bom Pastor</h1>
+          <p className="mt-2 text-center text-sm font-medium text-muted-foreground">Presença, cuidado e comunidade em um só lugar.</p>
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
@@ -105,7 +103,7 @@ export default function Login() {
           </Button>
         </form>
 
-        <p className="text-xs text-center text-muted-foreground mt-10">
+        <p className="mt-8 border-t border-border/70 pt-6 text-center text-xs text-muted-foreground">
           Você é pai ou responsável?{" "}
           <a
             href="#/justificativa"

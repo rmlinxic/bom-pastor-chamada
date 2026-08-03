@@ -374,7 +374,7 @@ export default function Admin() {
                 {form.etapa && (
                   <div>
                     <Label>
-                      Turma <span className="text-muted-foreground text-xs font-normal ml-1">(opcional — use A, B, C... se houver mais de um catequista nesta etapa)</span>
+                      Turma <span className="text-muted-foreground text-xs font-normal ml-1">(opcional - use A, B, C... se houver mais de um catequista nesta etapa)</span>
                     </Label>
                     <Select value={form.turma || "__none__"}
                       onValueChange={(v) => setForm({ ...form, turma: v === "__none__" ? "" : v })}>
@@ -382,9 +382,9 @@ export default function Admin() {
                         <SelectValue />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__none__">Sem subturma — única turma desta etapa</SelectItem>
+                        <SelectItem value="__none__">Sem subturma - única turma desta etapa</SelectItem>
                         {["A","B","C","D","E","F","G","H"].map((l) => (
-                          <SelectItem key={l} value={l}>Turma {l} — ex: "{form.etapa} {l}"</SelectItem>
+                          <SelectItem key={l} value={l}>Turma {l} - ex: "{form.etapa} {l}"</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>

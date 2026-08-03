@@ -180,7 +180,7 @@ export default function CoordinadorView() {
                 {stats!.catequistas.map((c: any) => (
                   <div key={c.id} className="flex items-center gap-2 text-sm">
                     <span className="flex-1 font-medium">{c.name}</span>
-                    <span className="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5">{c.etapa ?? "—"}</span>
+                    <span className="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5">{c.etapa ?? "-"}</span>
                   </div>
                 ))}
               </div>
@@ -199,7 +199,7 @@ export default function CoordinadorView() {
           <div className="rounded-lg border border-warning/40 bg-warning/5 p-4">
             <div className="flex items-center gap-2 mb-1">
               <AlertTriangle className="h-5 w-5 text-warning" />
-              <span className="font-bold text-warning">Promoções Pendentes — {pendentes.length} aluno{pendentes.length !== 1 ? "s" : ""}</span>
+              <span className="font-bold text-warning">Promoções Pendentes - {pendentes.length} aluno{pendentes.length !== 1 ? "s" : ""}</span>
             </div>
             <p className="text-xs text-muted-foreground mb-4">
               Esses alunos ultrapassaram o limite de 3 faltas no ano {anoAtual}. Decida manualmente a promoção.
@@ -213,7 +213,7 @@ export default function CoordinadorView() {
                   <div key={p.id} className="rounded-lg border border-border bg-card p-3">
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <div>
-                        <p className="font-semibold text-sm">{p.students?.name ?? "—"}</p>
+                        <p className="font-semibold text-sm">{p.students?.name ?? "-"}</p>
                         <p className="text-xs text-muted-foreground">
                           {etapaAtual}{novaEtapa !== etapaAtual ? ` → ${novaEtapa}` : " (sem próxima etapa)"}
                         </p>
@@ -368,7 +368,7 @@ export default function CoordinadorView() {
                 <Label>
                   Turma{" "}
                   <span className="text-muted-foreground text-xs font-normal ml-1">
-                    (opcional — A, B, C...)
+                    (opcional - A, B, C...)
                   </span>
                 </Label>
                 <Select

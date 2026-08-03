@@ -236,7 +236,7 @@ export default function AnoLetivo() {
           </div>
         )}
 
-        {/* PASSO 2 — Etapas dos catequistas */}
+        {/* PASSO 2 - Etapas dos catequistas */}
         {step === 2 && (
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-card p-4">
@@ -300,7 +300,7 @@ export default function AnoLetivo() {
           </div>
         )}
 
-        {/* PASSO 3 — Revisão */}
+        {/* PASSO 3 - Revisão */}
         {step === 3 && (
           <div className="space-y-4">
             <div className="rounded-lg border border-border bg-card p-4">
@@ -314,7 +314,7 @@ export default function AnoLetivo() {
                   return (
                     <div key={c.id} className="flex items-center gap-2 text-sm">
                       <span className="flex-1 font-medium truncate">{c.name}</span>
-                      <span className="text-muted-foreground text-xs shrink-0">{c.etapa ?? "—"}</span>
+                      <span className="text-muted-foreground text-xs shrink-0">{c.etapa ?? "-"}</span>
                       {nova !== c.etapa ? (
                         <>
                           <ArrowRight className="h-3.5 w-3.5 text-primary shrink-0" />

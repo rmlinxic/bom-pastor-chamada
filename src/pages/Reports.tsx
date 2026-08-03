@@ -247,7 +247,7 @@ export default function Reports() {
       );
 
     const rows: (string | number)[][] = [
-      ["RELATÓRIO DE PRESENÇAS — CATEQUESE BOM PASTOR"],
+      ["RELATÓRIO DE PRESENÇAS - CATEQUESE BOM PASTOR"],
       [`Gerado em: ${new Date().toLocaleString("pt-BR")}`],
       ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta Não Justificada"],
       pad(colCount),
@@ -336,7 +336,7 @@ export default function Reports() {
     if (showGrouped && selectedClass === "all") {
       // Criar aba GERAL primeiro
       const geralData: any[][] = [
-        ["RELATÓRIO DE PRESENÇAS — CATEQUESE BOM PASTOR"],
+        ["RELATÓRIO DE PRESENÇAS - CATEQUESE BOM PASTOR"],
         [`Gerado em: ${new Date().toLocaleString("pt-BR")}`],
         ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta Não Justificada"],
         [],
@@ -469,7 +469,7 @@ export default function Reports() {
     } else {
       // Modo simples (catequista ou turma específica selecionada)
       const data: any[][] = [
-        ["RELATÓRIO DE PRESENÇAS — CATEQUESE BOM PASTOR"],
+        ["RELATÓRIO DE PRESENÇAS - CATEQUESE BOM PASTOR"],
         [`Turma: ${selectedClass === "all" ? "Todas" : selectedClass}`],
         [`Gerado em: ${new Date().toLocaleString("pt-BR")}`],
         ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta Não Justificada"],
@@ -634,10 +634,10 @@ export default function Reports() {
     }
 
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Relatório de Presenças — ${turmaLabel}</title>
+<title>Relatório de Presenças - ${turmaLabel}</title>
 <style>body{font-family:Arial,sans-serif;color:#1e293b;padding:20px}h1{font-size:18px;margin-bottom:2px}p.sub{font-size:12px;color:#64748b;margin:2px 0 12px}th{text-align:left}@media print{button{display:none}}</style>
 </head><body>
-<h1>Relatório de Presenças — Catequese Bom Pastor</h1>
+<h1>Relatório de Presenças - Catequese Bom Pastor</h1>
 <p class="sub">Turma: <strong>${turmaLabel}</strong> &nbsp;|&nbsp; Gerado em: ${new Date().toLocaleString("pt-BR")}</p>
 <p class="sub" style="margin-bottom:12px"><strong>Legenda:</strong> P = Presente &nbsp; FJ = Falta Justificada &nbsp; FN = Falta Não Justificada</p>
 ${bodyContent}
@@ -656,7 +656,7 @@ ${bodyContent}
       massDatesByStudent[r.student_id].push(format(new Date(r.date + "T12:00:00"), "dd/MM/yyyy (EEE)", { locale: ptBR }));
     });
     const rows: (string | number)[][] = [
-      [`RELATÓRIO DE MISSAS — ${mLabel.toUpperCase()}${etapaLabel.toUpperCase()}`],
+      [`RELATÓRIO DE MISSAS - ${mLabel.toUpperCase()}${etapaLabel.toUpperCase()}`],
       ["Regra: mínimo 1 missa por mês"],
       [`Gerado em: ${new Date().toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" })}`],
       [],
@@ -716,7 +716,7 @@ ${bodyContent}
   }
 
   function handleExportMassXLSX() {
-    const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` — ${selectedMassEtapa}` : "";
+    const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` - ${selectedMassEtapa}` : "";
     const mLabel = monthLabel(massMonth);
     const massDatesByStudent: Record<string, string[]> = {};
     massRecords.forEach((r) => {
@@ -735,7 +735,7 @@ ${bodyContent}
     if (showGrouped && selectedMassEtapa === "all") {
       // Aba GERAL
       const geralData: any[][] = [
-        [`RELATÓRIO DE MISSAS — ${mLabel.toUpperCase()}${etapaLabel.toUpperCase()}`],
+        [`RELATÓRIO DE MISSAS - ${mLabel.toUpperCase()}${etapaLabel.toUpperCase()}`],
         ["Regra: mínimo 1 missa por mês"],
         [`Gerado em: ${new Date().toLocaleString("pt-BR")}`],
         [],
@@ -853,7 +853,7 @@ ${bodyContent}
 
     } else {
       const data: any[][] = [
-        [`RELATÓRIO DE MISSAS — ${mLabel.toUpperCase()}${etapaLabel.toUpperCase()}`],
+        [`RELATÓRIO DE MISSAS - ${mLabel.toUpperCase()}${etapaLabel.toUpperCase()}`],
         ["Regra: mínimo 1 missa por mês"],
         [`Gerado em: ${new Date().toLocaleString("pt-BR")}`],
         [],
@@ -933,9 +933,9 @@ ${bodyContent}
         a.class_name.localeCompare(b.class_name) ||
         a.name.localeCompare(b.name)
       );
-      const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` — ${selectedMassEtapa}` : "";
+      const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` - ${selectedMassEtapa}` : "";
       const rows: (string | number)[][] = [
-        [`RELATÓRIO ANUAL DE MISSAS — ${year}${etapaLabel}`],
+        [`RELATÓRIO ANUAL DE MISSAS - ${year}${etapaLabel}`],
         ["Regra: mínimo 1 missa por mês  |✓ = conforme  |✗ = sem registro"],
         [`Gerado em: ${new Date().toLocaleString("pt-BR", { dateStyle: "full", timeStyle: "short" })}`],
         [],
@@ -1005,14 +1005,14 @@ ${bodyContent}
         a.class_name.localeCompare(b.class_name) ||
         a.name.localeCompare(b.name)
       );
-      const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` — ${selectedMassEtapa}` : "";
+      const etapaLabel = isAdmin && selectedMassEtapa !== "all" ? ` - ${selectedMassEtapa}` : "";
 
       const wb = XLSX.utils.book_new();
 
       if (showGrouped && selectedMassEtapa === "all") {
         // Aba GERAL
         const geralData: any[][] = [
-          [`RELATÓRIO ANUAL DE MISSAS — ${year}${etapaLabel}`],
+          [`RELATÓRIO ANUAL DE MISSAS - ${year}${etapaLabel}`],
           ["Regra: mínimo 1 missa por mês  |✓ = conforme  |✗ = sem registro"],
           [`Gerado em: ${new Date().toLocaleString("pt-BR")}`],
           [],
@@ -1130,7 +1130,7 @@ ${bodyContent}
 
       } else {
         const data: any[][] = [
-          [`RELATÓRIO ANUAL DE MISSAS — ${year}${etapaLabel}`],
+          [`RELATÓRIO ANUAL DE MISSAS - ${year}${etapaLabel}`],
           ["Regra: mínimo 1 missa por mês  |✓ = conforme  |✗ = sem registro"],
           [`Gerado em: ${new Date().toLocaleString("pt-BR")}`],
           [],
@@ -1199,7 +1199,7 @@ ${bodyContent}
             <AlertTriangle className="h-5 w-5 text-destructive" />
             <span className="font-semibold text-destructive">Alunos em Alerta (3+ faltas não justificadas)</span>
           </div>
-          {alertStudents.map((s) => (<p key={s.id} className="text-sm text-destructive">{s.name} — {unjustifiedCounts[s.id]} faltas</p>))}
+          {alertStudents.map((s) => (<p key={s.id} className="text-sm text-destructive">{s.name} - {unjustifiedCounts[s.id]} faltas</p>))}
         </div>
       )}
 
@@ -1310,7 +1310,7 @@ ${bodyContent}
             <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
               <span>Exibindo chamada de</span>
               <span className="font-semibold text-foreground capitalize">{dateLabel}</span>
-              <span>—</span>
+              <span>-</span>
               <span className="text-success font-medium">
                 {filteredAttendance.filter((a) => a.status === "presente").length} presentes
               </span>
@@ -1526,7 +1526,7 @@ ${bodyContent}
             <div className="mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-3">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-4 w-4 text-destructive" />
-                <p className="text-sm font-semibold text-destructive">Faltam {daysLeft} dia{daysLeft !== 1 ? "s" : ""} — {massNonCompliant.length} aluno{massNonCompliant.length !== 1 ? "s" : ""} sem missa.</p>
+                <p className="text-sm font-semibold text-destructive">Faltam {daysLeft} dia{daysLeft !== 1 ? "s" : ""} - {massNonCompliant.length} aluno{massNonCompliant.length !== 1 ? "s" : ""} sem missa.</p>
               </div>
             </div>
           )}

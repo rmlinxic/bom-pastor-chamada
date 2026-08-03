@@ -55,13 +55,13 @@ function AppLayout() {
   return (
     <SessionGuard>
       {isAuthenticated && !isPublicPage && (
-        <div className="fixed top-3 right-3 z-50 flex items-center gap-2">
-          <span className="hidden sm:block text-xs text-muted-foreground bg-muted/90 rounded-full px-2 py-1 border border-border">
+        <div className="fixed right-3 top-3 z-50 flex items-center gap-2 sm:right-5 sm:top-5">
+          <span className="hidden rounded-lg border border-border/80 bg-card/90 px-2.5 py-1.5 text-xs font-semibold text-muted-foreground shadow-sm backdrop-blur-sm sm:block">
             {user?.name}
           </span>
           <button
             onClick={logout}
-            className="flex items-center gap-1.5 rounded-full bg-muted/90 backdrop-blur-sm border border-border px-3 py-1.5 text-xs text-muted-foreground hover:text-destructive hover:border-destructive/50 transition-colors shadow-sm"
+            className="interactive-lift flex items-center gap-1.5 rounded-lg border border-border/80 bg-card/90 px-3 py-1.5 text-xs font-semibold text-muted-foreground shadow-sm backdrop-blur-sm hover:border-destructive/40 hover:text-destructive"
             title="Sair da conta"
           >
             <LogOut className="h-3.5 w-3.5" />
@@ -70,22 +70,24 @@ function AppLayout() {
         </div>
       )}
 
-      <Routes>
-        <Route path="/justificativa" element={<Justification />} />
-        <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
-        <Route path="/esqueci-senha" element={<ForgotPassword />} />
-        <Route path="/redefinir-senha" element={<ResetPassword />} />
-        <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
-        <Route path="/chamada" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
-        <Route path="/alunos" element={<ProtectedRoute><Students /></ProtectedRoute>} />
-        <Route path="/relatorios" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
-        <Route path="/missas" element={<ProtectedRoute><Missas /></ProtectedRoute>} />
-        <Route path="/calendario" element={<ProtectedRoute><Calendario /></ProtectedRoute>} />
-        <Route path="/coordenador" element={<CoordinatorRoute><CoordinadorView /></CoordinatorRoute>} />
-        <Route path="/ano-letivo" element={<CoordinatorRoute><AnoLetivo /></CoordinatorRoute>} />
-        <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+      <main className={isPublicPage ? "" : "app-shell"}>
+        <Routes>
+          <Route path="/justificativa" element={<Justification />} />
+          <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
+          <Route path="/esqueci-senha" element={<ForgotPassword />} />
+          <Route path="/redefinir-senha" element={<ResetPassword />} />
+          <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
+          <Route path="/chamada" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
+          <Route path="/alunos" element={<ProtectedRoute><Students /></ProtectedRoute>} />
+          <Route path="/relatorios" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
+          <Route path="/missas" element={<ProtectedRoute><Missas /></ProtectedRoute>} />
+          <Route path="/calendario" element={<ProtectedRoute><Calendario /></ProtectedRoute>} />
+          <Route path="/coordenador" element={<CoordinatorRoute><CoordinadorView /></CoordinatorRoute>} />
+          <Route path="/ano-letivo" element={<CoordinatorRoute><AnoLetivo /></CoordinatorRoute>} />
+          <Route path="/admin" element={<AdminRoute><Admin /></AdminRoute>} />
+          <Route path="*" element={<NotFound />} />
+        </Routes>
+      </main>
 
       {isAuthenticated && !isPublicPage && <BottomNav />}
     </SessionGuard>

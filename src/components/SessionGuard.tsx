@@ -1,5 +1,5 @@
 /**
- * SessionGuard — exibe modal quando a sessão expira por inatividade.
+ * SessionGuard - exibe modal quando a sessão expira por inatividade.
  * Deve envolver o conteúdo autenticado no App.tsx.
  */
 import { useEffect, useState } from "react";

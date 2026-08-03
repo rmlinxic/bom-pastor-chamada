@@ -182,24 +182,24 @@ export default function Dashboard() {
     <div className="pb-24">
       <PageHeader title="Catequese Bom Pastor" subtitle={scopeLabel} />
 
-      <div className="px-4 mb-4">
-        <p className="text-xl font-bold text-foreground">Bem-vindo, {user?.name}!</p>
+      <div className="mx-4 mb-5 rounded-2xl bg-primary p-5 text-primary-foreground shadow-[0_18px_36px_-24px_hsl(var(--primary))] sm:mx-6 sm:p-6">
+        <p className="text-xl font-bold tracking-[-0.025em]">Bem-vindo, {user?.name}!</p>
         {!isCatequistaOnly && (
-          <p className="text-sm text-muted-foreground mt-0.5">
-            Visualizando: <span className="font-medium text-foreground">{scopeLabel}</span>
+          <p className="mt-1 text-sm text-primary-foreground/75">
+            Visualizando: <span className="font-semibold text-primary-foreground">{scopeLabel}</span>
           </p>
         )}
         {isCatequistaOnly && user?.etapa && (
-          <div className="flex items-center gap-1.5 mt-1">
-            <BookOpen className="h-3.5 w-3.5 text-primary" />
-            <p className="text-sm text-muted-foreground">Etapa: <span className="font-semibold text-primary">{user.etapa}</span></p>
+          <div className="mt-2 flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-accent" />
+            <p className="text-sm text-primary-foreground/75">Etapa: <span className="font-semibold text-primary-foreground">{user.etapa}</span></p>
           </div>
         )}
       </div>
 
       {/* ===== FILTROS ===== */}
       {!isCatequistaOnly && (
-        <div className="px-4 mb-4 space-y-2">
+        <div className="mb-5 space-y-2 px-4 sm:px-6">
 
           {isAdmin && paroquiasAtivas.length > 1 && (
             <div className="flex gap-2 overflow-x-auto pb-1">
@@ -263,7 +263,7 @@ export default function Dashboard() {
       )}
 
       {/* Cards */}
-      <div className="grid grid-cols-2 gap-3 px-4">
+      <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-4 sm:px-6">
         <StatCard label="Total de Catequizandos" value={stats?.totalStudents ?? 0} icon={Users} />
         <StatCard label="Presenças" value={stats?.present ?? 0} icon={CheckCircle} variant="success" />
         <StatCard label="Faltas Justificadas" value={stats?.justified ?? 0} icon={AlertTriangle} variant="warning" />
@@ -272,7 +272,7 @@ export default function Dashboard() {
 
       {/* Alertas de faltas */}
       {(stats?.alertStudents?.length ?? 0) > 0 && (
-        <div className="mx-4 mt-4 rounded-lg border border-destructive/30 bg-destructive/10 p-4">
+        <div className="mx-4 mt-4 rounded-xl border border-destructive/30 bg-destructive/10 p-4 sm:mx-6">
           <div className="flex items-center gap-2 mb-1">
             <XCircle className="h-5 w-5 text-destructive" />
             <span className="font-bold text-destructive">Catequizandos com Faltas Recorrentes</span>
@@ -285,7 +285,7 @@ export default function Dashboard() {
               const wn = toWhatsappNumber(s.phone);
               const hasPhone = s.phone && s.phone.replace(/\D/g, "").length >= 8;
               return (
-                <div key={s.id} className="flex items-center justify-between gap-3 rounded-lg bg-destructive/10 border border-destructive/20 px-3 py-2.5">
+                <div key={s.id} className="flex items-center justify-between gap-3 rounded-xl bg-destructive/10 border border-destructive/20 px-3 py-2.5">
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-destructive truncate">{s.name}</p>
                     <p className="text-xs text-destructive/80">
@@ -312,13 +312,13 @@ export default function Dashboard() {
       {/* Missas pendentes */}
       {missasPendingCount > 0 && (
         <button onClick={() => navigate("/missas")} className="w-full text-left">
-          <div className={`mx-4 mt-4 rounded-lg border p-4 ${stats?.massEndOfMonthAlert ? "border-destructive/40 bg-destructive/10" : "border-warning/40 bg-warning/10"}`}>
+          <div className={`mx-4 mt-4 rounded-xl border p-4 sm:mx-6 ${stats?.massEndOfMonthAlert ? "border-destructive/40 bg-destructive/10" : "border-warning/40 bg-warning/10"}`}>
             <div className="flex items-center gap-2 mb-1">
               <Church className={`h-5 w-5 ${stats?.massEndOfMonthAlert ? "text-destructive" : "text-warning"}`} />
               <span className={`font-bold ${stats?.massEndOfMonthAlert ? "text-destructive" : "text-warning"}`}>
                 {stats?.massEndOfMonthAlert
-                  ? `⚠️ Fim do mês — Missas pendentes`
-                  : `Missas — ${missasPendingCount} catequizando${missasPendingCount !== 1 ? "s" : ""} sem registro`}
+                  ? `⚠️ Fim do mês - Missas pendentes`
+                  : `Missas - ${missasPendingCount} catequizando${missasPendingCount !== 1 ? "s" : ""} sem registro`}
               </span>
             </div>
             <p className={`text-sm ${stats?.massEndOfMonthAlert ? "text-destructive" : "text-warning"}`}>
@@ -339,7 +339,7 @@ export default function Dashboard() {
 
       {/* Justificativas pendentes */}
       {pendingCount > 0 && (
-        <div className="mx-4 mt-4 rounded-lg border border-warning/40 bg-warning/10 p-4">
+        <div className="mx-4 mt-4 rounded-xl border border-warning/40 bg-warning/10 p-4 sm:mx-6">
           <div className="flex items-center gap-2 mb-2">
             <Clock className="h-5 w-5 text-warning" />
             <span className="font-bold text-warning">{pendingCount} Justificativa{pendingCount > 1 ? "s" : ""} Aguardando</span>
@@ -348,7 +348,7 @@ export default function Dashboard() {
           <div className="space-y-1">
             {stats!.pendingList.map((p: any) => (
               <p key={p.id} className="text-sm font-medium text-foreground">
-                {(p.students as any)?.name ?? "Catequizando"} <span className="text-muted-foreground font-normal">— {p.date}</span>
+                {(p.students as any)?.name ?? "Catequizando"} <span className="text-muted-foreground font-normal">- {p.date}</span>
               </p>
             ))}
           </div>
@@ -356,7 +356,7 @@ export default function Dashboard() {
       )}
 
       {/* Gráfico por dia */}
-      <div className="mt-6 px-4 pb-2">
+      <div className="mt-7 px-4 pb-2 sm:px-6">
         <h2 className="mb-1 text-lg font-semibold text-foreground">Frequência por Dia</h2>
         <p className="text-xs text-muted-foreground mb-3">
           {(stats?.chartData?.length ?? 0) === 0
@@ -364,20 +364,20 @@ export default function Dashboard() {
             : `${stats!.chartData.length} dia${stats!.chartData.length !== 1 ? "s" : ""} com registros`}
         </p>
         {(stats?.chartData?.length ?? 0) > 0 ? (
-          <div className="rounded-lg bg-card p-4 shadow-sm border border-border overflow-x-auto">
+          <div className="surface-card overflow-x-auto rounded-xl p-4">
             <div style={{ minWidth: Math.max(300, (stats?.chartData?.length ?? 0) * 44) }}>
               <ResponsiveContainer width="100%" height={200}>
                 <BarChart data={stats?.chartData ?? []} margin={{ left: -16, right: 4 }}>
                   <XAxis dataKey="name" tick={{ fontSize: 11 }} stroke="hsl(var(--muted-foreground))" interval={0} angle={-35} textAnchor="end" height={40} />
                   <YAxis tick={{ fontSize: 12 }} stroke="hsl(var(--muted-foreground))" allowDecimals={false} />
                   <Tooltip formatter={(v) => [`${v} presença${Number(v) !== 1 ? "s" : ""}`, "Presenças"]} />
-                  <Bar dataKey="presenca" fill="hsl(213, 70%, 45%)" radius={[6, 6, 0, 0]} />
+                  <Bar dataKey="presenca" fill="hsl(var(--primary))" radius={[6, 6, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
           </div>
         ) : (
-          <div className="rounded-lg bg-card border border-border p-8 text-center">
+          <div className="surface-card rounded-xl p-8 text-center">
             <p className="text-muted-foreground text-sm">As barras aparecerão conforme as chamadas forem registradas.</p>
           </div>
         )}

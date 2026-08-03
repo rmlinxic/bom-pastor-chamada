@@ -122,7 +122,7 @@ export default function Attendance() {
           <Info className={cn("h-5 w-5 mt-0.5 shrink-0", editando ? "text-warning" : "text-primary")} />
           <div className="flex-1 min-w-0">
             <p className={cn("font-semibold text-sm", editando ? "text-warning" : "text-primary")}>
-              {editando ? "Modo de edição — salve para confirmar" : "Chamada já registrada neste dia"}
+              {editando ? "Modo de edição - salve para confirmar" : "Chamada já registrada neste dia"}
             </p>
             {resumo && !editando && (
               <p className="text-xs text-muted-foreground mt-0.5">
@@ -196,7 +196,7 @@ export default function Attendance() {
         )}
       </div>
 
-      {/* Botão salvar — só aparece se não bloqueado */}
+      {/* Botão salvar - só aparece se não bloqueado */}
       {students.length > 0 && !bloqueado && (
         <div className="fixed bottom-16 left-0 right-0 z-40 border-t border-border bg-card p-4 safe-bottom">
           <Button

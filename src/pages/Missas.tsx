@@ -169,7 +169,7 @@ export default function Missas() {
 
   return (
     <div className="pb-24">
-      <PageHeader title="Missas" subtitle={`Presenças na missa — ${subtitle}`} />
+      <PageHeader title="Missas" subtitle={`Presenças na missa - ${subtitle}`} />
 
       {/* Filtro de etapa para coordenador/admin */}
       {canFilterEtapa && (
@@ -331,7 +331,7 @@ export default function Missas() {
         <div className="mx-4 mb-4 rounded-lg border border-destructive/40 bg-destructive/10 p-4">
           <div className="flex items-center gap-2 mb-1">
             <AlertTriangle className="h-5 w-5 text-destructive" />
-            <span className="font-bold text-destructive">Atenção — Fim do Mês</span>
+            <span className="font-bold text-destructive">Atenção - Fim do Mês</span>
           </div>
           <p className="text-sm text-destructive">
             Faltam <strong>{daysLeft} dia{daysLeft !== 1 ? "s" : ""}</strong> e{" "}

@@ -93,14 +93,15 @@ export default function Justification() {
   const handleSendAnother = () => setSubmitted(false);
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center px-4 py-8">
-      <div className="w-full max-w-md">
-        <div className="flex flex-col items-center mb-8">
-          <div className="flex h-16 w-16 items-center justify-center rounded-full bg-primary/10 mb-3">
-            <Church className="h-8 w-8 text-primary" />
+    <div className="public-shell justify-start sm:justify-center">
+      <div className="public-panel max-w-lg">
+        <div className="mb-8 flex flex-col items-center">
+          <div className="brand-mark mb-4 h-16 w-16">
+            <Church className="h-8 w-8" />
           </div>
-          <h1 className="text-2xl font-bold text-foreground text-center">Justificativa de Falta</h1>
-          <p className="text-sm text-muted-foreground text-center mt-1">Portal dos Pais — Catequese</p>
+          <p className="brand-kicker mb-2">Portal das famílias</p>
+          <h1 className="text-center text-3xl font-bold tracking-[-0.035em] text-foreground">Justificativa de Falta</h1>
+          <p className="mt-2 text-center text-sm font-medium text-muted-foreground">Catequese Bom Pastor</p>
         </div>
 
         {submitted ? (
@@ -179,7 +180,7 @@ export default function Justification() {
                     return (
                       <SelectItem key={s.id} value={s.id}>
                         <span className="font-medium">{s.name}</span>
-                        {sub && <span className="ml-2 text-xs text-muted-foreground">— Turma {sub}</span>}
+                        {sub && <span className="ml-2 text-xs text-muted-foreground">- Turma {sub}</span>}
                       </SelectItem>
                     );
                   })}

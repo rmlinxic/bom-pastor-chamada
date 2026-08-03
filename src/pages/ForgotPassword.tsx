@@ -32,20 +32,21 @@ export default function ForgotPassword() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col items-center justify-center px-6 py-8">
-      <div className="w-full max-w-sm">
-        <div className="flex flex-col items-center mb-10">
-          <div className="flex h-20 w-20 items-center justify-center rounded-full bg-primary/10 mb-4">
+    <div className="public-shell">
+      <div className="public-panel max-w-md">
+        <div className="mb-8 flex flex-col items-center">
+          <div className="brand-mark mb-5 h-20 w-20">
             {isSuccess ? (
-              <Mail className="h-10 w-10 text-primary" />
+              <Mail className="h-10 w-10" />
             ) : (
-              <Church className="h-10 w-10 text-primary" />
+              <Church className="h-10 w-10" />
             )}
           </div>
-          <h1 className="text-2xl font-bold text-foreground text-center">
+          <p className="brand-kicker mb-2">Catequese Bom Pastor</p>
+          <h1 className="text-center text-3xl font-bold tracking-[-0.035em] text-foreground">
             {isSuccess ? "E-mail Enviado" : "Esqueci minha senha"}
           </h1>
-          <p className="text-sm text-muted-foreground text-center mt-1 max-w-xs">
+          <p className="mt-2 max-w-xs text-center text-sm font-medium text-muted-foreground">
             {isSuccess
               ? "Verifique sua caixa de entrada e a pasta de spam"
               : "Informe seu e-mail cadastrado para receber o link de redefinição"}

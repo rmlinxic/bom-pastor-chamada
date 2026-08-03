@@ -86,9 +86,9 @@ export default function BottomNav() {
       : "py-3 px-1";
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card safe-bottom">
+    <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-50 border-t border-border/80 bg-card/95 shadow-[0_-12px_32px_-24px_hsl(var(--foreground)/0.35)] backdrop-blur-xl">
       <div
-        className="mx-auto grid w-full items-center"
+        className="mx-auto grid w-full max-w-6xl items-center px-1"
         style={{ gridTemplateColumns: `repeat(${tabCount}, minmax(0, 1fr))` }}
       >
         {tabs.map((tab) => {
@@ -100,7 +100,7 @@ export default function BottomNav() {
               key={tab.path}
               onClick={() => navigate(tab.path)}
               className={cn(
-                "flex flex-col items-center gap-0.5 transition-colors min-w-0",
+                "interactive-lift relative min-w-0 flex flex-col items-center gap-0.5 rounded-xl",
                 buttonPadding,
                 labelSize,
                 active
@@ -108,7 +108,7 @@ export default function BottomNav() {
                     ? "text-warning font-semibold"
                     : isCoordTab
                     ? "text-secondary-foreground font-semibold"
-                    : "text-primary font-semibold"
+                    : "bg-secondary text-primary font-semibold"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >

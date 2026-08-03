@@ -1,46 +1,44 @@
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800&display=swap');
-
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
 
 @layer base {
   :root {
-    --background: 210 33% 97%;
-    --foreground: 215 25% 15%;
+    --background: 214 36% 97%;
+    --foreground: 214 42% 14%;
 
     --card: 0 0% 100%;
-    --card-foreground: 215 25% 15%;
+    --card-foreground: 214 42% 14%;
 
     --popover: 0 0% 100%;
     --popover-foreground: 215 25% 15%;
 
-    --primary: 213 70% 45%;
+    --primary: 212 62% 31%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 40% 93%;
-    --secondary-foreground: 213 70% 35%;
+    --secondary: 211 45% 92%;
+    --secondary-foreground: 212 62% 27%;
 
-    --muted: 210 25% 94%;
-    --muted-foreground: 215 15% 50%;
+    --muted: 212 27% 93%;
+    --muted-foreground: 214 15% 41%;
 
-    --accent: 38 90% 55%;
-    --accent-foreground: 0 0% 100%;
+    --accent: 43 76% 49%;
+    --accent-foreground: 214 42% 14%;
 
     --destructive: 0 72% 55%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 145 60% 40%;
+    --success: 151 55% 32%;
     --success-foreground: 0 0% 100%;
 
-    --warning: 38 90% 55%;
-    --warning-foreground: 38 90% 20%;
+    --warning: 37 82% 43%;
+    --warning-foreground: 32 85% 16%;
 
-    --border: 214 25% 88%;
-    --input: 214 25% 88%;
-    --ring: 213 70% 45%;
+    --border: 212 25% 85%;
+    --input: 212 25% 81%;
+    --ring: 212 62% 31%;
 
-    --radius: 0.75rem;
+    --radius: 1rem;
 
     --sidebar-background: 0 0% 98%;
     --sidebar-foreground: 240 5.3% 26.1%;
@@ -51,26 +49,32 @@
     --sidebar-border: 220 13% 91%;
     --sidebar-ring: 217.2 91.2% 59.8%;
 
-    --font-body: 'Nunito', sans-serif;
+    --font-body: "Avenir Next", Avenir, "Segoe UI Variable", "Segoe UI", sans-serif;
+    --shadow-soft: 0 16px 40px -28px hsl(212 62% 20% / 0.45);
+    --shadow-card: 0 12px 30px -22px hsl(212 62% 20% / 0.38);
   }
 
   .dark {
-    --background: 215 25% 10%;
-    --foreground: 210 30% 95%;
-    --card: 215 25% 14%;
+    --background: 214 39% 9%;
+    --foreground: 210 30% 94%;
+    --card: 214 34% 13%;
     --card-foreground: 210 30% 95%;
     --popover: 215 25% 14%;
     --popover-foreground: 210 30% 95%;
-    --primary: 213 70% 55%;
-    --primary-foreground: 0 0% 100%;
+    --primary: 210 72% 62%;
+    --primary-foreground: 214 42% 11%;
     --secondary: 215 25% 20%;
     --secondary-foreground: 210 30% 90%;
     --muted: 215 25% 18%;
-    --muted-foreground: 215 15% 60%;
-    --accent: 38 90% 55%;
-    --accent-foreground: 0 0% 100%;
-    --destructive: 0 62.8% 30.6%;
-    --destructive-foreground: 210 40% 98%;
+    --muted-foreground: 212 14% 68%;
+    --accent: 43 76% 56%;
+    --accent-foreground: 214 42% 14%;
+    --destructive: 0 68% 49%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 151 52% 50%;
+    --success-foreground: 214 42% 11%;
+    --warning: 40 83% 56%;
+    --warning-foreground: 214 42% 11%;
     --border: 215 25% 22%;
     --input: 215 25% 22%;
     --ring: 213 70% 55%;
@@ -92,11 +96,110 @@
 
   body {
     @apply bg-background text-foreground font-body antialiased;
+    min-width: 320px;
+    min-height: 100dvh;
+    background-image:
+      linear-gradient(180deg, hsl(var(--primary) / 0.035), transparent 18rem),
+      linear-gradient(90deg, transparent 0, hsl(var(--primary) / 0.018) 50%, transparent 100%);
+    font-feature-settings: "ss01" 1, "cv02" 1;
+  }
+
+  ::selection {
+    background: hsl(var(--accent) / 0.35);
+    color: hsl(var(--foreground));
+  }
+
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 
 @layer utilities {
   .safe-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .app-shell {
+    @apply mx-auto min-h-[100dvh] w-full max-w-6xl;
+  }
+
+  .surface-card {
+    @apply border border-border/80 bg-card;
+    box-shadow: var(--shadow-card);
+  }
+
+  .public-shell {
+    @apply relative flex min-h-[100dvh] flex-col items-center justify-center overflow-hidden bg-background px-5 py-8;
+  }
+
+  .public-shell::before {
+    content: "";
+    @apply pointer-events-none absolute inset-x-0 top-0 h-1.5 bg-accent;
+  }
+
+  .public-shell::after {
+    content: "";
+    @apply pointer-events-none absolute -right-24 -top-24 h-72 w-72 rounded-full border-[48px] border-primary/[0.045];
+  }
+
+  .public-panel {
+    @apply relative w-full rounded-2xl border border-border/80 bg-card/95 p-6 sm:p-8;
+    box-shadow: var(--shadow-soft);
+  }
+
+  .brand-mark {
+    @apply flex items-center justify-center rounded-2xl bg-primary text-primary-foreground;
+    box-shadow: inset 0 -4px 0 hsl(var(--accent) / 0.9), var(--shadow-card);
+  }
+
+  .brand-kicker {
+    @apply text-xs font-bold uppercase tracking-[0.16em] text-primary;
+  }
+
+  .interactive-lift {
+    @apply transition-[transform,background-color,border-color,color,box-shadow] duration-200 active:translate-y-px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not(.light) {
+    --background: 214 39% 9%;
+    --foreground: 210 30% 94%;
+    --card: 214 34% 13%;
+    --card-foreground: 210 30% 94%;
+    --popover: 214 34% 13%;
+    --popover-foreground: 210 30% 94%;
+    --primary: 210 72% 62%;
+    --primary-foreground: 214 42% 11%;
+    --secondary: 214 27% 20%;
+    --secondary-foreground: 210 30% 92%;
+    --muted: 214 25% 18%;
+    --muted-foreground: 212 14% 68%;
+    --accent: 43 76% 56%;
+    --accent-foreground: 214 42% 14%;
+    --destructive: 0 68% 49%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 151 52% 50%;
+    --success-foreground: 214 42% 11%;
+    --warning: 40 83% 56%;
+    --warning-foreground: 214 42% 11%;
+    --border: 214 24% 23%;
+    --input: 214 22% 29%;
+    --ring: 210 72% 62%;
   }
 }
