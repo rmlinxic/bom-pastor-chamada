@@ -18,6 +18,8 @@ import Admin from "./pages/Admin";
 import Justification from "./pages/Justification";
 import Missas from "./pages/Missas";
 import Login from "./pages/Login";
+import ForgotPassword from "./pages/ForgotPassword";
+import ResetPassword from "./pages/ResetPassword";
 import NotFound from "./pages/NotFound";
 import CoordinadorView from "./pages/CoordinadorView";
 import AnoLetivo from "./pages/AnoLetivo";
@@ -29,7 +31,7 @@ import { AuthProvider, useAuth } from "./contexts/AuthContext";
 
 const queryClient = new QueryClient();
 
-const PUBLIC_PATHS = ["/justificativa", "/login"];
+const PUBLIC_PATHS = ["/justificativa", "/login", "/esqueci-senha", "/redefinir-senha"];
 
 function AdminRoute({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isAdmin } = useAuth();
@@ -71,6 +73,8 @@ function AppLayout() {
       <Routes>
         <Route path="/justificativa" element={<Justification />} />
         <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <Login />} />
+        <Route path="/esqueci-senha" element={<ForgotPassword />} />
+        <Route path="/redefinir-senha" element={<ResetPassword />} />
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/chamada" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
         <Route path="/alunos" element={<ProtectedRoute><Students /></ProtectedRoute>} />

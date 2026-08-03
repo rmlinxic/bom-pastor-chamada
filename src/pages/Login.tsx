@@ -63,7 +63,15 @@ export default function Login() {
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="password">Senha</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Senha</Label>
+              <a
+                href="#/esqueci-senha"
+                className="text-xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
+              >
+                Esqueci minha senha
+              </a>
+            </div>
             <PasswordInput
               value={password}
               onChange={setPassword}

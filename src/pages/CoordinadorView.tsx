@@ -2,16 +2,22 @@ import { useState, useMemo } from "react";
 import {
   Users, BarChart2, GraduationCap, CheckCircle, XCircle,
   Clock, AlertTriangle, ChevronDown, ChevronUp, Loader2,
+  UserPlus, Eye, EyeOff, BookOpen, Mail,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
-import { proximaEtapa } from "@/lib/etapas";
+import { proximaEtapa, ETAPAS, nomeTurma } from "@/lib/etapas";
+import { useCreateCatequista, useCatequistasByParoquia } from "@/hooks/useCatequistas";
 
 const db = supabase as any;
 
@@ -95,6 +101,47 @@ export default function CoordinadorView() {
   });
 
   const [expandedStats, setExpandedStats] = useState(false);
+
+  // ---------- cadastro de catequista ----------
+  const createCatequista = useCreateCatequista();
+  const [openCadastro, setOpenCadastro] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [catForm, setCatForm] = useState({
+    name: "",
+    username: "",
+    email: "",
+    password: "",
+    etapa: "",
+    turma: "",
+  });
+
+  const resetCatForm = () => {
+    setCatForm({ name: "", username: "", email: "", password: "", etapa: "", turma: "" });
+    setShowPass(false);
+  };
+
+  const handleCreateCatequista = async () => {
+    if (!catForm.name.trim() || !catForm.username.trim() || !catForm.password.trim() || !catForm.email.trim()) return;
+    setSaving(true);
+    try {
+      const etapaFinal = nomeTurma(catForm.etapa, catForm.turma || undefined);
+      await createCatequista.mutateAsync({
+        name: catForm.name,
+        username: catForm.username,
+        password: catForm.password,
+        email: catForm.email,
+        etapa: etapaFinal || null,
+        role: "catequista",
+        paroquia_id: paroquiaId || null,
+        is_coordenador: false,
+      });
+      setOpenCadastro(false);
+      resetCatForm();
+    } finally {
+      setSaving(false);
+    }
+  };
 
   return (
     <div className="pb-24">
@@ -200,6 +247,20 @@ export default function CoordinadorView() {
           </div>
         )}
 
+        {/* ===== CADASTRAR CATEQUISTA ===== */}
+        <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <UserPlus className="h-5 w-5 text-primary" />
+            <span className="font-bold text-primary">Cadastrar Catequista</span>
+          </div>
+          <p className="text-xs text-muted-foreground mb-3">
+            Cadastre novos catequistas para a sua paróquia. O e-mail é obrigatório para que o catequista possa recuperar a senha.
+          </p>
+          <Button className="w-full" variant="outline" onClick={() => { resetCatForm(); setOpenCadastro(true); }}>
+            <UserPlus className="h-4 w-4 mr-2" /> Novo Catequista
+          </Button>
+        </div>
+
         {/* Botão novo ano catequético */}
         <div className="rounded-lg border border-primary/20 bg-primary/5 p-4">
           <div className="flex items-center gap-2 mb-2">
@@ -215,6 +276,152 @@ export default function CoordinadorView() {
         </div>
 
       </div>
+
+      {/* ===== DIALOG CADASTRAR CATEQUISTA ===== */}
+      <Dialog open={openCadastro} onOpenChange={setOpenCadastro}>
+        <DialogContent className="mx-4 max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Novo Catequista</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div>
+              <Label>Nome completo</Label>
+              <Input
+                value={catForm.name}
+                onChange={(e) => setCatForm({ ...catForm, name: e.target.value })}
+                placeholder="Ex: Maria Silva"
+              />
+            </div>
+            <div>
+              <Label>Nome de usuário</Label>
+              <Input
+                autoComplete="off"
+                autoCapitalize="none"
+                value={catForm.username}
+                onChange={(e) =>
+                  setCatForm({
+                    ...catForm,
+                    username: e.target.value.toLowerCase().replace(/\s+/g, "_"),
+                  })
+                }
+                placeholder="Ex: maria_silva"
+              />
+            </div>
+            <div>
+              <Label>
+                E-mail{" "}
+                <span className="text-xs text-destructive font-normal">(obrigatório)</span>
+              </Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="email"
+                  autoComplete="off"
+                  value={catForm.email}
+                  onChange={(e) => setCatForm({ ...catForm, email: e.target.value })}
+                  placeholder="catequista@email.com"
+                  className="pl-10"
+                />
+              </div>
+              <p className="text-xs text-muted-foreground mt-1">
+                Usado para recuperação de senha
+              </p>
+            </div>
+            <div>
+              <Label>Senha</Label>
+              <div className="relative">
+                <Input
+                  type={showPass ? "text" : "password"}
+                  value={catForm.password}
+                  onChange={(e) => setCatForm({ ...catForm, password: e.target.value })}
+                  placeholder="Crie uma senha"
+                  className="pr-10"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass((v) => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+                  tabIndex={-1}
+                >
+                  {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                </button>
+              </div>
+            </div>
+            <div>
+              <Label>Etapa</Label>
+              <Select
+                value={catForm.etapa}
+                onValueChange={(v) => setCatForm({ ...catForm, etapa: v, turma: "" })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione a etapa" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ETAPAS.map((e) => (
+                    <SelectItem key={e} value={e}>{e}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            {catForm.etapa && (
+              <div>
+                <Label>
+                  Turma{" "}
+                  <span className="text-muted-foreground text-xs font-normal ml-1">
+                    (opcional — A, B, C...)
+                  </span>
+                </Label>
+                <Select
+                  value={catForm.turma || "__none__"}
+                  onValueChange={(v) =>
+                    setCatForm({ ...catForm, turma: v === "__none__" ? "" : v })
+                  }
+                >
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__none__">Sem subturma</SelectItem>
+                    {["A", "B", "C", "D", "E", "F", "G", "H"].map((l) => (
+                      <SelectItem key={l} value={l}>
+                        Turma {l}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {catForm.turma && (
+                  <p className="text-xs text-primary mt-1 font-medium">
+                    Turma final: <strong>{catForm.etapa} {catForm.turma}</strong>
+                  </p>
+                )}
+              </div>
+            )}
+
+            <Button
+              className="w-full h-11"
+              onClick={handleCreateCatequista}
+              disabled={
+                saving ||
+                !catForm.name.trim() ||
+                !catForm.username.trim() ||
+                !catForm.email.trim() ||
+                !catForm.password.trim()
+              }
+            >
+              {saving ? (
+                <span className="flex items-center gap-2">
+                  <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground" />
+                  Criando...
+                </span>
+              ) : (
+                <>
+                  <UserPlus className="h-4 w-4 mr-2" /> Criar catequista
+                </>
+              )}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

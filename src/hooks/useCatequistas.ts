@@ -17,6 +17,7 @@ export interface Catequista {
   id: string;
   name: string;
   username: string;
+  email: string | null;
   role: "admin" | "catequista" | "coordenador";
   etapa: string | null;
   paroquia_id: string | null;
@@ -32,7 +33,7 @@ export function useCatequistas() {
     queryFn: async () => {
       const { data, error } = await db
         .from("catequistas")
-        .select("id, name, username, role, etapa, paroquia_id, is_coordenador, active, created_at, paroquias(nome)")
+        .select("id, name, username, email, role, etapa, paroquia_id, is_coordenador, active, created_at, paroquias(nome)")
         .order("created_at");
       if (error) throw error;
       return ((data ?? []) as any[]).map((c) => ({
@@ -51,7 +52,7 @@ export function useCatequistasByParoquia(paroquia_id: string | null) {
     queryFn: async () => {
       const { data, error } = await db
         .from("catequistas")
-        .select("id, name, username, role, etapa, paroquia_id, is_coordenador, active, created_at, paroquias(nome)")
+        .select("id, name, username, email, role, etapa, paroquia_id, is_coordenador, active, created_at, paroquias(nome)")
         .eq("paroquia_id", paroquia_id)
         .eq("active", true)
         .order("created_at");
@@ -72,6 +73,7 @@ export function useCreateCatequista() {
       name: string;
       username: string;
       password: string;
+      email?: string | null;
       etapa: string | null;
       role: "admin" | "catequista" | "coordenador";
       paroquia_id: string | null;
@@ -82,6 +84,7 @@ export function useCreateCatequista() {
         name: input.name.trim(),
         username: input.username.toLowerCase().trim(),
         password_hash,
+        email: input.email?.toLowerCase().trim() || null,
         etapa: input.role === "catequista" ? (input.etapa?.trim() || null) : null,
         role: input.role,
         paroquia_id: input.paroquia_id || null,
@@ -109,6 +112,7 @@ export function useUpdateCatequista() {
       name: string;
       username: string;
       newPassword?: string;
+      email?: string | null;
       etapa: string | null;
       role: "admin" | "catequista" | "coordenador";
       paroquia_id: string | null;
@@ -117,6 +121,7 @@ export function useUpdateCatequista() {
       const update: Record<string, unknown> = {
         name: input.name.trim(),
         username: input.username.toLowerCase().trim(),
+        email: input.email?.toLowerCase().trim() || null,
         etapa: input.role === "catequista" ? (input.etapa?.trim() || null) : null,
         role: input.role,
         paroquia_id: input.paroquia_id || null,

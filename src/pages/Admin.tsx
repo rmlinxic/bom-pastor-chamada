@@ -2,7 +2,7 @@ import { useState } from "react";
 import {
   ShieldCheck, UserPlus, Pencil, UserX, Eye, EyeOff,
   Crown, User, BookOpen, Building2, PlusCircle,
-  ToggleLeft, ToggleRight, MapPin,
+  ToggleLeft, ToggleRight, MapPin, Mail,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +28,7 @@ type FormData = {
   name: string;
   username: string;
   password: string;
+  email: string;
   role: UserRole;
   etapa: string;      // ex: "Primeira Etapa"
   turma: string;      // ex: "A", "B" ou "" (sem subturma)
@@ -36,7 +37,7 @@ type FormData = {
 };
 
 const EMPTY_FORM: FormData = {
-  name: "", username: "", password: "",
+  name: "", username: "", password: "", email: "",
   role: "catequista", etapa: "", turma: "", paroquia_id: "", is_coordenador: false,
 };
 
@@ -77,7 +78,7 @@ export default function Admin() {
     const { etapa, turma } = parseTurma(c.etapa ?? "");
     setEditingId(c.id);
     setForm({
-      name: c.name, username: c.username, password: "",
+      name: c.name, username: c.username, password: "", email: c.email ?? "",
       role: c.role, etapa, turma,
       paroquia_id: c.paroquia_id ?? "",
       is_coordenador: c.is_coordenador,
@@ -114,6 +115,7 @@ export default function Admin() {
 
       const payload = {
         ...form,
+        email: form.email || null,
         etapa: etapaFinal || null,
         paroquia_id: form.paroquia_id || null,
         is_coordenador: form.role === "coordenador" ? true : form.is_coordenador,
@@ -290,6 +292,21 @@ export default function Admin() {
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground" tabIndex={-1}>
                   {showPass ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                 </button>
+              </div>
+            </div>
+
+            <div>
+              <Label>E-mail <span className="text-xs text-muted-foreground font-normal">(para recuperação de senha)</span></Label>
+              <div className="relative">
+                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                <Input
+                  type="email"
+                  autoComplete="off"
+                  value={form.email}
+                  onChange={(e) => setForm({ ...form, email: e.target.value })}
+                  placeholder="usuario@email.com"
+                  className="pl-10"
+                />
               </div>
             </div>
 
