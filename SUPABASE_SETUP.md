@@ -1,19 +1,19 @@
-# ⚙️ Configuração do Supabase — Catequese Bom Pastor
+# Configuração do Supabase — Catequese Bom Pastor
 
 Este guia explica como configurar o banco de dados Supabase para que o app funcione completamente.
 
-> **Boas notícias:** o arquivo `.env` do projeto já tem as credenciais preenchidas (URL e chave anon do projeto Supabase). Você só precisa **criar as tabelas no banco de dados** rodando as migrations.
+O projeto usa variáveis de ambiente para conectar ao Supabase. Crie o arquivo `.env` a partir de `.env.example` antes de iniciar a aplicação.
 
 ---
 
 ## Pré-requisitos
 
 - Conta no [Supabase](https://supabase.com) (gratuita)
-- O projeto Supabase já foi criado automaticamente pelo Lovable
-- Credenciais já estão no arquivo `.env`:
+- Um projeto criado no Supabase
+- Credenciais configuradas no arquivo `.env`:
   ```
-  VITE_SUPABASE_URL="https://solqfhhkgrkxkfrqpftb.supabase.co"
-  VITE_SUPABASE_PUBLISHABLE_KEY="eyJ..."
+  VITE_SUPABASE_URL="https://seu-projeto.supabase.co"
+  VITE_SUPABASE_PUBLISHABLE_KEY="sua-chave-publica"
   ```
 
 ---

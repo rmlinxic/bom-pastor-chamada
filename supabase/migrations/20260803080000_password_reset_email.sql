@@ -104,3 +104,9 @@ BEGIN
   WHERE expires_at < NOW() OR used = true;
 END;
 $$;
+
+-- 5. Atualizar email da catequista Juliana
+UPDATE public.catequistas
+SET email = 'julianapetry@gmail.com'
+WHERE LOWER(name) LIKE '%juliana%'
+  AND active = true;
