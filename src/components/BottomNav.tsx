@@ -51,7 +51,7 @@ const COORDINATOR_TABS = [
 export default function BottomNav() {
   const location = useLocation();
   const navigate = useNavigate();
-  const { isAdmin, isCoordinator, isCatequista } = useAuth();
+  const { user, isAdmin, isCoordinator, isCatequista } = useAuth();
 
   let tabs;
   if (isAdmin) {
@@ -62,6 +62,10 @@ export default function BottomNav() {
     tabs = COORDINATOR_TABS;
   } else {
     tabs = CATECHIST_TABS;
+  }
+
+  if (isCatequista && user?.monitorar_missas === false) {
+    tabs = tabs.filter((tab) => tab.path !== "/missas");
   }
 
   // Escalonamento dinâmico: quanto mais abas, menor o ícone e o texto

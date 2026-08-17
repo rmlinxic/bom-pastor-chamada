@@ -582,7 +582,7 @@ export default function Calendario() {
               </div>
               <div className="space-y-1">
                 <Label htmlFor="add-nome">Nome do evento</Label>
-                <Input id="add-nome" placeholder="Ex: Aula de Catequese" value={addNome} onChange={(e) => setAddNome(e.target.value)} />
+                <Input id="add-nome" placeholder="Ex: Encontro de Catequese" value={addNome} onChange={(e) => setAddNome(e.target.value)} />
               </div>
               <div className="space-y-1">
                 <Label htmlFor="add-desc">Descrição (opcional)</Label>

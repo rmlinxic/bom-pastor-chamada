@@ -36,7 +36,7 @@ function monthLabel(m: string) {
 }
 
 export default function Missas() {
-  const { user, isCoordinator, isAdmin } = useAuth();
+  const { user, isCoordinator, isAdmin, setMassMonitoring } = useAuth();
   const queryClient = useQueryClient();
   const { data: allStudents = [] } = useStudents();
 
@@ -55,7 +55,8 @@ export default function Missas() {
 
   const studentIds = useMemo(() => allStudents.map((s) => s.id), [allStudents]);
 
-  const { data: massRecords = [], isLoading } = useMassAttendanceByMonth(studentIds, currentMonth);
+  const massMonitoringPaused = user?.role === "catequista" && user.monitorar_missas === false;
+  const { data: massRecords = [], isLoading } = useMassAttendanceByMonth(massMonitoringPaused ? [] : studentIds, currentMonth);
   const deleteMutation = useDeleteMassAttendance();
 
   const today = new Date();
@@ -158,6 +159,31 @@ export default function Missas() {
   const handleDelete = (id: string, name: string, date: string) => {
     if (window.confirm(`Remover presença de "${name}" em ${date}?`)) deleteMutation.mutate(id);
   };
+
+  if (massMonitoringPaused) {
+    return (
+      <div className="pb-24">
+        <PageHeader title="Missas" subtitle="Monitoramento desativado" />
+        <div className="mx-4 rounded-xl border border-border bg-card p-5 text-center sm:mx-6">
+          <Church className="mx-auto h-8 w-8 text-muted-foreground" />
+          <h2 className="mt-3 text-lg font-semibold text-foreground">Monitoramento de missas pausado</h2>
+          <p className="mx-auto mt-2 max-w-md text-sm text-muted-foreground">
+            Os alertas, registros e relatórios de missas estão ocultos para sua conta.
+          </p>
+          <Button
+            className="mt-4"
+            onClick={async () => {
+              const result = await setMassMonitoring(true);
+              if (result.error) toast.error(result.error);
+              else toast.success("Monitoramento de missas ativado.");
+            }}
+          >
+            Ativar monitoramento
+          </Button>
+        </div>
+      </div>
+    );
+  }
 
   const subtitle = canFilterEtapa
     ? (filtroEtapa === "all" ? "Toda a paróquia" : filtroEtapa)

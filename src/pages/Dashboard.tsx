@@ -18,6 +18,8 @@ import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
+import { Switch } from "@/components/ui/switch";
+import { toast } from "sonner";
 
 const db = supabase as any;
 
@@ -44,7 +46,7 @@ type Scope =
   | { kind: "all" };                           // tudo (admin)
 
 export default function Dashboard() {
-  const { user, isAdmin, isCoordinator, isCatequista } = useAuth();
+  const { user, isAdmin, isCoordinator, isCatequista, setMassMonitoring } = useAuth();
   const navigate = useNavigate();
   const { data: paroquias = [] } = useParoquias();
   const { data: catequistas = [] } = useCatequistas();
@@ -55,6 +57,16 @@ export default function Dashboard() {
 
   const [selParoquia, setSelParoquia] = useState<string>("all");
   const [selEtapa, setSelEtapa] = useState<string>("all");
+  const [isSavingMassMonitoring, setIsSavingMassMonitoring] = useState(false);
+  const massMonitoringEnabled = !isCatequista || user?.monitorar_missas !== false;
+
+  async function handleMassMonitoringChange(enabled: boolean) {
+    setIsSavingMassMonitoring(true);
+    const result = await setMassMonitoring(enabled);
+    setIsSavingMassMonitoring(false);
+    if (result.error) toast.error(result.error);
+    else toast.success(enabled ? "Monitoramento de missas ativado." : "Monitoramento de missas desativado.");
+  }
 
   useEffect(() => { setSelEtapa("all"); }, [selParoquia]);
 
@@ -85,7 +97,7 @@ export default function Dashboard() {
 
   // ---------- query de dados ----------
   const { data: stats } = useQuery({
-    queryKey: ["dashboard-stats", user?.id, scope],
+    queryKey: ["dashboard-stats", user?.id, scope, massMonitoringEnabled],
     queryFn: async () => {
       let studentsQuery = db
         .from("students")
@@ -127,10 +139,12 @@ export default function Dashboard() {
 
       const month = todayMonthStr();
       const lastDay = lastDayOfMonth(month);
-      const massRes = await db.from("mass_attendance").select("student_id")
-        .in("student_id", studentIds)
-        .gte("date", `${month}-01`)
-        .lte("date", `${month}-${String(lastDay).padStart(2, "0")}`);
+      const massRes = massMonitoringEnabled
+        ? await db.from("mass_attendance").select("student_id")
+            .in("student_id", studentIds)
+            .gte("date", `${month}-01`)
+            .lte("date", `${month}-${String(lastDay).padStart(2, "0")}`)
+        : { data: [] };
       const studentsWithMassSet = new Set((massRes.data ?? []).map((r: any) => r.student_id));
       const studentsWithoutMass = allStudents.filter((s) => !studentsWithMassSet.has(s.id));
 
@@ -196,6 +210,25 @@ export default function Dashboard() {
           </div>
         )}
       </div>
+
+      {isCatequista && (
+        <div className="mx-4 mb-5 flex items-center justify-between gap-4 rounded-xl border border-border bg-card p-4 sm:mx-6">
+          <div>
+            <p className="text-sm font-semibold text-foreground">Monitoramento de missas</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              {massMonitoringEnabled
+                ? "Alertas e acesso ao acompanhamento estão ativos."
+                : "Alertas e acesso ao acompanhamento estão desativados."}
+            </p>
+          </div>
+          <Switch
+            checked={massMonitoringEnabled}
+            onCheckedChange={handleMassMonitoringChange}
+            disabled={isSavingMassMonitoring}
+            aria-label="Ativar monitoramento de missas"
+          />
+        </div>
+      )}
 
       {/* ===== FILTROS ===== */}
       {!isCatequistaOnly && (
@@ -310,7 +343,7 @@ export default function Dashboard() {
       )}
 
       {/* Missas pendentes */}
-      {missasPendingCount > 0 && (
+      {massMonitoringEnabled && missasPendingCount > 0 && (
         <button onClick={() => navigate("/missas")} className="w-full text-left">
           <div className={`mx-4 mt-4 rounded-xl border p-4 sm:mx-6 ${stats?.massEndOfMonthAlert ? "border-destructive/40 bg-destructive/10" : "border-warning/40 bg-warning/10"}`}>
             <div className="flex items-center gap-2 mb-1">

@@ -195,7 +195,7 @@ Acesse `http://localhost:5173` no navegador.
 |---|---|---|
 | `id` | UUID | Chave primária |
 | `student_id` | UUID | FK → `students.id` |
-| `date` | DATE | Data da aula (`YYYY-MM-DD`) |
+| `date` | DATE | Data do encontro (`YYYY-MM-DD`) |
 | `status` | TEXT | `'presente'`, `'falta_justificada'` ou `'falta_nao_justificada'` |
 | `justification_reason` | TEXT | Motivo da justificativa (opcional) |
 | `created_at` | TIMESTAMP | Data do registro |

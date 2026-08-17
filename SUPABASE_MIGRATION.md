@@ -43,7 +43,7 @@ VALUES (
 
 ---
 
-## Passo 3 — Criar tabela de presenças nas missas
+## Passo 3 - Criar tabela de presenças nas missas
 
 ```sql
 CREATE TABLE mass_attendance (

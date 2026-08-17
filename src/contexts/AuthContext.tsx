@@ -27,6 +27,7 @@ export interface CatequistaUser {
   paroquia_id: string | null;
   paroquia_nome: string | null;
   is_coordenador: boolean;
+  monitorar_missas: boolean;
 }
 
 interface AuthContextType {
@@ -36,6 +37,7 @@ interface AuthContextType {
   isCoordinator: boolean;
   isCatequista: boolean;
   login: (username: string, password: string) => Promise<{ error: string | null }>;
+  setMassMonitoring: (enabled: boolean) => Promise<{ error: string | null }>;
   logout: () => void;
 }
 
@@ -46,6 +48,7 @@ const AuthContext = createContext<AuthContextType>({
   isCoordinator: false,
   isCatequista: false,
   login: async () => ({ error: null }),
+  setMassMonitoring: async () => ({ error: null }),
   logout: () => {},
 });
 
@@ -58,7 +61,9 @@ function loadSession(): CatequistaUser | null {
       return null;
     }
     const raw = localStorage.getItem(SESSION_KEY);
-    return raw ? (JSON.parse(raw) as CatequistaUser) : null;
+    if (!raw) return null;
+    const saved = JSON.parse(raw) as Partial<CatequistaUser>;
+    return { ...saved, monitorar_missas: saved.monitorar_missas !== false } as CatequistaUser;
   } catch {
     return null;
   }
@@ -121,7 +126,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       const { data, error } = await db
         .from("catequistas")
-        .select("id, name, username, role, etapa, paroquia_id, is_coordenador, paroquias(nome)")
+        .select("id, name, username, role, etapa, paroquia_id, is_coordenador, monitorar_missas, paroquias(nome)")
         .eq("username", cleanUsername)
         .eq("password_hash", hash)
         .eq("active", true)
@@ -160,6 +165,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         paroquia_id: data.paroquia_id ?? null,
         paroquia_nome: data.paroquias?.nome ?? null,
         is_coordenador: data.is_coordenador ?? false,
+        monitorar_missas: data.monitorar_missas !== false,
       };
 
       localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
@@ -175,6 +181,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setUser(null);
   }, []);
 
+  const setMassMonitoring = useCallback(async (enabled: boolean) => {
+    if (!user || user.role !== "catequista") return { error: "Preferência disponível apenas para catequistas." };
+    const { error } = await db.from("catequistas").update({ monitorar_missas: enabled }).eq("id", user.id);
+    if (error) return { error: "Não foi possível atualizar o monitoramento de missas." };
+    const updated = { ...user, monitorar_missas: enabled };
+    localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
+    setUser(updated);
+    return { error: null };
+  }, [user]);
+
   const isCoordinator = user?.role === "coordenador" || user?.is_coordenador === true;
   const isCatequista = user?.role === "catequista";
 
@@ -187,6 +203,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         isCoordinator,
         isCatequista,
         login,
+        setMassMonitoring,
         logout,
       }}
     >

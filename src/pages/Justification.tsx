@@ -130,7 +130,7 @@ export default function Justification() {
           <form onSubmit={handleSubmit} className="space-y-5 animate-fade-in">
             <div className="rounded-lg bg-muted/50 border border-border p-3 text-xs text-muted-foreground">
               <strong className="text-foreground">Dica:</strong> Você pode enviar
-              a justificativa mesmo <strong>antes da aula</strong>. Ela será
+              a justificativa mesmo <strong>antes do encontro</strong>. Ela será
               registrada automaticamente quando o catequista marcar a chamada.
             </div>
 

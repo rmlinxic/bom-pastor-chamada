@@ -112,8 +112,9 @@ function EditPendingForm({ id, currentDate, currentReason, onCancel }: EditPendi
 }
 
 export default function Reports() {
-  const { isAdmin, isCoordinator } = useAuth();
+  const { user, isAdmin, isCoordinator, isCatequista } = useAuth();
   const showGrouped = isAdmin || isCoordinator;
+  const massMonitoringEnabled = !isCatequista || user?.monitorar_missas !== false;
   const { data: students = [] } = useStudents();
   const { data: attendance = [] } = useAllAttendance();
   const { data: pendingList = [] } = usePendingJustifications();
@@ -138,7 +139,10 @@ export default function Reports() {
     () => isAdmin && selectedMassEtapa !== "all" ? students.filter((s) => s.class_name === selectedMassEtapa) : students,
     [students, isAdmin, selectedMassEtapa]
   );
-  const massStudentIds = useMemo(() => massFilteredStudents.map((s) => s.id), [massFilteredStudents]);
+  const massStudentIds = useMemo(
+    () => massMonitoringEnabled ? massFilteredStudents.map((s) => s.id) : [],
+    [massFilteredStudents, massMonitoringEnabled]
+  );
   const { data: massRecords = [] } = useMassAttendanceByMonth(massStudentIds, massMonth);
 
   const studentsWithMass = useMemo(() => new Set(massRecords.map((r) => r.student_id)), [massRecords]);
@@ -235,7 +239,7 @@ export default function Reports() {
     const SYM: Record<string, string> = { presente: "P", falta_justificada: "FJ", falta_nao_justificada: "FN" };
     const pad = (n: number) => Array(Math.max(0, n)).fill("");
     const colCount = 2 + allDates.length + 5;
-    const header = ["Aluno", "Turma", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Aulas", "% Presença"];
+    const header = ["Aluno", "Turma", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Encontros", "% Presença"];
 
     const rel = Object.keys(lookup)
       .map((id) => ({ id, ...studentMap[id] }))
@@ -340,7 +344,7 @@ export default function Reports() {
         [`Gerado em: ${new Date().toLocaleString("pt-BR")}`],
         ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta Não Justificada"],
         [],
-        ["Aluno", "Turma", "Paróquia", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Aulas", "% Presença"]
+        ["Aluno", "Turma", "Paróquia", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Encontros", "% Presença"]
       ];
 
       rel.forEach((s) => {
@@ -411,7 +415,7 @@ export default function Reports() {
           [`TURMA: ${turma}`],
           [`Total de alunos: ${tStudents.length}`],
           [],
-          ["Aluno", "Paróquia", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Aulas", "% Presença"]
+          ["Aluno", "Paróquia", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Encontros", "% Presença"]
         ];
 
         tStudents.forEach((s) => {
@@ -474,7 +478,7 @@ export default function Reports() {
         [`Gerado em: ${new Date().toLocaleString("pt-BR")}`],
         ["Legenda: P = Presente | FJ = Falta Justificada | FN = Falta Não Justificada"],
         [],
-        ["Aluno", "Turma", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Aulas", "% Presença"]
+        ["Aluno", "Turma", ...allDates, "Presenças", "Faltas NJ", "Faltas Justif.", "Total Encontros", "% Presença"]
       ];
 
       rel.forEach((s) => {
@@ -1204,7 +1208,7 @@ ${bodyContent}
       )}
 
       <div className="px-4 mb-4 flex gap-2">
-        {(["presencas", "pendentes", "missas"] as Tab[]).map((tab) => {
+        {(["presencas", "pendentes", ...(massMonitoringEnabled ? ["missas" as const] : [])] as Tab[]).map((tab) => {
           const labels: Record<Tab, string> = { presencas: "Presenças", pendentes: "Pendentes", missas: "Missas" };
           const badge = tab === "pendentes" ? pendingList.length : tab === "missas" && isMassCurrentMonth ? massNonCompliant.length : 0;
           return (
