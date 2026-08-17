@@ -48,7 +48,7 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
       setEtapa(p.etapa || ETAPAS[0]);
       setTurma(p.turma);
     }
-  }, [student?.id]);
+  }, [student]);
 
   const isEditing = !!student;
   const isPending = addMutation.isPending || updateMutation.isPending;

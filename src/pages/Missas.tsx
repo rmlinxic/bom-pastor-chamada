@@ -116,7 +116,8 @@ export default function Missas() {
   function toggleStudent(id: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
       return next;
     });
   }
@@ -380,7 +381,8 @@ export default function Missas() {
                 onClick={() => {
                   setSelectedIds((prev) => {
                     const next = new Set(prev);
-                    next.has(s.id) ? next.delete(s.id) : next.add(s.id);
+                    if (next.has(s.id)) next.delete(s.id);
+                    else next.add(s.id);
                     return next;
                   });
                   // Scroll para o topo

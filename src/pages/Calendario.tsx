@@ -93,7 +93,7 @@ function parseCSVLine(line: string): string[] {
 
 function parseDateString(raw: string): string | null {
   const s = raw.trim();
-  const br = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+  const br = s.match(/^(\d{1,2})[/-](\d{1,2})[/-](\d{2,4})$/);
   if (br) {
     const [, d, m, y] = br;
     const year = y.length === 2 ? 2000 + parseInt(y) : parseInt(y);

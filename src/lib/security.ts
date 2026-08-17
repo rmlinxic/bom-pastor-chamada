@@ -114,8 +114,12 @@ export function clearSessionMeta() {
 
 /** Remove caracteres de controle e limita tamanho */
 export function sanitizeText(value: string, maxLength = 255): string {
-  return value
-    .replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, "") // control chars
+  return Array.from(value)
+    .filter((character) => {
+      const code = character.charCodeAt(0);
+      return (code >= 32 || code === 9 || code === 10 || code === 13) && code !== 127;
+    })
+    .join("")
     .replace(/</g, "&lt;").replace(/>/g, "&gt;")         // basic XSS
     .trim()
     .slice(0, maxLength);
@@ -123,12 +127,12 @@ export function sanitizeText(value: string, maxLength = 255): string {
 
 /** Sanitiza username: apenas letras, números, underscores, hifens */
 export function sanitizeUsername(value: string): string {
-  return value.toLowerCase().trim().replace(/[^a-z0-9_\-]/g, "").slice(0, 64);
+  return value.toLowerCase().trim().replace(/[^a-z0-9_-]/g, "").slice(0, 64);
 }
 
 /** Sanitiza telefone: apenas dígitos, espaços, +, -, parênteses */
 export function sanitizePhone(value: string): string {
-  return value.replace(/[^0-9\s+\-()]/g, "").trim().slice(0, 20);
+  return value.replace(/[^0-9\s+()-]/g, "").trim().slice(0, 20);
 }
 
 /** Valida e-mail básico */
