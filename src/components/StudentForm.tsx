@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { createPortal } from "react-dom";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -70,9 +71,9 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
     }
   };
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 backdrop-blur-sm">
-      <div className="w-full max-w-lg rounded-t-2xl bg-background p-6 pb-10 shadow-xl animate-in slide-in-from-bottom duration-200">
+      <div className="max-h-[100dvh] w-full max-w-lg overflow-y-auto rounded-t-2xl bg-background p-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] shadow-xl animate-in slide-in-from-bottom duration-200">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-bold">{isEditing ? "Editar Catequizando" : "Novo Catequizando"}</h2>
           <button onClick={onClose}
@@ -155,6 +156,7 @@ export default function StudentForm({ student, onClose }: StudentFormProps) {
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body
   );
 }
