@@ -9,7 +9,7 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import PageHeader from "@/components/PageHeader";
 import { useStudents } from "@/hooks/useStudents";
-import { useAttendanceByDate, useSaveAttendance } from "@/hooks/useAttendance";
+import { useAttendanceByDate, useSaveAttendance, usePendingJustifications } from "@/hooks/useAttendance";
 
 type Status = "presente" | "falta_justificada" | "falta_nao_justificada";
 
@@ -25,6 +25,7 @@ export default function Attendance() {
   // useStudents já filtra pelo perfil do catequista logado (apenas seus catequizandos)
   const { data: students = [] } = useStudents();
   const { data: existingAttendance = [] } = useAttendanceByDate(dateStr);
+  const { data: pendingJustifications = [] } = usePendingJustifications();
   const saveMutation = useSaveAttendance();
 
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
@@ -167,6 +168,13 @@ export default function Attendance() {
           const status = getStatus(student.id);
           const config = statusConfig[status];
           const Icon = config.icon;
+          const savedAttendance = myExistingAttendance.find((record) => record.student_id === student.id);
+          const savedReason = savedAttendance?.status === "falta_justificada"
+            ? savedAttendance.justification_reason?.trim()
+            : null;
+          const pendingReason = pendingJustifications.find(
+            (record) => record.student_id === student.id && record.date === dateStr
+          )?.reason?.trim();
           return (
             <button
               key={student.id}
@@ -177,11 +185,21 @@ export default function Attendance() {
                 bloqueado ? "opacity-70 cursor-default" : "active:scale-[0.98]"
               )}
             >
-              <div className="text-left">
+              <div className="text-left min-w-0 flex-1 pr-3">
                 <p className="font-semibold text-foreground">{student.name}</p>
                 <p className="text-xs text-muted-foreground">{student.class_name}</p>
+                {savedReason && (
+                  <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
+                    <span className="font-medium">Justificativa registrada: </span>{savedReason}
+                  </p>
+                )}
+                {!savedReason && pendingReason && (
+                  <p className="mt-2 text-sm leading-relaxed whitespace-pre-wrap break-words text-foreground">
+                    <span className="font-medium">Justificativa enviada (pendente): </span>{pendingReason}
+                  </p>
+                )}
               </div>
-              <span className={cn("flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold", config.className)}>
+              <span className={cn("flex shrink-0 items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-semibold", config.className)}>
                 <Icon className="h-3.5 w-3.5" />{config.label}
               </span>
             </button>

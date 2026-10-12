@@ -1,61 +1,26 @@
 import { supabase } from "@/integrations/supabase/client";
+import { assertPasswordProvided } from "@/lib/credentials";
 
-const db = supabase as any;
-
-/**
- * Solicita reset de senha por e-mail usando Supabase Auth
- */
+/** Auth supplies rate limiting and a verified email link; no public account lookup. */
 export async function requestPasswordReset(email: string): Promise<{ error: string | null }> {
   try {
-    // Verifica se o e-mail existe (silenciosamente)
-    const { data } = await db
-      .from("catequistas")
-      .select("id")
-      .eq("email", email.toLowerCase().trim())
-      .eq("active", true)
-      .maybeSingle();
-
-    if (!data) {
-      // Não revela se o e-mail existe ou não
-      return { error: null };
-    }
-
-    const { error } = await supabase.auth.resetPasswordForEmail(
-      email.toLowerCase().trim(),
-      { redirectTo: window.location.origin + "/#/redefinir-senha" }
-    );
-
-    if (error) {
-      console.error("Reset password error:", error);
-      return { error: "Erro ao enviar e-mail. Tente novamente." };
-    }
-
-    return { error: null };
+    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+      redirectTo: new URL(`${import.meta.env.BASE_URL}#/redefinir-senha`, window.location.origin).href,
+    });
+    return { error: error ? "Não foi possível solicitar o e-mail. Aguarde e tente novamente." : null };
   } catch {
-    return { error: "Erro inesperado. Tente novamente." };
+    return { error: "Não foi possível solicitar o e-mail. Tente novamente." };
   }
 }
 
-/**
- * Redefine a senha usando o hash SHA-256
- */
-export async function confirmPasswordReset(
-  email: string,
-  newPasswordHash: string
-): Promise<{ error: string | null }> {
+export async function confirmPasswordReset(newPassword: string): Promise<{ error: string | null }> {
   try {
-    const { error } = await db.rpc("reset_password_by_email", {
-      p_email: email.toLowerCase().trim(),
-      p_new_password_hash: newPasswordHash,
-    });
-
-    if (error) {
-      console.error("Confirm reset error:", error);
-      return { error: "Erro ao redefinir senha. Tente novamente." };
-    }
-
-    return { error: null };
-  } catch {
-    return { error: "Erro inesperado. Tente novamente." };
+    assertPasswordProvided(newPassword);
+    const { data: { user }, error: identityError } = await supabase.auth.getUser();
+    if (identityError || !user) return { error: "O link expirou. Solicite um novo e-mail." };
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+    return { error: error ? error.message : null };
+  } catch (error) {
+    return { error: error instanceof Error ? error.message : "Não foi possível alterar a senha." };
   }
 }

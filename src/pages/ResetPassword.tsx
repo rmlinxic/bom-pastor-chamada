@@ -7,17 +7,6 @@ import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { confirmPasswordReset } from "@/hooks/usePasswordReset";
 import { toast } from "sonner";
-import { checkPasswordStrength } from "@/lib/security";
-
-const SALT = "bom_pastor_catequese";
-
-async function hashPassword(password: string): Promise<string> {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest("SHA-256", enc.encode(SALT + password));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 export default function ResetPassword() {
   const navigate = useNavigate();
@@ -64,8 +53,8 @@ export default function ResetPassword() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!password || password.length < 6) {
-      toast.error("A senha deve ter pelo menos 6 caracteres.");
+    if (!password) {
+      toast.error("Informe uma senha.");
       return;
     }
     if (password !== confirmPwd) {
@@ -79,8 +68,7 @@ export default function ResetPassword() {
 
     setIsLoading(true);
     try {
-      const hash = await hashPassword(password);
-      const { error } = await confirmPasswordReset(userEmail, hash);
+      const { error } = await confirmPasswordReset(password);
 
       if (error) {
         toast.error(error);
@@ -96,7 +84,6 @@ export default function ResetPassword() {
     }
   };
 
-  const strength = password ? checkPasswordStrength(password) : null;
   const passwordsMatch = password && confirmPwd && password === confirmPwd;
   const passwordsMismatch = password && confirmPwd && password !== confirmPwd;
 
@@ -186,38 +173,13 @@ export default function ResetPassword() {
                 type="password"
                 required
                 className="h-12 text-base pl-10"
-                placeholder="Mínimo 6 caracteres"
+                placeholder="Escolha sua senha"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={isLoading}
-                minLength={6}
               />
             </div>
-            {strength && (
-              <div className="space-y-1.5 mt-1.5">
-                <div className="flex gap-1">
-                  {[0, 1, 2, 3].map((i) => (
-                    <div
-                      key={i}
-                      className="h-1.5 flex-1 rounded-full transition-colors"
-                      style={{
-                        backgroundColor:
-                          i <= strength.score
-                            ? strength.score <= 1
-                              ? "hsl(var(--destructive))"
-                              : strength.score <= 2
-                              ? "hsl(40 96% 53%)"
-                              : "hsl(142 76% 36%)"
-                            : "hsl(var(--muted))",
-                      }}
-                    />
-                  ))}
-                </div>
-                <p className={`text-xs ${strength.color}`}>
-                  {strength.label}
-                </p>
-              </div>
-            )}
+
           </div>
 
           {/* Confirmar senha */}
@@ -234,7 +196,6 @@ export default function ResetPassword() {
                 value={confirmPwd}
                 onChange={(e) => setConfirmPwd(e.target.value)}
                 disabled={isLoading}
-                minLength={6}
               />
             </div>
             {passwordsMismatch && (
@@ -255,7 +216,7 @@ export default function ResetPassword() {
             className="w-full h-12 text-base font-semibold mt-2"
             disabled={
               isLoading ||
-              password.length < 6 ||
+              !password ||
               password !== confirmPwd
             }
           >

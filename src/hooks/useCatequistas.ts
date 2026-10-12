@@ -1,20 +1,38 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { assertPasswordProvided } from "@/lib/credentials";
 
 const db = supabase as any;
-const SALT = "bom_pastor_catequese";
+function requiredEmail(value: string | null | undefined): string {
+  const email = value?.trim().toLowerCase() ?? "";
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
+    throw new Error("Informe um e-mail válido para a conta de acesso.");
+  }
+  return email;
+}
 
-export async function hashPassword(password: string): Promise<string> {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest("SHA-256", enc.encode(SALT + password));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+async function manageAccount(body: Record<string, unknown>): Promise<void> {
+  const { data, error } = await supabase.functions.invoke("account-management", { body });
+  if (error) {
+    if (error.context instanceof Response) {
+      const result = await error.context.clone().json().catch(() => null);
+      if (typeof result?.error === "string") throw new Error(result.error);
+    }
+    throw new Error("Não foi possível concluir a operação. Verifique sua sessão e tente novamente.");
+  }
+  if (typeof data?.error === "string") throw new Error(data.error);
+}
+
+function invalidateAccounts(qc: ReturnType<typeof useQueryClient>) {
+  for (const key of ["catequistas", "catequistas-paroquia", "students", "dashboard-stats", "coord-stats"]) {
+    qc.invalidateQueries({ queryKey: [key] });
+  }
 }
 
 export interface Catequista {
   id: string;
+  auth_user_id: string | null;
   name: string;
   username: string;
   email: string | null;
@@ -33,7 +51,7 @@ export function useCatequistas() {
     queryFn: async () => {
       const { data, error } = await db
         .from("catequistas")
-        .select("id, name, username, email, role, etapa, paroquia_id, is_coordenador, active, created_at, paroquias(nome)")
+        .select("id, auth_user_id, name, username, email, role, etapa, paroquia_id, is_coordenador, active, created_at, paroquias(nome)")
         .order("created_at");
       if (error) throw error;
       return ((data ?? []) as any[]).map((c) => ({
@@ -52,7 +70,7 @@ export function useCatequistasByParoquia(paroquia_id: string | null) {
     queryFn: async () => {
       const { data, error } = await db
         .from("catequistas")
-        .select("id, name, username, email, role, etapa, paroquia_id, is_coordenador, active, created_at, paroquias(nome)")
+        .select("id, auth_user_id, name, username, email, role, etapa, paroquia_id, is_coordenador, active, created_at, paroquias(nome)")
         .eq("paroquia_id", paroquia_id)
         .eq("active", true)
         .order("created_at");
@@ -72,35 +90,27 @@ export function useCreateCatequista() {
     mutationFn: async (input: {
       name: string;
       username: string;
-      password: string;
+      password?: string;
       email?: string | null;
       etapa: string | null;
       role: "admin" | "catequista" | "coordenador";
       paroquia_id: string | null;
       is_coordenador: boolean;
     }) => {
-      const password_hash = await hashPassword(input.password);
-      const { error } = await db.from("catequistas").insert({
+      if (input.password) assertPasswordProvided(input.password);
+      await manageAccount({
+        action: "create",
+        ...input,
         name: input.name.trim(),
         username: input.username.toLowerCase().trim(),
-        password_hash,
-        email: input.email?.toLowerCase().trim() || null,
-        etapa: input.role === "catequista" ? (input.etapa?.trim() || null) : null,
-        role: input.role,
-        paroquia_id: input.paroquia_id || null,
-        is_coordenador: input.role === "coordenador" ? true : input.is_coordenador,
+        email: requiredEmail(input.email),
       });
-      if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["catequistas"] });
-      toast.success("Usuário criado com sucesso!");
+      invalidateAccounts(qc);
+      toast.success("Usuário criado! Convite enviado por e-mail.");
     },
-    onError: (err: Error) => {
-      if (err.message?.includes("unique") || err.message?.includes("duplicate"))
-        toast.error("Já existe um usuário com esse nome de usuário.");
-      else toast.error("Erro ao criar usuário.");
-    },
+    onError: (err: Error) => toast.error(err.message || "Erro ao criar usuário."),
   });
 }
 
@@ -118,24 +128,20 @@ export function useUpdateCatequista() {
       paroquia_id: string | null;
       is_coordenador: boolean;
     }) => {
-      const update: Record<string, unknown> = {
+      if (input.newPassword) assertPasswordProvided(input.newPassword);
+      await manageAccount({
+        action: "update",
+        ...input,
         name: input.name.trim(),
         username: input.username.toLowerCase().trim(),
-        email: input.email?.toLowerCase().trim() || null,
-        etapa: input.role === "catequista" ? (input.etapa?.trim() || null) : null,
-        role: input.role,
-        paroquia_id: input.paroquia_id || null,
-        is_coordenador: input.role === "coordenador" ? true : input.is_coordenador,
-      };
-      if (input.newPassword) update.password_hash = await hashPassword(input.newPassword);
-      const { error } = await db.from("catequistas").update(update).eq("id", input.id);
-      if (error) throw error;
+        email: requiredEmail(input.email),
+      });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["catequistas"] });
+      invalidateAccounts(qc);
       toast.success("Usuário atualizado!");
     },
-    onError: () => toast.error("Erro ao atualizar usuário."),
+    onError: (err: Error) => toast.error(err.message || "Erro ao atualizar usuário."),
   });
 }
 
@@ -143,13 +149,24 @@ export function useDeactivateCatequista() {
   const qc = useQueryClient();
   return useMutation({
     mutationFn: async (id: string) => {
-      const { error } = await db.from("catequistas").update({ active: false }).eq("id", id);
-      if (error) throw error;
+      await manageAccount({ action: "deactivate", id });
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["catequistas"] });
+      invalidateAccounts(qc);
       toast.success("Usuário removido.");
     },
-    onError: () => toast.error("Erro ao remover usuário."),
+    onError: (err: Error) => toast.error(err.message || "Erro ao remover usuário."),
+  });
+}
+
+export function useInviteCatequista() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; email: string }) => {
+      const { error } = await supabase.functions.invoke("account-management", { body: { action: "admin_invite", ...input } });
+      if (error) throw error;
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["catequistas"] }); toast.success("Convite de acesso enviado por e-mail."); },
+    onError: () => toast.error("Não foi possível enviar o convite. Verifique o e-mail e a configuração de envio."),
   });
 }

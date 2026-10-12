@@ -16,7 +16,7 @@ import PageHeader from "@/components/PageHeader";
 import { useStudents } from "@/hooks/useStudents";
 import { useAuth } from "@/contexts/AuthContext";
 import {
-  useMassAttendanceByMonth, useRegisterMassAttendance, useDeleteMassAttendance,
+  useMassAttendanceByMonth, useDeleteMassAttendance,
 } from "@/hooks/useMassAttendance";
 import { ETAPAS } from "@/lib/etapas";
 import { toast } from "sonner";
@@ -24,12 +24,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { useQueryClient } from "@tanstack/react-query";
 
 const db = supabase as any;
-
-function todayMonthStr() { return new Date().toISOString().slice(0, 7); }
-function shiftMonth(m: string, d: number) {
-  const [y, mo] = m.split("-").map(Number);
-  return new Date(y, mo - 1 + d, 1).toISOString().slice(0, 7);
-}
+import { localDateString, localMonthString, shiftMonth } from "@/lib/dates";
 function monthLabel(m: string) {
   const [y, mo] = m.split("-").map(Number);
   return format(new Date(y, mo - 1, 1), "MMMM yyyy", { locale: ptBR });
@@ -43,7 +38,7 @@ export default function Missas() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [isSaving, setIsSaving] = useState(false);
-  const [currentMonth, setCurrentMonth] = useState(todayMonthStr);
+  const [currentMonth, setCurrentMonth] = useState(localMonthString);
   const [filtroEtapa, setFiltroEtapa] = useState<string>("all");
 
   const canFilterEtapa = isCoordinator || isAdmin;
@@ -60,7 +55,7 @@ export default function Missas() {
   const deleteMutation = useDeleteMassAttendance();
 
   const today = new Date();
-  const thisMonth = todayMonthStr();
+  const thisMonth = localMonthString();
   const isCurrentMonth = currentMonth === thisMonth;
   const isPastMonth = currentMonth < thisMonth;
   const daysLeft = getDaysInMonth(today) - today.getDate();
@@ -111,7 +106,6 @@ export default function Missas() {
 
   const allFormIds = useMemo(() => formStudents.map((s) => s.id), [formStudents]);
   const allSelected = allFormIds.length > 0 && allFormIds.every((id) => selectedIds.has(id));
-  const someSelected = selectedIds.size > 0 && !allSelected;
 
   function toggleStudent(id: string) {
     setSelectedIds((prev) => {
@@ -150,6 +144,7 @@ export default function Missas() {
       setSelectedIds(new Set());
       setSelectedDate("");
       queryClient.invalidateQueries({ queryKey: ["mass-attendance"] });
+      queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
     } catch (err: any) {
       toast.error(err?.message ?? "Erro ao registrar presenças.");
     } finally {
@@ -227,7 +222,7 @@ export default function Missas() {
           <input
             type="date"
             value={selectedDate}
-            max={today.toISOString().slice(0, 10)}
+            max={localDateString(today)}
             onChange={(e) => setSelectedDate(e.target.value)}
             className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
           />

@@ -1,1 +1,24 @@
-project_id = "solqfhhkgrkxkfrqpftb"
+project_id = "nzkertmhokxeiedxwtvl"
+
+[auth]
+site_url = "https://rmlinxic.github.io/bom-pastor-chamada/"
+additional_redirect_urls = ["https://rmlinxic.github.io/bom-pastor-chamada/#/redefinir-senha", "http://localhost:8080/#/redefinir-senha"]
+enable_signup = false
+minimum_password_length = 6
+
+[auth.email]
+enable_signup = false
+enable_confirmations = true
+double_confirm_changes = true
+secure_password_change = true
+max_frequency = "60s"
+otp_length = 8
+
+[auth.mfa.totp]
+enroll_enabled = true
+verify_enabled = true
+
+[functions.account-management]
+verify_jwt = false
+# The function validates the Bearer JWT with Auth.getUser before any service use.
+# This also supports projects using modern asymmetric Auth signing keys.

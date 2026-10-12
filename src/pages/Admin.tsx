@@ -14,14 +14,12 @@ import PageHeader from "@/components/PageHeader";
 import { cn } from "@/lib/utils";
 import {
   useCatequistas, useCreateCatequista, useUpdateCatequista,
-  useDeactivateCatequista, type Catequista,
+  useDeactivateCatequista, useInviteCatequista, type Catequista,
 } from "@/hooks/useCatequistas";
 import { useParoquias, useCreateParoquia, useToggleParoquia } from "@/hooks/useParoquias";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { ETAPAS, nomeTurma, parseTurma } from "@/lib/etapas";
 
-const db = supabase as any;
 type UserRole = "admin" | "catequista" | "coordenador";
 
 type FormData = {
@@ -41,12 +39,6 @@ const EMPTY_FORM: FormData = {
   role: "catequista", etapa: "", turma: "", paroquia_id: "", is_coordenador: false,
 };
 
-const ROLE_LABELS: Record<UserRole, string> = {
-  admin: "Administrador",
-  catequista: "Catequista",
-  coordenador: "Coordenador (apenas)",
-};
-
 const ROLE_ICONS: Record<UserRole, React.ReactNode> = {
   admin: <Crown className="h-4 w-4 text-warning shrink-0" />,
   catequista: <User className="h-4 w-4 text-primary shrink-0" />,
@@ -59,6 +51,7 @@ export default function Admin() {
   const createMutation = useCreateCatequista();
   const updateMutation = useUpdateCatequista();
   const deactivateMutation = useDeactivateCatequista();
+  const inviteMutation = useInviteCatequista();
   const createParoquiaMutation = useCreateParoquia();
   const toggleParoquiaMutation = useToggleParoquia();
 
@@ -93,8 +86,7 @@ export default function Admin() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.username.trim()) return;
-    if (!editingId && !form.password.trim()) return;
+    if (!form.name.trim() || !form.username.trim() || !form.email.trim()) return;
     setSaving(true);
     try {
       // Monta etapa final: "Primeira Etapa" ou "Primeira Etapa A"
@@ -115,12 +107,15 @@ export default function Admin() {
 
       const payload = {
         ...form,
-        email: form.email || null,
+        email: form.email,
         etapa: etapaFinal || null,
         paroquia_id: form.paroquia_id || null,
         is_coordenador: form.role === "coordenador" ? true : form.is_coordenador,
       };
-      if (editingId) await updateMutation.mutateAsync({ id: editingId, ...payload, newPassword: form.password || undefined });
+      if (editingId) {
+        if (!catequistas.find((c) => c.id === editingId)?.auth_user_id) await inviteMutation.mutateAsync({ id: editingId, email: form.email });
+        await updateMutation.mutateAsync({ id: editingId, ...payload, newPassword: form.password || undefined });
+      }
       else await createMutation.mutateAsync({ ...payload });
       setOpen(false);
     } finally { setSaving(false); }
@@ -179,6 +174,7 @@ export default function Admin() {
                           <span className={cn("shrink-0 text-xs px-2 py-0.5 rounded-full font-medium", badge.cls)}>{badge.label}</span>
                         </div>
                         <p className="text-xs text-muted-foreground font-mono">@{c.username}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{c.auth_user_id ? c.email : "Acesso por e-mail pendente: edite o cadastro para enviar o convite."}</p>
                         {c.paroquia_nome ? (
                           <div className="flex items-center gap-1.5 mt-1"><Building2 className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-xs text-muted-foreground">{c.paroquia_nome}</span></div>
                         ) : (c.role === "catequista" || c.role === "coordenador") ? (
@@ -404,7 +400,7 @@ export default function Admin() {
             )}
 
             <Button className="w-full h-11" onClick={handleSave}
-              disabled={saving || !form.name.trim() || !form.username.trim() || (!editingId && !form.password.trim())}>
+              disabled={saving || !form.name.trim() || !form.username.trim() || !form.email.trim()}>
               {saving
                 ? <span className="flex items-center gap-2"><span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground" />Salvando...</span>
                 : editingId ? "Salvar alterações" : "Criar usuário"}

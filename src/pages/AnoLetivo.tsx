@@ -1,27 +1,29 @@
-import { useState, useMemo } from "react";
+import { useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GraduationCap, AlertTriangle, CheckCircle2, ArrowRight, Loader2 } from "lucide-react";
+import { AlertTriangle, ArrowRight, Download, GraduationCap, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import PageHeader from "@/components/PageHeader";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { ETAPAS, nomeTurma, parseTurma, proximaEtapa } from "@/lib/etapas";
+import { localMonthString, shiftMonth } from "@/lib/dates";
+import { downloadAttendanceArchive } from "@/lib/attendance-archive";
 
 const db = supabase as any;
+type Catequista = { id: string; name: string; etapa: string | null };
+type Student = { id: string; name: string; class_name: string; catequista_id: string | null; active: boolean };
+type Attendance = { student_id: string; date: string; status?: string };
+const EMPTY_TEACHERS: Catequista[] = [];
+const EMPTY_STUDENTS: Student[] = [];
 
-type Catequista = {
-  id: string;
-  name: string;
-  etapa: string | null;       // etapa atual (ex: "Primeira Etapa A")
-  novaEtapa: string;          // etapa base selecionada (ex: "Segunda Etapa")
-  novaTurma: string;          // sufixo selecionado (ex: "A" ou "")
-};
+function destinationClass(className: string): string {
+  const { turma } = parseTurma(className);
+  return nomeTurma(proximaEtapa(className), turma);
+}
 
 export default function AnoLetivo() {
   const { user } = useAuth();
@@ -30,312 +32,160 @@ export default function AnoLetivo() {
   const { toast } = useToast();
   const paroquiaId = user?.paroquia_id;
   const anoAtual = new Date().getFullYear();
-
   const [step, setStep] = useState<1 | 2 | 3>(1);
   const [confirmText, setConfirmText] = useState("");
-  const [catequistas, setCatequistas] = useState<Catequista[]>([]);
-  const [processing, setProcessing] = useState(false);
+  const [selecoes, setSelecoes] = useState<Record<string, string>>({});
 
-  const { data: catRaw = [], isLoading: loadingCat } = useQuery({
-    queryKey: ["catequistas-paroquia", paroquiaId],
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["ano-letivo-planejamento", paroquiaId],
     queryFn: async () => {
-      const { data } = await db
-        .from("catequistas")
-        .select("id, name, etapa")
-        .eq("paroquia_id", paroquiaId)
-        .eq("active", true)
-        .in("role", ["catequista", "coordenador_catequista"]);
-      return (data ?? []) as { id: string; name: string; etapa: string | null }[];
+      const [cats, students] = await Promise.all([
+        db.from("catequistas").select("id, name, etapa, paroquia_id, role, active").eq("paroquia_id", paroquiaId).eq("active", true).eq("role", "catequista"),
+        db.from("students").select("*").eq("paroquia_id", paroquiaId),
+      ]);
+      if (cats.error) throw cats.error;
+      if (students.error) throw students.error;
+      return { catequistas: (cats.data ?? []) as Catequista[], students: (students.data ?? []) as Student[] };
     },
     enabled: !!paroquiaId,
-    onSuccess: (data) => {
-      setCatequistas(
-        data.map((c) => {
-          const { etapa: etapaBase } = parseTurma(c.etapa ?? "");
-          const proxima = proximaEtapa(c.etapa ?? "");
-          const { etapa: proximaBase, turma: proximaTurma } = parseTurma(proxima);
-          return {
-            ...c,
-            novaEtapa: proximaBase || ETAPAS[0],
-            novaTurma: proximaTurma,
-          };
-        })
-      );
-    },
   });
-
-  const allEtapasSet = useMemo(
-    () => catequistas.every((c) => !!c.novaEtapa),
-    [catequistas]
+  const catequistas = data?.catequistas ?? EMPTY_TEACHERS;
+  const students = data?.students ?? EMPTY_STUDENTS;
+  const turmas = useMemo(() => [...new Set<string>([
+    ...ETAPAS,
+    ...catequistas.map((cat) => cat.etapa).filter((etapa): etapa is string => !!etapa),
+    ...students.filter((student) => student.active).map((student) => destinationClass(student.class_name)),
+  ])], [catequistas, students]);
+  const obrigatorias = new Set(students.filter((student) => student.active).map((student) => destinationClass(student.class_name)));
+  const atribuicoes = turmas.map((turma) => ({
+    turma,
+    catequistaId: selecoes[`${paroquiaId}:${turma}`] ?? catequistas.find((cat) => cat.etapa === turma)?.id ?? "",
+  }));
+  const selecionados = atribuicoes.map((item) => item.catequistaId).filter(Boolean);
+  const duplicados = new Set(selecionados).size !== selecionados.length;
+  const planoValido = !!paroquiaId && !isLoading && !isError && catequistas.length > 0 && !duplicados && atribuicoes.every((item) =>
+    (!obrigatorias.has(item.turma) || !!item.catequistaId) && (!item.catequistaId || catequistas.some((cat) => cat.id === item.catequistaId))
   );
 
   const processarAno = useMutation({
     mutationFn: async () => {
-      setProcessing(true);
+      if (!user || !paroquiaId || !planoValido) throw new Error("Revise as atribuições de catequistas.");
+      const { data: ano, error: anoError } = await db.from("anos_catequeticos").select("encerrado_em").eq("paroquia_id", paroquiaId).eq("ano", anoAtual).maybeSingle();
+      if (anoError) throw anoError;
+      if (ano?.encerrado_em) throw new Error("Este ano catequético já foi encerrado.");
 
-      const { data: students } = await db
-        .from("students")
-        .select("id, class_name, catequista_id")
-        .eq("paroquia_id", paroquiaId)
-        .eq("active", true);
-
-      const allStudents = (students ?? []) as { id: string; class_name: string; catequista_id: string | null }[];
-
-      const aptos: { id: string; novaEtapa: string }[] = [];
-      const pendentes: {
-        student_id: string;
-        faltas_nao_justificadas: number;
-        meses_sem_missa: number;
-        score_faltas: number;
-      }[] = [];
-
-      for (const student of allStudents) {
-        const { data: firstRec } = await db
-          .from("attendance")
-          .select("date")
-          .eq("student_id", student.id)
-          .order("date", { ascending: true })
-          .limit(1)
-          .maybeSingle();
-
-        const since = firstRec?.date ?? null;
-        let faltasNJ = 0;
+      // A fresh snapshot includes inactive students and the full year's records.
+      const { data: freshStudents, error: studentsError } = await db.from("students").select("*").eq("paroquia_id", paroquiaId);
+      if (studentsError) throw studentsError;
+      const allStudents = (freshStudents ?? []) as Student[];
+      const studentIds = allStudents.map((student) => student.id);
+      const start = `${anoAtual}-01-01`;
+      const end = `${anoAtual}-12-31`;
+      const [attendanceResult, massResult] = studentIds.length ? await Promise.all([
+        db.from("attendance").select("*").in("student_id", studentIds).gte("date", start).lte("date", end),
+        db.from("mass_attendance").select("*").in("student_id", studentIds).gte("date", start).lte("date", end),
+      ]) : [{ data: [], error: null }, { data: [], error: null }];
+      if (attendanceResult.error) throw attendanceResult.error;
+      if (massResult.error) throw massResult.error;
+      const attendance = (attendanceResult.data ?? []) as Attendance[];
+      const massAttendance = (massResult.data ?? []) as Attendance[];
+      const aptos: { id: string; novaEtapa: string; catequistaId: string }[] = [];
+      const pendentes: { student_id: string; faltas_nao_justificadas: number; meses_sem_missa: number; score_faltas: number; destino_class_name: string; destino_catequista_id: string }[] = [];
+      for (const student of allStudents.filter((student) => student.active)) {
+        const novaEtapa = destinationClass(student.class_name);
+        const catequistaId = atribuicoes.find((item) => item.turma === novaEtapa)?.catequistaId;
+        if (!catequistaId) throw new Error("Há uma turma sem catequista. Recarregue e revise o planejamento.");
+        const records = attendance.filter((record) => record.student_id === student.id);
+        const since = records.map((record) => record.date).sort()[0];
+        const faltas = records.filter((record) => record.status === "falta_nao_justificada").length;
+        let meses = 0;
         if (since) {
-          const { count } = await db
-            .from("attendance")
-            .select("id", { count: "exact" })
-            .eq("student_id", student.id)
-            .eq("status", "falta_nao_justificada")
-            .gte("date", since);
-          faltasNJ = count ?? 0;
-        }
-
-        let mesesSemMissa = 0;
-        if (since) {
-          const sinceDate = new Date(since);
-          const hoje = new Date();
-          const cur = new Date(sinceDate.getFullYear(), sinceDate.getMonth(), 1);
-          while (cur <= hoje) {
-            const mes = cur.toISOString().slice(0, 7);
-            const [y, m] = mes.split("-").map(Number);
-            const end = new Date(y, m, 0).toISOString().slice(0, 10);
-            const { count } = await db
-              .from("mass_attendance")
-              .select("id", { count: "exact" })
-              .eq("student_id", student.id)
-              .gte("date", `${mes}-01`)
-              .lte("date", end);
-            if ((count ?? 0) === 0) mesesSemMissa++;
-            cur.setMonth(cur.getMonth() + 1);
+          const massMonths = new Set(massAttendance.filter((record) => record.student_id === student.id).map((record) => record.date.slice(0, 7)));
+          for (let month = since.slice(0, 7); month <= localMonthString(); month = shiftMonth(month, 1)) {
+            if (!massMonths.has(month)) meses++;
           }
         }
-
-        const score = faltasNJ + mesesSemMissa;
-        const cat = catequistas.find((c) => c.id === student.catequista_id);
-        const novaEtapa = cat ? nomeTurma(cat.novaEtapa, cat.novaTurma || undefined) : proximaEtapa(student.class_name);
-
-        if (score <= 3) {
-          aptos.push({ id: student.id, novaEtapa });
-        } else {
-          pendentes.push({
-            student_id: student.id,
-            faltas_nao_justificadas: faltasNJ,
-            meses_sem_missa: mesesSemMissa,
-            score_faltas: score,
-          });
-        }
+        const score = faltas + meses;
+        if (score <= 3) aptos.push({ id: student.id, novaEtapa, catequistaId });
+        else pendentes.push({ student_id: student.id, faltas_nao_justificadas: faltas, meses_sem_missa: meses, score_faltas: score, destino_class_name: novaEtapa, destino_catequista_id: catequistaId });
       }
-
-      for (const { id, novaEtapa } of aptos) {
-        await db.from("students").update({ class_name: novaEtapa, ano_catequetico: anoAtual }).eq("id", id);
+      // Download failure must stop the transition before any write.
+      downloadAttendanceArchive({ year: anoAtual, paroquiaId, students: allStudents, catequistas, attendance, massAttendance });
+      for (const student of aptos) {
+        const { error } = await db.from("students").update({ class_name: student.novaEtapa, catequista_id: student.catequistaId, ano_catequetico: anoAtual + 1 }).eq("id", student.id).eq("paroquia_id", paroquiaId);
+        if (error) throw error;
       }
-
-      if (pendentes.length > 0) {
-        await db.from("promocoes_pendentes").upsert(
-          pendentes.map((p) => ({ ...p, paroquia_id: paroquiaId, ano_catequetico: anoAtual })),
-          { onConflict: "student_id,ano_catequetico" }
-        );
+      if (pendentes.length) {
+        const { error } = await db.from("promocoes_pendentes").upsert(pendentes.map((item) => ({ ...item, paroquia_id: paroquiaId, ano_catequetico: anoAtual })), { onConflict: "student_id,ano_catequetico" });
+        if (error) throw error;
       }
-
       for (const cat of catequistas) {
-        const novaEtapaFinal = nomeTurma(cat.novaEtapa, cat.novaTurma || undefined);
-        await db.from("catequistas").update({ etapa: novaEtapaFinal }).eq("id", cat.id);
+        const etapa = atribuicoes.find((item) => item.catequistaId === cat.id)?.turma ?? null;
+        const { error } = await db.from("catequistas").update({ etapa }).eq("id", cat.id).eq("paroquia_id", paroquiaId);
+        if (error) throw error;
       }
-
-      await db.from("anos_catequeticos").upsert(
-        { paroquia_id: paroquiaId, ano: anoAtual, encerrado_em: new Date().toISOString(), ativo: false },
-        { onConflict: "paroquia_id,ano" }
-      );
-
-      await db.from("activity_log").insert({
-        catequista_id: user!.id,
-        acao: "encerramento_ano",
-        detalhes: { ano: anoAtual, aptos: aptos.length, pendentes: pendentes.length, paroquia_id: paroquiaId },
-      });
-
+      const { error: yearError } = await db.from("anos_catequeticos").upsert({ paroquia_id: paroquiaId, ano: anoAtual, encerrado_em: new Date().toISOString(), ativo: false }, { onConflict: "paroquia_id,ano" });
+      if (yearError) throw yearError;
+      const { error: logError } = await db.from("activity_log").insert({ catequista_id: user.id, acao: "encerramento_ano", detalhes: { ano: anoAtual, aptos: aptos.length, pendentes: pendentes.length, paroquia_id: paroquiaId, atribuicoes } });
+      if (logError) throw logError;
       return { aptos: aptos.length, pendentes: pendentes.length };
     },
     onSuccess: ({ aptos, pendentes }) => {
-      setProcessing(false);
-      qc.invalidateQueries({ queryKey: ["students"] });
-      qc.invalidateQueries({ queryKey: ["promocoes-pendentes"] });
-      toast({
-        title: "Ano encerrado com sucesso!",
-        description: `${aptos} aluno(s) promovido(s). ${pendentes} aguardando decisão manual.`,
-      });
+      toast({ title: "Ano encerrado com sucesso!", description: `${aptos} aluno(s) promovido(s). ${pendentes} aguardando decisão manual. Guarde o arquivo baixado.` });
       navigate("/coordenador");
     },
-    onError: () => {
-      setProcessing(false);
-      toast({ title: "Erro ao processar o ano. Tente novamente.", variant: "destructive" });
+    onSettled: () => {
+      for (const key of ["students", "promocoes-pendentes", "catequistas", "catequistas-paroquia", "coord-stats", "ano-letivo-planejamento"]) qc.invalidateQueries({ queryKey: [key] });
+    },
+    onError: (error) => {
+      toast({ title: "Não foi possível concluir o encerramento.", description: error instanceof Error && error.message === "Este ano catequético já foi encerrado." ? error.message : "Confira o arquivo e os dados antes de repetir: algumas alterações podem ter sido salvas.", variant: "destructive" });
     },
   });
+  const processing = processarAno.isPending;
 
   return (
     <div className="pb-24">
-      <PageHeader title="Encerramento de Ano" subtitle={`Ano Catequético ${anoAtual}`} />
-
+      <PageHeader title="Encerramento de Ano" subtitle={`${anoAtual} → ${anoAtual + 1}`} />
       <div className="px-4 space-y-4">
-        {/* Indicador de passos */}
-        <div className="flex items-center gap-2 justify-center py-2">
-          {([1, 2, 3] as const).map((s) => (
-            <div key={s} className="flex items-center gap-1">
-              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold border-2 ${
-                step === s ? "border-primary bg-primary text-white" :
-                step > s ? "border-success bg-success/10 text-success" : "border-border text-muted-foreground"
-              }`}>{step > s ? "✓" : s}</div>
-              {s < 3 && <div className={`w-8 h-0.5 ${step > s ? "bg-success" : "bg-border"}`} />}
-            </div>
-          ))}
-        </div>
-
-        {/* PASSO 1 */}
-        {step === 1 && (
-          <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-5 space-y-4">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-5 w-5 text-destructive" />
-              <span className="font-bold text-destructive">Ação Irreversível</span>
-            </div>
-            <ul className="text-sm text-muted-foreground space-y-1 list-disc pl-5">
-              <li>Alunos aptos serão promovidos automaticamente</li>
-              <li>Alunos com mais de 3 faltas entrarão em fila de decisão manual</li>
-              <li>As etapas de todos os catequistas serão atualizadas</li>
-              <li>O processo não pode ser desfeito</li>
-            </ul>
-            <div className="space-y-2">
-              <p className="text-sm font-medium">Digite <strong>CONFIRMAR</strong> para prosseguir:</p>
-              <Input value={confirmText} onChange={(e) => setConfirmText(e.target.value)}
-                placeholder="CONFIRMAR" className="font-mono" />
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => navigate("/coordenador")}>Cancelar</Button>
-              <Button className="flex-1" disabled={confirmText !== "CONFIRMAR"} onClick={() => setStep(2)}>
-                Prosseguir <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
-            </div>
+        <p className="text-center text-sm text-muted-foreground">Passo {step} de 3</p>
+        {step === 1 && <div className="rounded-lg border border-destructive/40 bg-destructive/5 p-5 space-y-4">
+          <p className="flex gap-2 font-bold text-destructive"><AlertTriangle className="h-5 w-5" />Encerrar o ano e preparar o próximo</p>
+          <ul className="text-sm text-muted-foreground space-y-1 list-disc pl-5">
+            <li>Alunos aptos avançam de etapa; os demais aguardam decisão manual.</li>
+            <li>Você escolhe quem ficará responsável por cada etapa e subturma.</li>
+            <li>Um arquivo do ano será baixado antes das mudanças. Guarde-o para consultar as turmas antigas.</li>
+            <li>As chamadas e presenças nas missas permanecem no banco.</li>
+            <li>As mudanças de turma não podem ser desfeitas automaticamente.</li>
+          </ul>
+          <label className="block text-sm font-medium">Digite CONFIRMAR para prosseguir:
+            <Input value={confirmText} onChange={(event) => setConfirmText(event.target.value)} placeholder="CONFIRMAR" className="mt-2 font-mono" />
+          </label>
+          <div className="flex gap-3"><Button variant="outline" className="flex-1" onClick={() => navigate("/coordenador")}>Cancelar</Button><Button className="flex-1" disabled={confirmText !== "CONFIRMAR"} onClick={() => setStep(2)}>Prosseguir<ArrowRight className="h-4 w-4 ml-1" /></Button></div>
+        </div>}
+        {step === 2 && <div className="space-y-4">
+          <div className="rounded-lg border border-border bg-card p-4 space-y-4">
+            <p className="flex gap-2 font-bold"><GraduationCap className="h-5 w-5 text-primary" />Catequista de cada etapa em {anoAtual + 1}</p>
+            <p className="text-sm text-muted-foreground">A atribuição atual é uma sugestão. Escolha quem permanece ou assume cada turma. Cada catequista pode assumir uma turma.</p>
+            {isLoading ? <Loader2 className="h-5 w-5 animate-spin mx-auto" /> : isError ? <p role="alert" className="text-sm text-destructive">Não foi possível carregar o planejamento. Recarregue a página.</p> : catequistas.length === 0 ? <p>Nenhum catequista ativo encontrado.</p> : atribuicoes.map((item) => <div key={item.turma} className="space-y-2">
+              <p id={`turma-${turmas.indexOf(item.turma)}`} className="text-sm font-semibold">{item.turma}{obrigatorias.has(item.turma) ? " *" : ""}</p>
+              <Select value={item.catequistaId || "__none__"} onValueChange={(value) => setSelecoes((previous) => ({ ...previous, [`${paroquiaId}:${item.turma}`]: value === "__none__" ? "" : value }))}>
+                <SelectTrigger aria-labelledby={`turma-${turmas.indexOf(item.turma)}`}><SelectValue /></SelectTrigger>
+                <SelectContent><SelectItem value="__none__">Sem catequista</SelectItem>{catequistas.map((cat) => <SelectItem key={cat.id} value={cat.id}>{cat.name}</SelectItem>)}</SelectContent>
+              </Select>
+            </div>)}
+            <p className="text-xs text-muted-foreground">* Turma que receberá alunos: escolha obrigatória.</p>
+            {duplicados && <p role="alert" className="text-sm text-destructive">O mesmo catequista está em mais de uma turma. Ajuste as escolhas.</p>}
           </div>
-        )}
-
-        {/* PASSO 2 - Etapas dos catequistas */}
-        {step === 2 && (
-          <div className="space-y-4">
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="flex items-center gap-2 mb-4">
-                <GraduationCap className="h-5 w-5 text-primary" />
-                <span className="font-bold">Nova etapa de cada catequista</span>
-              </div>
-              {loadingCat ? (
-                <div className="flex justify-center py-4"><Loader2 className="h-5 w-5 animate-spin" /></div>
-              ) : catequistas.length === 0 ? (
-                <p className="text-sm text-muted-foreground text-center py-4">Nenhum catequista ativo encontrado.</p>
-              ) : (
-                <div className="space-y-4">
-                  {catequistas.map((c) => (
-                    <div key={c.id} className="rounded-lg border border-border p-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm font-semibold">{c.name}</p>
-                        <span className="text-xs text-muted-foreground">{c.etapa ?? "sem etapa"}</span>
-                      </div>
-                      {/* Select de etapa */}
-                      <Select value={c.novaEtapa}
-                        onValueChange={(v) => setCatequistas((prev) =>
-                          prev.map((x) => x.id === c.id ? { ...x, novaEtapa: v, novaTurma: "" } : x)
-                        )}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {ETAPAS.map((e) => <SelectItem key={e} value={e}>{e}</SelectItem>)}
-                        </SelectContent>
-                      </Select>
-                      {/* Select de turma */}
-                      <Select value={c.novaTurma || "__none__"}
-                        onValueChange={(v) => setCatequistas((prev) =>
-                          prev.map((x) => x.id === c.id ? { ...x, novaTurma: v === "__none__" ? "" : v } : x)
-                        )}>
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="__none__">Sem subturma</SelectItem>
-                          {["A","B","C","D","E","F","G","H"].map((l) => (
-                            <SelectItem key={l} value={l}>Turma {l}</SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <p className="text-xs text-primary font-medium">
-                        Turma final: <strong>{nomeTurma(c.novaEtapa, c.novaTurma || undefined)}</strong>
-                      </p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setStep(1)}>Voltar</Button>
-              <Button className="flex-1" disabled={!allEtapasSet || catequistas.length === 0} onClick={() => setStep(3)}>
-                Revisar <ArrowRight className="h-4 w-4 ml-1" />
-              </Button>
-            </div>
+          <div className="flex gap-3"><Button variant="outline" className="flex-1" onClick={() => setStep(1)}>Voltar</Button><Button className="flex-1" disabled={!planoValido} onClick={() => setStep(3)}>Revisar<ArrowRight className="h-4 w-4 ml-1" /></Button></div>
+        </div>}
+        {step === 3 && <div className="space-y-4">
+          <div className="rounded-lg border border-border bg-card p-4 space-y-3">
+            <p className="font-bold">Confirmar responsáveis por turma</p>
+            {atribuicoes.map((item) => <p key={item.turma} className="text-sm"><strong>{item.turma}</strong>: {catequistas.find((cat) => cat.id === item.catequistaId)?.name ?? "Sem catequista"}</p>)}
+            <p className="text-sm text-muted-foreground">Ao confirmar, será baixado o arquivo de {anoAtual} com alunos, turmas, chamadas e missas. Os dados históricos permanecem no banco.</p>
           </div>
-        )}
-
-        {/* PASSO 3 - Revisão */}
-        {step === 3 && (
-          <div className="space-y-4">
-            <div className="rounded-lg border border-border bg-card p-4">
-              <div className="flex items-center gap-2 mb-4">
-                <CheckCircle2 className="h-5 w-5 text-success" />
-                <span className="font-bold">Confirmar mudanças de etapa</span>
-              </div>
-              <div className="space-y-2">
-                {catequistas.map((c) => {
-                  const nova = nomeTurma(c.novaEtapa, c.novaTurma || undefined);
-                  return (
-                    <div key={c.id} className="flex items-center gap-2 text-sm">
-                      <span className="flex-1 font-medium truncate">{c.name}</span>
-                      <span className="text-muted-foreground text-xs shrink-0">{c.etapa ?? "-"}</span>
-                      {nova !== c.etapa ? (
-                        <>
-                          <ArrowRight className="h-3.5 w-3.5 text-primary shrink-0" />
-                          <span className="text-primary font-semibold text-xs shrink-0">{nova}</span>
-                        </>
-                      ) : (
-                        <span className="text-muted-foreground text-xs">(sem mudança)</span>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-            <div className="flex gap-3">
-              <Button variant="outline" className="flex-1" onClick={() => setStep(2)} disabled={processing}>Voltar</Button>
-              <Button className="flex-1" onClick={() => processarAno.mutate()} disabled={processing}>
-                {processing ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Processando...</> : "Confirmar e Encerrar Ano"}
-              </Button>
-            </div>
-          </div>
-        )}
+          <div className="flex gap-3"><Button variant="outline" className="flex-1" disabled={processing} onClick={() => setStep(2)}>Voltar</Button><Button className="flex-1" onClick={() => processarAno.mutate()} disabled={processing || !planoValido}>{processing ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Download className="h-4 w-4 mr-2" />}{processing ? "Processando..." : "Baixar arquivo e Encerrar Ano"}</Button></div>
+        </div>}
       </div>
     </div>
   );

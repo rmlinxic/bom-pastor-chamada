@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect } from "react";
 import {
   Clock, Users, CheckCircle, AlertTriangle, XCircle,
-  BookOpen, Church, Building2, MessageCircle, ChevronDown,
+  BookOpen, Church, Building2, MessageCircle,
 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { getDaysInMonth, format, parseISO } from "date-fns";
@@ -22,8 +22,7 @@ import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
 
 const db = supabase as any;
-
-function todayMonthStr() { return new Date().toISOString().slice(0, 7); }
+import { localMonthString } from "@/lib/dates";
 function lastDayOfMonth(monthStr: string) {
   const [y, m] = monthStr.split("-").map(Number);
   return new Date(y, m, 0).getDate();
@@ -97,7 +96,7 @@ export default function Dashboard() {
 
   // ---------- query de dados ----------
   const { data: stats } = useQuery({
-    queryKey: ["dashboard-stats", user?.id, scope, massMonitoringEnabled],
+    queryKey: ["dashboard-stats", user?.id, user?.etapa, user?.paroquia_id, scope, massMonitoringEnabled],
     queryFn: async () => {
       let studentsQuery = db
         .from("students")
@@ -108,7 +107,7 @@ export default function Dashboard() {
         studentsQuery = studentsQuery.or(
           `catequista_id.eq.${user!.id},and(catequista_id.is.null,class_name.eq.${
             user?.etapa ?? "__nenhuma__"
-          })`
+          },${user?.paroquia_id ? `paroquia_id.eq.${user.paroquia_id}` : "paroquia_id.is.null"})`
         );
       } else if (scope.kind === "paroquia") {
         studentsQuery = studentsQuery.eq("paroquia_id", scope.paroquia_id);
@@ -118,6 +117,7 @@ export default function Dashboard() {
       }
 
       const studentsRes = await studentsQuery;
+      if (studentsRes.error) throw studentsRes.error;
       const totalStudents = studentsRes.count ?? 0;
       const allStudents: { id: string; name: string; phone: string | null; parent_name: string | null }[] =
         studentsRes.data ?? [];
@@ -131,20 +131,24 @@ export default function Dashboard() {
         };
       }
 
-      const records: { student_id: string; status: string; date: string }[] =
-        (await db.from("attendance").select("student_id, status, date").in("student_id", studentIds)).data ?? [];
+      const [attendanceRes, pendingRes] = await Promise.all([
+        db.from("attendance").select("student_id, status, date").in("student_id", studentIds),
+        db.from("pending_justifications").select("id, date, students(name)").in("student_id", studentIds),
+      ]);
+      if (attendanceRes.error) throw attendanceRes.error;
+      if (pendingRes.error) throw pendingRes.error;
+      const records: { student_id: string; status: string; date: string }[] = attendanceRes.data ?? [];
+      const pendingList = pendingRes.data ?? [];
 
-      const pendingList =
-        (await db.from("pending_justifications").select("id, date, students(name)").in("student_id", studentIds)).data ?? [];
-
-      const month = todayMonthStr();
+      const month = localMonthString();
       const lastDay = lastDayOfMonth(month);
       const massRes = massMonitoringEnabled
         ? await db.from("mass_attendance").select("student_id")
             .in("student_id", studentIds)
             .gte("date", `${month}-01`)
             .lte("date", `${month}-${String(lastDay).padStart(2, "0")}`)
-        : { data: [] };
+        : { data: [], error: null };
+      if (massRes.error) throw massRes.error;
       const studentsWithMassSet = new Set((massRes.data ?? []).map((r: any) => r.student_id));
       const studentsWithoutMass = allStudents.filter((s) => !studentsWithMassSet.has(s.id));
 
@@ -185,8 +189,8 @@ export default function Dashboard() {
   const scopeLabel = useMemo(() => {
     if (scope.kind === "own") return user?.etapa ? `Etapa: ${user.etapa}` : "Minha etapa";
     if (scope.kind === "all") return "Todas as paróquias";
-    if (scope.kind === "paroquia") return paroquias.find((p) => p.id === (scope as any).paroquia_id)?.nome ?? "Paróquia";
-    if (scope.kind === "etapa") return (scope as any).etapa;
+    if (scope.kind === "paroquia") return paroquias.find((p) => p.id === scope.paroquia_id)?.nome ?? "Paróquia";
+    if (scope.kind === "etapa") return scope.etapa;
     return "";
   }, [scope, paroquias, user?.etapa]);
 

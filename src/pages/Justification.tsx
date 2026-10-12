@@ -1,229 +1,56 @@
-import { useState, useMemo } from "react";
-import { format } from "date-fns";
-import { ptBR } from "date-fns/locale";
-import { CalendarIcon, Church, CheckCircle2, Clock } from "lucide-react";
+import { useState } from "react";
+import { Church, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import { Calendar } from "@/components/ui/calendar";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
-import { cn } from "@/lib/utils";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useSubmitJustification } from "@/hooks/useAttendance";
-import { usePublicStudents } from "@/hooks/useStudents";
 import { useParoquias } from "@/hooks/useParoquias";
-import { sanitizeText } from "@/lib/security";
-
-function getBaseEtapa(className: string): string {
-  return className.replace(/\s+[AaBb]$/, "").trim();
-}
-
-function getSubTurma(className: string, base: string): string | null {
-  const suffix = className.slice(base.length).trim();
-  return suffix || null;
-}
+import { localDateString } from "@/lib/dates";
 
 export default function Justification() {
-  const [selectedParoquia, setSelectedParoquia] = useState("");
-  const [selectedEtapa, setSelectedEtapa] = useState("");
-  const [studentId, setStudentId] = useState("");
-  const [date, setDate] = useState<Date | undefined>();
+  const [paroquiaId, setParoquiaId] = useState("");
+  const [studentName, setStudentName] = useState("");
+  const [guardianContact, setGuardianContact] = useState("");
+  const [date, setDate] = useState(localDateString);
   const [reason, setReason] = useState("");
   const [submitted, setSubmitted] = useState(false);
-  const [wasPending, setWasPending] = useState(false);
-
   const mutation = useSubmitJustification();
-  const { data: allStudents = [], isLoading: loadingStudents } = usePublicStudents();
-  const { data: paroquias = [], isLoading: loadingParoquias } = useParoquias();
+  const { data: paroquias = [], isLoading } = useParoquias();
 
-  const studentsByParoquia = useMemo(() => {
-    if (!selectedParoquia) return allStudents;
-    return allStudents.filter((s: any) => s.paroquia_id === selectedParoquia);
-  }, [allStudents, selectedParoquia]);
-
-  const etapas = useMemo(() => {
-    const bases = new Set(studentsByParoquia.map((s) => getBaseEtapa(s.class_name)));
-    return Array.from(bases).sort();
-  }, [studentsByParoquia]);
-
-  const filteredStudents = useMemo(() => {
-    if (!selectedEtapa) return [];
-    return studentsByParoquia
-      .filter((s) => getBaseEtapa(s.class_name) === selectedEtapa)
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [studentsByParoquia, selectedEtapa]);
-
-  const canSubmit = !!studentId && !!date && reason.trim().length > 0;
-
-  const handleParoquiaChange = (value: string) => {
-    setSelectedParoquia(value);
-    setSelectedEtapa("");
-    setStudentId("");
+  const handleSubmit = (event: React.FormEvent) => {
+    event.preventDefault();
+    mutation.mutate({ paroquiaId, studentName: studentName.trim(), guardianContact, date, reason: reason.trim() }, {
+      onSuccess: () => { setSubmitted(true); setStudentName(""); setGuardianContact(""); setReason(""); },
+    });
   };
 
-  const handleEtapaChange = (value: string) => {
-    setSelectedEtapa(value);
-    setStudentId("");
-  };
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!canSubmit) return;
-    // Sanitiza o motivo antes de enviar
-    const cleanReason = sanitizeText(reason.trim(), 500);
-    if (!cleanReason) return;
-    mutation.mutate(
-      { studentId, date: format(date!, "yyyy-MM-dd"), reason: cleanReason },
-      {
-        onSuccess: (result) => {
-          setWasPending(result.pending);
-          setSubmitted(true);
-          setSelectedParoquia("");
-          setSelectedEtapa("");
-          setStudentId("");
-          setDate(undefined);
-          setReason("");
-        },
-      }
-    );
-  };
-
-  const handleSendAnother = () => setSubmitted(false);
-
-  return (
-    <div className="public-shell justify-start sm:justify-center">
-      <div className="public-panel max-w-lg">
-        <div className="mb-8 flex flex-col items-center">
-          <div className="brand-mark mb-4 h-16 w-16">
-            <Church className="h-8 w-8" />
-          </div>
-          <p className="brand-kicker mb-2">Portal das famílias</p>
-          <h1 className="text-center text-3xl font-bold tracking-[-0.035em] text-foreground">Justificativa de Falta</h1>
-          <p className="mt-2 text-center text-sm font-medium text-muted-foreground">Catequese Bom Pastor</p>
-        </div>
-
-        {submitted ? (
-          wasPending ? (
-            <div className="rounded-lg border border-warning/30 bg-warning/10 p-6 text-center animate-fade-in">
-              <Clock className="h-12 w-12 text-warning mx-auto mb-3" />
-              <p className="text-lg font-semibold text-warning">Justificativa registrada!</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                A chamada desse dia ainda não foi registrada. Sua justificativa
-                foi salva e <strong>será aplicada automaticamente</strong> assim
-                que o catequista marcar a presença.
-              </p>
-              <Button onClick={handleSendAnother} className="mt-5 w-full">Enviar outra justificativa</Button>
-            </div>
-          ) : (
-            <div className="rounded-lg border border-success/30 bg-success/10 p-6 text-center animate-fade-in">
-              <CheckCircle2 className="h-12 w-12 text-success mx-auto mb-3" />
-              <p className="text-lg font-semibold text-success">Falta justificada!</p>
-              <p className="text-sm text-muted-foreground mt-2">
-                O status foi atualizado automaticamente no sistema.
-              </p>
-              <Button onClick={handleSendAnother} className="mt-5 w-full">Enviar outra justificativa</Button>
-            </div>
-          )
-        ) : (
-          <form onSubmit={handleSubmit} className="space-y-5 animate-fade-in">
-            <div className="rounded-lg bg-muted/50 border border-border p-3 text-xs text-muted-foreground">
-              <strong className="text-foreground">Dica:</strong> Você pode enviar
-              a justificativa mesmo <strong>antes do encontro</strong>. Ela será
-              registrada automaticamente quando o catequista marcar a chamada.
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Comunidade / Paróquia</Label>
-              <Select value={selectedParoquia} onValueChange={handleParoquiaChange} disabled={loadingParoquias}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={loadingParoquias ? "Carregando..." : "Selecione a comunidade"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {paroquias.filter((p) => p.ativa).length === 0 && !loadingParoquias && (
-                    <div className="px-3 py-4 text-center text-sm text-muted-foreground">Nenhuma comunidade cadastrada.</div>
-                  )}
-                  {paroquias.filter((p) => p.ativa).map((p) => (
-                    <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Etapa do Catequizando</Label>
-              <Select value={selectedEtapa} onValueChange={handleEtapaChange} disabled={!selectedParoquia || loadingStudents}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={!selectedParoquia ? "Selecione a comunidade primeiro" : loadingStudents ? "Carregando..." : "Selecione a etapa"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {etapas.length === 0 && !loadingStudents && selectedParoquia && (
-                    <div className="px-3 py-4 text-center text-sm text-muted-foreground">Nenhuma etapa nesta comunidade.</div>
-                  )}
-                  {etapas.map((etapa) => (
-                    <SelectItem key={etapa} value={etapa}>{etapa}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Nome do Catequizando</Label>
-              <Select value={studentId} onValueChange={setStudentId} disabled={!selectedEtapa || loadingStudents}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder={!selectedEtapa ? "Selecione a etapa primeiro" : filteredStudents.length === 0 ? "Nenhum aluno nesta etapa" : "Selecione o nome do seu filho(a)"} />
-                </SelectTrigger>
-                <SelectContent>
-                  {filteredStudents.map((s) => {
-                    const sub = getSubTurma(s.class_name, selectedEtapa);
-                    return (
-                      <SelectItem key={s.id} value={s.id}>
-                        <span className="font-medium">{s.name}</span>
-                        {sub && <span className="ml-2 text-xs text-muted-foreground">- Turma {sub}</span>}
-                      </SelectItem>
-                    );
-                  })}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label>Data da Falta</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" className={cn("w-full justify-start text-left font-normal", !date && "text-muted-foreground")}>
-                    <CalendarIcon className="mr-2 h-4 w-4" />
-                    {date ? format(date, "PPP", { locale: ptBR }) : "Selecione a data da falta"}
-                  </Button>
-                </PopoverTrigger>
-                <PopoverContent className="w-auto p-0" align="start">
-                  <Calendar mode="single" selected={date} onSelect={setDate} initialFocus className="p-3 pointer-events-auto" />
-                </PopoverContent>
-              </Popover>
-            </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="reason">Motivo da Falta</Label>
-              <Textarea
-                id="reason"
-                value={reason}
-                onChange={(e) => setReason(e.target.value)}
-                onBlur={(e) => setReason(sanitizeText(e.target.value, 500))}
-                placeholder="Descreva o motivo da falta (ex: doença, consulta médica, viagem familiar...)"
-                rows={4}
-                maxLength={500}
-                required
-              />
-              <p className="text-xs text-muted-foreground text-right">{reason.length}/500</p>
-            </div>
-
-            <Button type="submit" className="w-full h-12 text-base font-semibold" disabled={mutation.isPending || !canSubmit}>
-              {mutation.isPending ? "Enviando..." : "Enviar Justificativa"}
-            </Button>
-          </form>
-        )}
-      </div>
+  return <div className="public-shell"><div className="public-panel max-w-lg">
+    <div className="mb-8 flex flex-col items-center">
+      <div className="brand-mark mb-4 h-16 w-16"><Church className="h-8 w-8" /></div>
+      <p className="brand-kicker mb-2">Portal das famílias</p>
+      <h1 className="text-center text-3xl font-bold">Justificativa de Falta</h1>
+      <p className="mt-2 text-center text-sm text-muted-foreground">Catequese Bom Pastor</p>
     </div>
-  );
+    {submitted ? <div className="rounded-lg border border-success/30 bg-success/10 p-6 text-center" role="status">
+      <CheckCircle2 className="mx-auto mb-3 h-12 w-12 text-success" />
+      <p className="text-lg font-semibold">Solicitação recebida</p>
+      <p className="mt-2 text-sm text-muted-foreground">Se o nome e o telefone coincidirem com o cadastro, a justificativa será registrada. Em caso de dúvida, procure o catequista.</p>
+      <Button className="mt-5 w-full" onClick={() => setSubmitted(false)}>Enviar outra justificativa</Button>
+    </div> : <form onSubmit={handleSubmit} className="space-y-5">
+      <p className="rounded-lg border border-border bg-muted/50 p-3 text-xs text-muted-foreground">Informe o nome completo e o telefone do responsável usado no cadastro. Você também pode justificar antes do encontro.</p>
+      <div className="space-y-1.5"><Label htmlFor="justification-parish">Comunidade / Paróquia</Label>
+        <Select value={paroquiaId} onValueChange={setParoquiaId} disabled={isLoading}>
+          <SelectTrigger id="justification-parish"><SelectValue placeholder="Selecione a comunidade" /></SelectTrigger>
+          <SelectContent>{paroquias.filter((p) => p.ativa).map((p) => <SelectItem key={p.id} value={p.id}>{p.nome}</SelectItem>)}</SelectContent>
+        </Select>
+      </div>
+      <div className="space-y-1.5"><Label htmlFor="student-name">Nome completo do catequizando</Label><Input id="student-name" value={studentName} onChange={(e) => setStudentName(e.target.value)} minLength={2} maxLength={200} required autoComplete="off" /></div>
+      <div className="space-y-1.5"><Label htmlFor="guardian-contact">Telefone do responsável cadastrado</Label><Input id="guardian-contact" type="tel" value={guardianContact} onChange={(e) => setGuardianContact(e.target.value)} maxLength={25} required autoComplete="tel" placeholder="DDD + número" /></div>
+      <div className="space-y-1.5"><Label htmlFor="absence-date">Data da falta</Label><Input id="absence-date" type="date" value={date} onChange={(e) => setDate(e.target.value)} required /></div>
+      <div className="space-y-1.5"><Label htmlFor="reason">Motivo da falta</Label><Textarea id="reason" value={reason} onChange={(e) => setReason(e.target.value)} minLength={3} maxLength={500} rows={4} required /><p className="text-right text-xs text-muted-foreground">{reason.length}/500</p></div>
+      <Button type="submit" className="h-12 w-full" disabled={mutation.isPending || !paroquiaId || !studentName.trim() || !guardianContact.trim() || !date || reason.trim().length < 3}>{mutation.isPending ? "Enviando..." : "Enviar justificativa"}</Button>
+    </form>}
+  </div></div>;
 }

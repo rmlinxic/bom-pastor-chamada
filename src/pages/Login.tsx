@@ -43,19 +43,19 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="username">Usuário</Label>
+            <Label htmlFor="username">E-mail</Label>
             <Input
               id="username"
-              type="text"
+              type="email"
               autoComplete="username"
-              placeholder="Nome de usuário"
+              placeholder="Seu e-mail cadastrado"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="h-12 text-base"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              maxLength={64}
+              maxLength={254}
               required
             />
           </div>

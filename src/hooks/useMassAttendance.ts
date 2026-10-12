@@ -2,6 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useAuth } from "@/contexts/AuthContext";
+import { monthDateRange } from "@/lib/dates";
 
 const db = supabase as any;
 
@@ -11,12 +12,6 @@ export type MassRecord = {
   date: string;
   students: { name: string; paroquia_id?: string | null } | null;
 };
-
-function lastDayOfMonth(monthStr: string): string {
-  const [y, m] = monthStr.split("-").map(Number);
-  const day = new Date(y, m, 0).getDate();
-  return `${monthStr}-${String(day).padStart(2, "0")}`;
-}
 
 /**
  * Busca registros de missa de um mês para uma lista de alunos.
@@ -29,17 +24,18 @@ export function useMassAttendanceByMonth(
   return useQuery({
     queryKey: ["mass-attendance", month, studentIds],
     queryFn: async () => {
+      const { start, end } = monthDateRange(month);
       const { data, error } = await db
         .from("mass_attendance")
         .select("id, student_id, date, students(name, paroquia_id)")
         .in("student_id", studentIds)
-        .gte("date", `${month}-01`)
-        .lte("date", lastDayOfMonth(month))
+        .gte("date", start)
+        .lte("date", end)
         .order("date", { ascending: true });
       if (error) throw error;
       return (data ?? []) as MassRecord[];
     },
-    enabled: studentIds.length > 0,
+    enabled: studentIds.length > 0 && /^\d{4}-(0[1-9]|1[0-2])$/.test(month),
   });
 }
 
@@ -61,6 +57,7 @@ export function useRegisterMassAttendance() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mass-attendance"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
       toast.success("Presença na missa registrada!");
     },
     onError: (err: Error) => {
@@ -90,6 +87,7 @@ export function useDeleteMassAttendance() {
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["mass-attendance"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
       toast.success("Registro removido.");
     },
     onError: () => toast.error("Erro ao remover registro."),
@@ -103,13 +101,14 @@ export function useDeleteMassAttendance() {
 export function useParoquiaMassStudentIds() {
   const { user, isCoordinator, isAdmin } = useAuth();
   return useQuery({
-    queryKey: ["paroquia-mass-student-ids", user?.paroquia_id],
+    queryKey: ["paroquia-mass-student-ids", user?.id, user?.paroquia_id],
     queryFn: async () => {
-      const { data } = await db
+      const { data, error } = await db
         .from("students")
         .select("id")
         .eq("paroquia_id", user!.paroquia_id)
         .eq("active", true);
+      if (error) throw error;
       return (data ?? []).map((s: any) => s.id) as string[];
     },
     enabled: (isCoordinator || isAdmin) && !!user?.paroquia_id,

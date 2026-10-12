@@ -1,8 +1,8 @@
-import { useState, useMemo } from "react";
+import { useState } from "react";
 import {
   Users, BarChart2, GraduationCap, CheckCircle, XCircle,
-  Clock, AlertTriangle, ChevronDown, ChevronUp, Loader2,
-  UserPlus, Eye, EyeOff, BookOpen, Mail,
+  AlertTriangle, ChevronDown, ChevronUp, Loader2,
+  UserPlus, Eye, EyeOff, Mail,
 } from "lucide-react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
@@ -17,7 +17,7 @@ import { cn } from "@/lib/utils";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "@/hooks/use-toast";
 import { proximaEtapa, ETAPAS, nomeTurma } from "@/lib/etapas";
-import { useCreateCatequista, useCatequistasByParoquia } from "@/hooks/useCatequistas";
+import { useCreateCatequista } from "@/hooks/useCatequistas";
 
 const db = supabase as any;
 
@@ -56,7 +56,7 @@ export default function CoordinadorView() {
     queryFn: async () => {
       const { data } = await db
         .from("promocoes_pendentes")
-        .select("id, student_id, faltas_nao_justificadas, meses_sem_missa, score_faltas, decisao, students(name, class_name, catequista_id, catequistas(etapa))")
+        .select("id, student_id, faltas_nao_justificadas, meses_sem_missa, score_faltas, decisao, ano_catequetico, destino_class_name, destino_catequista_id, students(name, class_name, catequista_id, catequistas(etapa))")
         .eq("paroquia_id", paroquiaId)
         .eq("ano_catequetico", anoAtual)
         .is("decisao", null);
@@ -73,31 +73,34 @@ export default function CoordinadorView() {
       etapaAtual: string;
       catequistaEtapa: string | null;
     }) => {
-      // 1. Grava decisão
-      await db.from("promocoes_pendentes").update({
-        decisao,
-        decidido_por: user!.id,
-        decidido_em: new Date().toISOString(),
-      }).eq("id", id);
-
-      // 2. Se promovido: atualiza class_name do aluno para a etapa do catequista (próxima etapa)
+      const { data: planned, error: plannedError } = await db.from("promocoes_pendentes")
+        .select("destino_class_name,destino_catequista_id,ano_catequetico,decisao").eq("id", id).eq("paroquia_id", paroquiaId).single();
+      if (plannedError) throw plannedError;
+      if (planned.decisao) throw new Error("Esta decisão já foi registrada.");
       if (decisao === "promovido") {
-        const novaEtapa = catequistaEtapa ?? proximaEtapa(etapaAtual);
-        await db.from("students").update({ class_name: novaEtapa }).eq("id", studentId);
+        const { error } = await db.from("students").update({
+          class_name: planned.destino_class_name ?? proximaEtapa(etapaAtual),
+          catequista_id: planned.destino_catequista_id ?? null,
+          ano_catequetico: planned.ano_catequetico + 1,
+        }).eq("id", studentId).eq("paroquia_id", paroquiaId);
+        if (error) throw error;
       }
-
-      // 3. Log
-      await db.from("activity_log").insert({
-        catequista_id: user!.id,
-        acao: "decisao_promocao",
-        detalhes: { promocao_id: id, decisao, paroquia_id: paroquiaId },
+      const { error: decisionError } = await db.from("promocoes_pendentes").update({
+        decisao, decidido_por: user!.id, decidido_em: new Date().toISOString(),
+      }).eq("id", id).eq("paroquia_id", paroquiaId);
+      if (decisionError) throw decisionError;
+      const { error: logError } = await db.from("activity_log").insert({
+        catequista_id: user!.id, acao: "decisao_promocao", detalhes: { promocao_id: id, decisao, paroquia_id: paroquiaId },
       });
+      if (logError) throw logError;
     },
     onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey: ["promocoes-pendentes"] });
       qc.invalidateQueries({ queryKey: ["students"] });
+      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
       toast({ title: vars.decisao === "promovido" ? "Aluno promovido ✓" : "Aluno retido na etapa atual" });
     },
+    onError: () => toast({ title: "Não foi possível registrar a decisão.", variant: "destructive" }),
   });
 
   const [expandedStats, setExpandedStats] = useState(false);
@@ -122,7 +125,7 @@ export default function CoordinadorView() {
   };
 
   const handleCreateCatequista = async () => {
-    if (!catForm.name.trim() || !catForm.username.trim() || !catForm.password.trim() || !catForm.email.trim()) return;
+    if (!catForm.name.trim() || !catForm.username.trim() || !catForm.email.trim()) return;
     setSaving(true);
     try {
       const etapaFinal = nomeTurma(catForm.etapa, catForm.turma || undefined);
@@ -208,7 +211,7 @@ export default function CoordinadorView() {
               {pendentes.map((p: any) => {
                 const etapaAtual = p.students?.class_name ?? "";
                 const catEquistaEtapa = p.students?.catequistas?.etapa ?? null;
-                const novaEtapa = catEquistaEtapa ?? proximaEtapa(etapaAtual);
+                const novaEtapa = p.destino_class_name ?? proximaEtapa(etapaAtual);
                 return (
                   <div key={p.id} className="rounded-lg border border-border bg-card p-3">
                     <div className="flex items-start justify-between gap-2 mb-1">
@@ -404,8 +407,7 @@ export default function CoordinadorView() {
                 saving ||
                 !catForm.name.trim() ||
                 !catForm.username.trim() ||
-                !catForm.email.trim() ||
-                !catForm.password.trim()
+                !catForm.email.trim()
               }
             >
               {saving ? (

@@ -1,22 +1,9 @@
-import { createContext, useContext, useState, useCallback, useEffect } from "react";
-import { supabase } from "@/integrations/supabase/client";
-import {
-  isLockedOut, recordFailedAttempt, clearRateLimit, formatLockoutTime,
-  initSessionMeta, touchSession, isSessionExpired, clearSessionMeta,
-  sanitizeUsername,
-} from "@/lib/security";
+import { createContext, useContext, useState, useCallback, useEffect, useRef } from "react";
+import { useQueryClient } from "@tanstack/react-query";
+import { supabase, isAuthCallback } from "@/integrations/supabase/client";
+import { initSessionMeta, touchSession, isSessionExpired, clearSessionMeta } from "@/lib/security";
 
-const SALT = "bom_pastor_catequese";
-const SESSION_KEY = "bom_pastor_session_v3";
 const db = supabase as any;
-
-async function hashPassword(password: string): Promise<string> {
-  const enc = new TextEncoder();
-  const buf = await crypto.subtle.digest("SHA-256", enc.encode(SALT + password));
-  return Array.from(new Uint8Array(buf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
-}
 
 export interface CatequistaUser {
   id: string;
@@ -32,188 +19,139 @@ export interface CatequistaUser {
 
 interface AuthContextType {
   user: CatequistaUser | null;
+  isLoading: boolean;
   isAuthenticated: boolean;
   isAdmin: boolean;
   isCoordinator: boolean;
   isCatequista: boolean;
-  login: (username: string, password: string) => Promise<{ error: string | null }>;
+  login: (email: string, password: string) => Promise<{ error: string | null }>;
   setMassMonitoring: (enabled: boolean) => Promise<{ error: string | null }>;
   logout: () => void;
 }
 
-const AuthContext = createContext<AuthContextType>({
-  user: null,
-  isAuthenticated: false,
-  isAdmin: false,
-  isCoordinator: false,
-  isCatequista: false,
-  login: async () => ({ error: null }),
-  setMassMonitoring: async () => ({ error: null }),
-  logout: () => {},
-});
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-function loadSession(): CatequistaUser | null {
-  try {
-    // Sessão expirada? limpa e retorna null
-    if (isSessionExpired()) {
-      localStorage.removeItem(SESSION_KEY);
-      clearSessionMeta();
-      return null;
-    }
-    const raw = localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const saved = JSON.parse(raw) as Partial<CatequistaUser>;
-    return { ...saved, monitorar_missas: saved.monitorar_missas !== false } as CatequistaUser;
-  } catch {
-    return null;
-  }
+async function readProfile(authUserId: string): Promise<CatequistaUser | null> {
+  const { data, error } = await db.from("catequistas")
+    .select("id, name, username, role, etapa, paroquia_id, is_coordenador, monitorar_missas, paroquias(nome)")
+    .eq("auth_user_id", authUserId).eq("active", true).maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return { ...data, paroquia_nome: data.paroquias?.nome ?? null,
+    is_coordenador: data.is_coordenador === true, monitorar_missas: data.monitorar_missas !== false };
 }
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
-  const [user, setUser] = useState<CatequistaUser | null>(loadSession);
-
-  // ── Verifica expiração a cada 60s e no foco da janela ──
-  useEffect(() => {
-    if (!user) return;
-
-    const check = () => {
-      if (isSessionExpired()) {
-        localStorage.removeItem(SESSION_KEY);
-        clearSessionMeta();
-        setUser(null);
-      }
-    };
-
-    const interval = setInterval(check, 60_000);
-    window.addEventListener("focus", check);
-    return () => {
-      clearInterval(interval);
-      window.removeEventListener("focus", check);
-    };
-  }, [user]);
-
-  // ── Atualiza lastActivity em qualquer interação ──
-  useEffect(() => {
-    if (!user) return;
-    const events = ["mousemove", "keydown", "click", "scroll", "touchstart"];
-    const handler = () => touchSession();
-    events.forEach((e) => window.addEventListener(e, handler, { passive: true }));
-    return () => events.forEach((e) => window.removeEventListener(e, handler));
-  }, [user]);
-
-  const login = useCallback(
-    async (username: string, password: string): Promise<{ error: string | null }> => {
-      const cleanUsername = sanitizeUsername(username);
-
-      if (!cleanUsername || !password) {
-        return { error: "Preencha usuário e senha." };
-      }
-
-      // ── Rate limiting ──
-      const lockStatus = isLockedOut(cleanUsername);
-      if (lockStatus.locked) {
-        return {
-          error: `Muitas tentativas. Tente novamente em ${formatLockoutTime(lockStatus.remainingMs)}.`,
-        };
-      }
-
-      // ── Tamanho máximo de senha (evita DoS por hash de string gigante) ──
-      if (password.length > 128) {
-        return { error: "Senha inválida." };
-      }
-
-      const hash = await hashPassword(password);
-
-      const { data, error } = await db
-        .from("catequistas")
-        .select("id, name, username, role, etapa, paroquia_id, is_coordenador, monitorar_missas, paroquias(nome)")
-        .eq("username", cleanUsername)
-        .eq("password_hash", hash)
-        .eq("active", true)
-        .maybeSingle();
-
-      if (error) {
-        if (error.code === "42P01")
-          return { error: "Sistema não configurado. Execute a migração SQL no Supabase." };
-        return { error: "Erro ao acessar o banco de dados." };
-      }
-
-      if (!data) {
-        // Registra tentativa falha (independente de username existir ou não)
-        const entry = recordFailedAttempt(cleanUsername);
-        const remaining = 5 - entry.attempts;
-        if (entry.lockedUntil) {
-          return { error: `Conta bloqueada por ${formatLockoutTime(LOCKOUT_MS_CONST)}. Muitas tentativas.` };
-        }
-        return {
-          error: remaining > 0
-            ? `Usuário ou senha incorretos. ${remaining} tentativa${remaining !== 1 ? "s" : ""} restante${remaining !== 1 ? "s" : ""}.`
-            : "Usuário ou senha incorretos.",
-        };
-      }
-
-      // ── Sucesso: limpa rate limit e inicia sessão ──
-      clearRateLimit(cleanUsername);
-      initSessionMeta();
-
-      const sessionUser: CatequistaUser = {
-        id: data.id,
-        name: data.name,
-        username: data.username,
-        role: data.role,
-        etapa: data.etapa ?? null,
-        paroquia_id: data.paroquia_id ?? null,
-        paroquia_nome: data.paroquias?.nome ?? null,
-        is_coordenador: data.is_coordenador ?? false,
-        monitorar_missas: data.monitorar_missas !== false,
-      };
-
-      localStorage.setItem(SESSION_KEY, JSON.stringify(sessionUser));
-      setUser(sessionUser);
-      return { error: null };
-    },
-    []
-  );
+  const queryClient = useQueryClient();
+  const [user, setUser] = useState<CatequistaUser | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const sequence = useRef(0);
+  const signingIn = useRef(false);
+  const loginAttempt = useRef(0);
 
   const logout = useCallback(() => {
-    localStorage.removeItem(SESSION_KEY);
-    clearSessionMeta();
+    loginAttempt.current++;
+    sequence.current++;
     setUser(null);
-  }, []);
+    clearSessionMeta();
+    queryClient.clear();
+    // Local state is cleared immediately, even when the network is unavailable.
+    void supabase.auth.signOut({ scope: "local" });
+  }, [queryClient]);
+
+  useEffect(() => {
+    let disposed = false;
+    const refresh = async (newSignIn = false) => {
+      const request = ++sequence.current;
+      try {
+        const { data: { user: identity }, error } = await supabase.auth.getUser();
+        if (error || !identity) {
+          if (!disposed && request === sequence.current) { setUser(null); queryClient.clear(); }
+          return;
+        }
+        if (newSignIn) initSessionMeta();
+        else if (isSessionExpired()) { if (!disposed && request === sequence.current) logout(); return; }
+        const profile = await readProfile(identity.id);
+        if (!disposed && request === sequence.current) setUser(profile);
+      } catch {
+        if (!disposed && request === sequence.current) { setUser(null); queryClient.clear(); }
+      } finally {
+        if (!disposed && request === sequence.current) setIsLoading(false);
+      }
+    };
+    // Never await another Auth call inside onAuthStateChange's lock.
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") {
+        loginAttempt.current++;
+        sequence.current++; setUser(null); setIsLoading(false); clearSessionMeta(); queryClient.clear();
+      } else if (session) {
+        if (event === "SIGNED_IN" && signingIn.current) return;
+        const newSession = signingIn.current || event === "PASSWORD_RECOVERY" || (event === "INITIAL_SESSION" && isAuthCallback);
+        const queuedSequence = sequence.current;
+        window.setTimeout(() => { if (!disposed && queuedSequence === sequence.current) void refresh(newSession); }, 0);
+      } else if (event === "INITIAL_SESSION") {
+        setIsLoading(false);
+      }
+    });
+    // Clear obsolete client-controlled identity; it never grants access.
+    localStorage.removeItem("bom_pastor_session_v3");
+    return () => { disposed = true; subscription.unsubscribe(); };
+  }, [logout, queryClient]);
+
+  useEffect(() => {
+    if (!user) return;
+    const check = () => { if (isSessionExpired()) logout(); };
+    const activity = () => {
+      if (isSessionExpired()) logout();
+      else touchSession();
+    };
+    const events = ["pointerdown", "keydown", "scroll", "touchstart"];
+    const timer = window.setInterval(check, 30_000);
+    window.addEventListener("focus", check);
+    events.forEach((event) => window.addEventListener(event, activity, { capture: true, passive: true }));
+    return () => {
+      window.clearInterval(timer); window.removeEventListener("focus", check);
+      events.forEach((event) => window.removeEventListener(event, activity, true));
+    };
+  }, [user, logout]);
+
+  const login = useCallback(async (email: string, password: string) => {
+    const attempt = ++loginAttempt.current;
+    signingIn.current = true;
+    try {
+      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
+      if (error || !data.user) return { error: "E-mail ou senha incorretos, ou conta ainda não confirmada." };
+      const profile = await readProfile(data.user.id);
+      if (attempt !== loginAttempt.current) return { error: "A tentativa de login foi cancelada." };
+      if (!profile) {
+        logout();
+        return { error: "Sua conta ainda não está autorizada. Entre em contato com a coordenação." };
+      }
+      initSessionMeta(); queryClient.clear(); setUser(profile);
+      return { error: null };
+    } catch {
+      if (attempt === loginAttempt.current) logout();
+      return { error: "Não foi possível entrar. Tente novamente." };
+    } finally {
+      signingIn.current = false;
+    }
+  }, [logout, queryClient]);
 
   const setMassMonitoring = useCallback(async (enabled: boolean) => {
     if (!user || user.role !== "catequista") return { error: "Preferência disponível apenas para catequistas." };
-    const { error } = await db.from("catequistas").update({ monitorar_missas: enabled }).eq("id", user.id);
+    const { error } = await supabase.functions.invoke("account-management", { body: { action: "set_mass_monitoring", enabled } });
     if (error) return { error: "Não foi possível atualizar o monitoramento de missas." };
-    const updated = { ...user, monitorar_missas: enabled };
-    localStorage.setItem(SESSION_KEY, JSON.stringify(updated));
-    setUser(updated);
+    setUser((current) => current ? { ...current, monitorar_missas: enabled } : null);
     return { error: null };
   }, [user]);
 
-  const isCoordinator = user?.role === "coordenador" || user?.is_coordenador === true;
-  const isCatequista = user?.role === "catequista";
-
-  return (
-    <AuthContext.Provider
-      value={{
-        user,
-        isAuthenticated: !!user,
-        isAdmin: user?.role === "admin",
-        isCoordinator,
-        isCatequista,
-        login,
-        setMassMonitoring,
-        logout,
-      }}
-    >
-      {children}
-    </AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={{ user, isLoading, isAuthenticated: !!user,
+    isAdmin: user?.role === "admin", isCoordinator: user?.role === "coordenador" || user?.is_coordenador === true,
+    isCatequista: user?.role === "catequista", login, setMassMonitoring, logout }}>{children}</AuthContext.Provider>;
 }
 
-const LOCKOUT_MS_CONST = 15 * 60 * 1000;
-
 export function useAuth() {
-  return useContext(AuthContext);
+  const context = useContext(AuthContext);
+  if (!context) throw new Error("useAuth deve ser usado dentro de AuthProvider");
+  return context;
 }

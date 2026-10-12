@@ -13,14 +13,17 @@ export default function SessionGuard({ children }: { children: React.ReactNode }
   const [showExpired, setShowExpired] = useState(false);
 
   useEffect(() => {
-    if (!user) return;
+    if (!user) {
+      setShowExpired(false);
+      return;
+    }
     const interval = setInterval(() => {
       if (isSessionExpired()) setShowExpired(true);
     }, 30_000);
     return () => clearInterval(interval);
   }, [user]);
 
-  if (showExpired) {
+  if (showExpired && user) {
     return (
       <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/90 backdrop-blur-sm">
         <div className="mx-4 max-w-sm w-full rounded-2xl border border-border bg-card p-6 shadow-xl text-center">

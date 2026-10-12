@@ -1,23 +1,32 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
+import { readAllRows } from "@/lib/query-pages";
 import { useAuth } from "@/contexts/AuthContext";
 
 const db = supabase as any;
+
+function invalidateStudentQueries(queryClient: ReturnType<typeof useQueryClient>) {
+  // Student names, ownership and active status also affect reports and counters.
+  for (const key of ["students", "dashboard-stats", "attendance", "attendance-all", "pending-justifications", "paroquia-mass-student-ids", "mass-attendance", "documentos", "documentos-student"]) {
+    queryClient.invalidateQueries({ queryKey: [key] });
+  }
+}
 
 /** Hook autenticado: coordenador vê toda a paróquia, catequista vê só seus catequizandos, admin vê tudo */
 export function useStudents() {
   const { user, isAdmin, isCoordinator } = useAuth();
 
   return useQuery({
-    queryKey: ["students", user?.id, isCoordinator, user?.paroquia_id],
+    queryKey: ["students", user?.id, isCoordinator, user?.paroquia_id, user?.etapa, isAdmin],
     queryFn: async () => {
       let query = db
         .from("students")
         .select("*, catequistas(name), paroquias(nome)")
         .eq("active", true)
         .order("class_name", { ascending: true })
-        .order("name", { ascending: true });
+        .order("name", { ascending: true })
+        .order("id");
 
       if (isAdmin) {
         // Admin: vê tudo, sem filtro
@@ -29,39 +38,18 @@ export function useStudents() {
         query = query.or(
           `catequista_id.eq.${user.id},and(catequista_id.is.null,class_name.eq.${
             user.etapa ?? "__nenhuma__"
-          })`
+          },${user.paroquia_id ? `paroquia_id.eq.${user.paroquia_id}` : "paroquia_id.is.null"})`
         );
       }
 
-      const { data, error } = await query;
-      if (error) throw error;
-      return ((data ?? []) as any[]).map((s) => ({
+      const data = await readAllRows<any>((from, to) => query.range(from, to));
+      return data.map((s) => ({
         ...s,
         catequista_nome: s.catequistas?.name ?? null,
         paroquia_nome: s.paroquias?.nome ?? null,
       }));
     },
     enabled: !!user,
-  });
-}
-
-/** Hook público: usado na página de justificativas (sem login) */
-export function usePublicStudents() {
-  return useQuery({
-    queryKey: ["students-public"],
-    queryFn: async () => {
-      const { data, error } = await db
-        .from("students")
-        .select("id, name, class_name, paroquia_id, paroquias(nome)")
-        .eq("active", true)
-        .order("class_name", { ascending: true })
-        .order("name", { ascending: true });
-      if (error) throw error;
-      return ((data ?? []) as any[]).map((s) => ({
-        ...s,
-        paroquia_nome: s.paroquias?.nome ?? null,
-      })) as { id: string; name: string; class_name: string; paroquia_id: string | null; paroquia_nome: string | null }[];
-    },
   });
 }
 
@@ -87,8 +75,7 @@ export function useAddStudent() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["students"] });
-      queryClient.invalidateQueries({ queryKey: ["students-public"] });
+      invalidateStudentQueries(queryClient);
       toast.success("Catequizando cadastrado com sucesso!");
     },
     onError: () => toast.error("Erro ao cadastrar catequizando."),
@@ -121,8 +108,7 @@ export function useUpdateStudent() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["students"] });
-      queryClient.invalidateQueries({ queryKey: ["students-public"] });
+      invalidateStudentQueries(queryClient);
       toast.success("Catequizando atualizado com sucesso!");
     },
     onError: () => toast.error("Erro ao atualizar catequizando."),
@@ -140,8 +126,7 @@ export function useDeleteStudent() {
       if (error) throw error;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["students"] });
-      queryClient.invalidateQueries({ queryKey: ["students-public"] });
+      invalidateStudentQueries(queryClient);
       toast.success("Catequizando removido.");
     },
     onError: () => toast.error("Erro ao remover catequizando."),
@@ -187,8 +172,7 @@ export function useImportStudents() {
       return students.length;
     },
     onSuccess: (count) => {
-      queryClient.invalidateQueries({ queryKey: ["students"] });
-      queryClient.invalidateQueries({ queryKey: ["students-public"] });
+      invalidateStudentQueries(queryClient);
       toast.success(`${count} catequizando(s) importado(s) com sucesso!`);
     },
     onError: (err: Error) => {

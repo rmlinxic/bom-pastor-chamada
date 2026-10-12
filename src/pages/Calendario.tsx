@@ -135,8 +135,8 @@ function getEventoLabel(dataStr: string): { label: string; variant: "hoje" | "am
 }
 
 export default function Calendario() {
-  const { isCoordinator, isAdmin } = useAuth();
-  const podeEditar = isCoordinator || isAdmin;
+  const { isAdmin } = useAuth();
+  const podeEditar = isAdmin;
 
   const [eventos, setEventos] = useState<Evento[]>([]);
   const [loading, setLoading] = useState(true);

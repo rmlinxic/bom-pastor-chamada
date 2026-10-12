@@ -8,7 +8,7 @@ export interface Paroquia {
   id: string;
   nome: string;
   ativa: boolean;
-  created_at: string;
+  created_at?: string;
 }
 
 export function useParoquias() {
@@ -17,7 +17,7 @@ export function useParoquias() {
     queryFn: async () => {
       const { data, error } = await db
         .from("paroquias")
-        .select("id, nome, ativa, created_at")
+        .select("id, nome, ativa")
         .order("nome");
       if (error) throw error;
       return (data ?? []) as Paroquia[];

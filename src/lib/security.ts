@@ -3,7 +3,6 @@
  * - Rate limiting de login (brute-force protection)
  * - Expiração de sessão por inatividade
  * - Sanitização de inputs
- * - CSRF token helpers
  */
 
 // ─── Rate Limiting ──────────────────────────────────────────────────────────
@@ -83,27 +82,38 @@ export function initSessionMeta() {
   sessionStorage.setItem(SESSION_META_KEY, JSON.stringify(meta));
 }
 
-export function touchSession() {
+function readSessionMeta(): SessionMeta | null {
   try {
     const raw = sessionStorage.getItem(SESSION_META_KEY);
-    const meta: SessionMeta = raw ? JSON.parse(raw) : { createdAt: Date.now(), lastActivity: Date.now() };
+    if (!raw) return null;
+    const meta = JSON.parse(raw);
+    if (!meta || typeof meta !== "object" || Array.isArray(meta)) return null;
+    const { createdAt, lastActivity } = meta;
+    if (!Number.isFinite(createdAt) || !Number.isFinite(lastActivity)) return null;
+    if (createdAt < 0 || lastActivity < createdAt || lastActivity > Date.now()) return null;
+    return { createdAt, lastActivity };
+  } catch {
+    return null;
+  }
+}
+
+function hasExpired(meta: SessionMeta): boolean {
+  const now = Date.now();
+  return now - meta.createdAt >= SESSION_TIMEOUT_MS || now - meta.lastActivity >= IDLE_TIMEOUT_MS;
+}
+
+export function touchSession() {
+  try {
+    const meta = readSessionMeta();
+    if (!meta || hasExpired(meta)) return;
     meta.lastActivity = Date.now();
     sessionStorage.setItem(SESSION_META_KEY, JSON.stringify(meta));
   } catch { /* ignore */ }
 }
 
 export function isSessionExpired(): boolean {
-  try {
-    const raw = sessionStorage.getItem(SESSION_META_KEY);
-    if (!raw) return true; // sem meta = expirada
-    const meta: SessionMeta = JSON.parse(raw);
-    const now = Date.now();
-    if (now - meta.createdAt > SESSION_TIMEOUT_MS) return true;
-    if (now - meta.lastActivity > IDLE_TIMEOUT_MS) return true;
-    return false;
-  } catch {
-    return true;
-  }
+  const meta = readSessionMeta();
+  return !meta || hasExpired(meta);
 }
 
 export function clearSessionMeta() {
@@ -133,20 +143,6 @@ export function sanitizeUsername(value: string): string {
 /** Sanitiza telefone: apenas dígitos, espaços, +, -, parênteses */
 export function sanitizePhone(value: string): string {
   return value.replace(/[^0-9\s+()-]/g, "").trim().slice(0, 20);
-}
-
-/** Valida e-mail básico */
-export function isValidEmail(value: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-// ─── Sensitive Data Masking ──────────────────────────────────────────────────
-
-/** Mascara número de telefone para exibição */
-export function maskPhone(phone: string): string {
-  const digits = phone.replace(/\D/g, "");
-  if (digits.length < 8) return "***";
-  return digits.slice(0, 2) + "*".repeat(digits.length - 4) + digits.slice(-2);
 }
 
 // ─── Password Strength ───────────────────────────────────────────────────────

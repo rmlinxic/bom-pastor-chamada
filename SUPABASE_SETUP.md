@@ -1,228 +1,43 @@
-# Configuração do Supabase — Catequese Bom Pastor
+# Configuração do Supabase
 
-Este guia explica como configurar o banco de dados Supabase para que o app funcione completamente.
+Este guia descreve a configuração atual. Ele substitui o roteiro antigo com tabelas divergentes e políticas abertas. As configurações remotas e os e-mails precisam ser verificados no projeto correto antes da publicação.
 
-O projeto usa variáveis de ambiente para conectar ao Supabase. Crie o arquivo `.env` a partir de `.env.example` antes de iniciar a aplicação.
+## Ambiente do frontend
 
----
+Copie `.env.example` para `.env` e configure:
 
-## Pré-requisitos
-
-- Conta no [Supabase](https://supabase.com) (gratuita)
-- Um projeto criado no Supabase
-- Credenciais configuradas no arquivo `.env`:
-  ```
-  VITE_SUPABASE_URL="https://seu-projeto.supabase.co"
-  VITE_SUPABASE_PUBLISHABLE_KEY="sua-chave-publica"
-  ```
-
----
-
-## Opção 1 — Via Dashboard (mais fácil, sem instalar nada)
-
-### Passo 1: Acessar o projeto no Supabase
-
-1. Acesse [supabase.com](https://supabase.com) e faça login
-2. No painel, localize o projeto **`solqfhhkgrkxkfrqpftb`** (ou pelo nome que aparece)
-3. Clique no projeto para abri-lo
-
-### Passo 2: Abrir o SQL Editor
-
-1. No menu lateral esquerdo, clique em **"SQL Editor"**
-2. Clique em **"New query"** (botão verde ou `+`)
-
-### Passo 3: Rodar as migrations na ordem
-
-Copie e cole cada bloco SQL abaixo e clique em **"Run"** (ou `Ctrl+Enter`) após cada um.
-
----
-
-#### 🟦 Migration 1 — Criar as tabelas
-
-```sql
--- Função para atualizar timestamp automático
-CREATE OR REPLACE FUNCTION public.update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = now();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql SET search_path = public;
-
--- Tabela de alunos
-CREATE TABLE public.students (
-  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-  name TEXT NOT NULL,
-  class TEXT NOT NULL,
-  guardian_name TEXT NOT NULL,
-  guardian_contact TEXT NOT NULL,
-  active BOOLEAN NOT NULL DEFAULT true,
-  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now()
-);
-
-ALTER TABLE public.students ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Anyone can view students" ON public.students FOR SELECT USING (true);
-CREATE POLICY "Anyone can insert students" ON public.students FOR INSERT WITH CHECK (true);
-CREATE POLICY "Anyone can update students" ON public.students FOR UPDATE USING (true);
-CREATE POLICY "Anyone can delete students" ON public.students FOR DELETE USING (true);
-
-CREATE TRIGGER update_students_updated_at
-  BEFORE UPDATE ON public.students
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
--- Tabela de chamadas
-CREATE TABLE public.attendance (
-  id UUID NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
-  student_id UUID NOT NULL REFERENCES public.students(id) ON DELETE CASCADE,
-  date DATE NOT NULL,
-  status TEXT NOT NULL CHECK (status IN ('present', 'justified_absence', 'unjustified_absence')),
-  justification_reason TEXT,
-  created_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-  updated_at TIMESTAMP WITH TIME ZONE NOT NULL DEFAULT now(),
-  UNIQUE(student_id, date)
-);
-
-ALTER TABLE public.attendance ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY "Anyone can view attendance" ON public.attendance FOR SELECT USING (true);
-CREATE POLICY "Anyone can insert attendance" ON public.attendance FOR INSERT WITH CHECK (true);
-CREATE POLICY "Anyone can update attendance" ON public.attendance FOR UPDATE USING (true);
-CREATE POLICY "Anyone can delete attendance" ON public.attendance FOR DELETE USING (true);
-
-CREATE TRIGGER update_attendance_updated_at
-  BEFORE UPDATE ON public.attendance
-  FOR EACH ROW EXECUTE FUNCTION public.update_updated_at_column();
-
--- Índices
-CREATE INDEX idx_attendance_student_id ON public.attendance(student_id);
-CREATE INDEX idx_attendance_date ON public.attendance(date);
-CREATE INDEX idx_attendance_status ON public.attendance(status);
-CREATE INDEX idx_students_class ON public.students(class);
+```dotenv
+VITE_SUPABASE_URL="https://SEU_PROJECT_ID.supabase.co"
+VITE_SUPABASE_PUBLISHABLE_KEY="sua-chave-publica"
 ```
 
----
+O cliente lê exatamente esses nomes. `VITE_SUPABASE_ANON_KEY` não é a variável usada pelo frontend. A chave pública não autoriza acesso por si só: RLS e grants devem restringir os dados no servidor. Nunca coloque a chave `service_role`, uma chave secreta, senhas ou credenciais SMTP em variáveis `VITE_*`.
 
-#### 🟦 Migration 2 — Renomear colunas e atualizar status
+Execute `npm ci`, `npm run dev` e acesse `http://localhost:8080`. Para verificar o checkout, execute `npm run check`.
 
-```sql
--- Renomear colunas para o padrão do app
-ALTER TABLE public.students RENAME COLUMN "class" TO class_name;
-ALTER TABLE public.students RENAME COLUMN guardian_name TO parent_name;
-ALTER TABLE public.students RENAME COLUMN guardian_contact TO phone;
-```
+## Banco e migrações
 
----
+Confirme a organização, o projeto e o identificador da URL antes de qualquer operação remota. O valor histórico em `supabase/config.toml` não substitui essa verificação.
 
-#### 🟦 Migration 3 — Corrigir constraint de status (IMPORTANTE)
+As migrações antigas não constituem um baseline completo: existem referências a `catequistas` antes de sua criação; `mass_attendance` tem definições históricas sobrepostas; faltam definições completas de documentos e calendário. Os tipos TypeScript gerados também não documentam todo o esquema usado pela aplicação. Não recrie o banco copiando o SQL antigo destes guias e não execute `db reset` em produção.
 
-```sql
--- Atualizar constraint para usar os valores em português
-ALTER TABLE public.attendance DROP CONSTRAINT IF EXISTS attendance_status_check;
-ALTER TABLE public.attendance ADD CONSTRAINT attendance_status_check
-  CHECK (status IN ('presente', 'falta_justificada', 'falta_nao_justificada'));
+Para um projeto existente, obtenha um backup restrito, confira as tabelas, colunas, constraints, funções e políticas reais, e teste apenas as alterações necessárias em um ambiente isolado. As migrações de outubro de 2026 substituem acesso permissivo e vinculam os perfis ao Auth; a de acesso autenticado ignora algumas tabelas históricas ausentes e emite avisos, sem criar o baseline delas. Para um projeto novo, primeiro prepare e valide um baseline completo com essas estruturas.
 
--- Corrigir índice renomeado
-DROP INDEX IF EXISTS idx_students_class;
-CREATE INDEX IF NOT EXISTS idx_students_class_name ON public.students(class_name);
-```
+As tabelas utilizadas incluem `paroquias`, `catequistas`, `students`, `attendance`, `mass_attendance`, `pending_justifications`, `documentos_catequizando`, `calendario_eventos`, `anos_catequeticos`, `promocoes_pendentes` e `activity_log`. Chamadas usam `presente`, `falta_justificada` e `falta_nao_justificada`.
 
----
+## Auth, contas e e-mail
 
-### Passo 4: Verificar se as tabelas foram criadas
+O login é por e-mail e senha no Supabase Auth. Cada pessoa autorizada precisa de um perfil ativo de `catequistas` ligado por `auth_user_id`. Desative cadastro público, confirme e-mails e configure senha mínima de oito caracteres no Auth. Contas não vinculadas permanecem sem acesso aos dados.
 
-1. No menu lateral, clique em **"Table Editor"**
-2. Você deve ver duas tabelas: **`students`** e **`attendance`**
-3. Se aparecerem, está tudo certo! ✅
+O primeiro administrador deve ser provisionado por um operador confiável no servidor e vinculado ao perfil correto; não existe bootstrap público no app. Depois, administradores enviam convites para contas novas ou legadas pela função `account-management`. Consulte [Migração](SUPABASE_MIGRATION.md).
 
----
+Configure SMTP de produção, as URLs exatas de convite/recuperação e a Edge Function conforme [Implantação de segurança](docs/SECURITY_DEPLOYMENT.md). O envio por SMTP padrão tem restrições e não deve ser tratado como serviço de produção. [Documentação oficial de SMTP](https://supabase.com/docs/guides/auth/auth-smtp).
 
-## Opção 2 — Via Supabase CLI (para devs)
+## Diagnóstico
 
-Se preferir usar o terminal:
+- Login aceito pelo Auth, mas conta não autorizada: confira o vínculo `auth_user_id`, `active` e as políticas; não abra as tabelas para resolver o erro.
+- Tabela ou coluna ausente: compare o esquema real com a funcionalidade correspondente e complete o baseline em staging.
+- Permissão negada: verifique Auth, papel, paróquia e RLS; erros após ativar segurança podem revelar consultas antigas que precisavam de ajustes.
+- E-mail não chega ou link retorna ao lugar errado: confira SMTP, destinatário, templates, Site URL e a allowlist exata.
 
-```bash
-# 1. Instalar a CLI (caso não tenha)
-npm install -g supabase
-
-# 2. Fazer login
-supabase login
-
-# 3. Linkar ao projeto (use o Project ID do .env)
-supabase link --project-ref solqfhhkgrkxkfrqpftb
-
-# 4. Rodar todas as migrations automaticamente
-supabase db push
-```
-
----
-
-## Rodando o projeto localmente
-
-Após configurar o banco de dados:
-
-```bash
-# 1. Instalar dependências
-npm install
-
-# 2. Iniciar o servidor de desenvolvimento
-npm run dev
-```
-
-Acesse `http://localhost:5173` no navegador.
-
----
-
-## Estrutura do banco de dados
-
-### Tabela `students`
-
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| `id` | UUID | Chave primária |
-| `name` | TEXT | Nome do aluno |
-| `class_name` | TEXT | Turma (ex: "Crisma 2025") |
-| `parent_name` | TEXT | Nome do responsável |
-| `phone` | TEXT | Telefone do responsável |
-| `active` | BOOLEAN | `true` = ativo, `false` = removido |
-| `created_at` | TIMESTAMP | Data de cadastro |
-| `updated_at` | TIMESTAMP | Última atualização |
-
-### Tabela `attendance`
-
-| Coluna | Tipo | Descrição |
-|---|---|---|
-| `id` | UUID | Chave primária |
-| `student_id` | UUID | FK → `students.id` |
-| `date` | DATE | Data do encontro (`YYYY-MM-DD`) |
-| `status` | TEXT | `'presente'`, `'falta_justificada'` ou `'falta_nao_justificada'` |
-| `justification_reason` | TEXT | Motivo da justificativa (opcional) |
-| `created_at` | TIMESTAMP | Data do registro |
-| `updated_at` | TIMESTAMP | Última atualização |
-
----
-
-## Segurança (Row Level Security)
-
-O banco usa **RLS (Row Level Security)** ativado, mas com políticas abertas (`USING (true)`) para facilitar o uso sem autenticação. Isso significa que **qualquer pessoa com a URL do app pode ler e escrever dados**.
-
-Se quiser restringir o acesso no futuro, você precisará:
-1. Adicionar autenticação no app (ex: login com e-mail/senha via Supabase Auth)
-2. Atualizar as políticas RLS para exigir `auth.uid() IS NOT NULL`
-
----
-
-## Problemas comuns
-
-**Erro: "relation students does not exist"**
-→ As migrations não foram rodadas. Siga o Passo 3 acima.
-
-**Erro: "new row violates check constraint"**
-→ A Migration 3 não foi rodada. Execute o SQL da Migration 3.
-
-**Dados não aparecem no app**
-→ Verifique se o arquivo `.env` existe na raiz do projeto com as três variáveis preenchidas.
-
-**Erro de CORS ou "Invalid API key"**
-→ Confirme que `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY` no `.env` são os mesmos do seu projeto Supabase (Settings → API).
+Não publique tokens, links de recuperação, senhas, dados de alunos ou chaves em logs de diagnóstico e capturas de tela compartilhadas.

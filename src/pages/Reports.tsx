@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import {
   AlertTriangle, Download, Trash2, Clock, Church,
   CheckCircle2, ChevronLeft, ChevronRight, FileText,
@@ -20,6 +20,11 @@ import { useStudents } from "@/hooks/useStudents";
 import { useMassAttendanceByMonth, useDeleteMassAttendance } from "@/hooks/useMassAttendance";
 import { useAuth } from "@/contexts/AuthContext";
 import * as XLSX from 'xlsx';
+import { readAllRows } from "@/lib/query-pages";
+import { toast } from 'sonner';
+import { localDateString, localMonthString, shiftMonth } from '@/lib/dates';
+import { csvText, escapeHtml, justificationRows, worksheetName } from '@/lib/export-utils';
+import { downloadAttendanceArchive, parseAttendanceArchive, type ParsedAttendanceArchive } from '@/lib/attendance-archive';
 
 const db = supabase as any;
 
@@ -36,11 +41,6 @@ const STATUS_COLORS: Record<string, string> = {
 
 type Tab = "presencas" | "pendentes" | "missas";
 
-function todayMonthStr() { return new Date().toISOString().slice(0, 7); }
-function shiftMonth(m: string, d: number) {
-  const [y, mo] = m.split("-").map(Number);
-  return new Date(y, mo - 1 + d, 1).toISOString().slice(0, 7);
-}
 function monthLabel(m: string) {
   const [y, mo] = m.split("-").map(Number);
   return format(new Date(y, mo - 1, 1), "MMMM yyyy", { locale: ptBR });
@@ -115,8 +115,16 @@ export default function Reports() {
   const { user, isAdmin, isCoordinator, isCatequista } = useAuth();
   const showGrouped = isAdmin || isCoordinator;
   const massMonitoringEnabled = !isCatequista || user?.monitorar_missas !== false;
-  const { data: students = [] } = useStudents();
-  const { data: attendance = [] } = useAllAttendance();
+  const { data: liveStudents = [] } = useStudents();
+  const { data: liveAttendance = [] } = useAllAttendance();
+  const [archive, setArchive] = useState<ParsedAttendanceArchive | null>(null);
+  const archiveInput = useRef<HTMLInputElement>(null);
+  const students = archive?.students ?? liveStudents;
+  const attendance = archive?.attendance ?? liveAttendance;
+  const [selectedYear, setSelectedYear] = useState(String(new Date().getFullYear()));
+  const reportYears = [...new Set([String(new Date().getFullYear()), ...attendance.map((a) => a.date.slice(0, 4))])].sort().reverse();
+  const yearAttendance = selectedYear === "all" ? attendance : attendance.filter((a) => a.date.startsWith(`${selectedYear}-`));
+  const [exportingArchive, setExportingArchive] = useState(false);
   const { data: pendingList = [] } = usePendingJustifications();
   const deleteMutation = useDeleteAttendance();
   const deletePendingMutation = useDeletePendingJustification();
@@ -125,7 +133,7 @@ export default function Reports() {
   const [selectedClass, setSelectedClass] = useState<string>("all");
   const [selectedDate, setSelectedDate] = useState<string>("");
   const [activeTab, setActiveTab] = useState<Tab>("presencas");
-  const [massMonth, setMassMonth] = useState(todayMonthStr());
+  const [massMonth, setMassMonth] = useState(localMonthString);
   const [selectedMassEtapa, setSelectedMassEtapa] = useState<string>("all");
   const [exportingAnnual, setExportingAnnual] = useState(false);
   const [editingPendingId, setEditingPendingId] = useState<string | null>(null);
@@ -143,29 +151,30 @@ export default function Reports() {
     () => massMonitoringEnabled ? massFilteredStudents.map((s) => s.id) : [],
     [massFilteredStudents, massMonitoringEnabled]
   );
-  const { data: massRecords = [] } = useMassAttendanceByMonth(massStudentIds, massMonth);
+  const { data: liveMassRecords = [] } = useMassAttendanceByMonth(archive ? [] : massStudentIds, massMonth);
+  const massRecords = archive ? archive.massAttendance.filter((r) => r.date.startsWith(massMonth) && massStudentIds.includes(r.student_id)) : liveMassRecords;
 
   const studentsWithMass = useMemo(() => new Set(massRecords.map((r) => r.student_id)), [massRecords]);
   const massCompliant = massFilteredStudents.filter((s) => studentsWithMass.has(s.id));
   const massNonCompliant = massFilteredStudents.filter((s) => !studentsWithMass.has(s.id));
 
   const today = new Date();
-  const thisMonth = todayMonthStr();
+  const thisMonth = localMonthString();
   const isMassCurrentMonth = massMonth === thisMonth;
   const isMassPastMonth = massMonth < thisMonth;
   const daysLeft = getDaysInMonth(today) - today.getDate();
   const endOfMonthAlert = isMassCurrentMonth && daysLeft <= 7 && massNonCompliant.length > 0;
 
   const unjustifiedCounts: Record<string, number> = {};
-  attendance.forEach((a) => {
+  yearAttendance.forEach((a) => {
     if (a.status === "falta_nao_justificada")
       unjustifiedCounts[a.student_id] = (unjustifiedCounts[a.student_id] || 0) + 1;
   });
 
-  const classes = ["all", ...Array.from(new Set(students.map((s) => s.class_name))).sort()];
+  const classes = ["all", ...Array.from(new Set([...students.map((s) => s.class_name), ...yearAttendance.map((a) => a.students?.class_name).filter(Boolean)])).sort()];
 
-  const byClassAttendance = selectedClass === "all" ? attendance
-    : attendance.filter((a) => {
+  const byClassAttendance = selectedClass === "all" ? yearAttendance
+    : yearAttendance.filter((a) => {
         const turma = students.find((s) => s.id === a.student_id)?.class_name ?? (a as any).students?.class_name;
         return turma === selectedClass;
       });
@@ -189,7 +198,7 @@ export default function Reports() {
     : "";
 
   function downloadCSV(rows: (string | number)[][], filename: string) {
-    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(",")).join("\n");
+    const csv = csvText(rows);
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -213,6 +222,39 @@ export default function Reports() {
       }
     });
     return map;
+  }
+
+  async function openArchive(file?: File) {
+    if (!file) return;
+    try {
+      if (file.size > 20 * 1024 * 1024) throw new Error("O arquivo deve ter até 20 MB.");
+      const loaded = parseAttendanceArchive(await file.text());
+      setArchive(loaded); setSelectedYear(String(loaded.year)); setSelectedClass("all"); setSelectedDate("");
+      setMassMonth(`${loaded.year}-01`); setSelectedMassEtapa("all"); setActiveTab("presencas");
+      toast.success(`Arquivo de ${loaded.year} aberto para consulta.`);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Não foi possível abrir o arquivo anual.");
+    } finally {
+      if (archiveInput.current) archiveInput.current.value = "";
+    }
+  }
+
+  async function downloadYearArchive() {
+    if (selectedYear === "all" || exportingArchive) return;
+    setExportingArchive(true);
+    try {
+      if (archive) { downloadAttendanceArchive(archive); return; }
+      const year = Number(selectedYear);
+      const [roster, records, masses] = await Promise.all([
+        readAllRows<any>((from, to) => db.from("students").select("id,name,class_name,active,catequista_id,paroquia_id,paroquias(nome)").order("id").range(from, to)),
+        readAllRows<any>((from, to) => db.from("attendance").select("*").gte("date", `${year}-01-01`).lte("date", `${year}-12-31`).order("id").range(from, to)),
+        readAllRows<any>((from, to) => db.from("mass_attendance").select("*").gte("date", `${year}-01-01`).lte("date", `${year}-12-31`).order("id").range(from, to)),
+      ]);
+      downloadAttendanceArchive({ year, paroquiaId: isAdmin ? null : user?.paroquia_id ?? null, students: roster, catequistas: [], attendance: records, massAttendance: masses });
+      toast.success("Arquivo anual gerado. Guarde-o em uma pasta de acesso restrito.");
+    } catch {
+      toast.error("Não foi possível gerar o arquivo anual. Nenhum histórico foi alterado.");
+    } finally { setExportingArchive(false); }
   }
 
   function handleDeleteAttendance(id: string, name: string, date: string) {
@@ -312,7 +354,8 @@ export default function Reports() {
       rows.push(pad(colCount));
       rows.push(["RESUMO", rel.length, ...pad(allDates.length), sumP, sumFNJ, sumFJ, sumT, sumT > 0 ? `${((sumP / sumT) * 100).toFixed(1)}%` : "-"]);
     }
-    downloadCSV(rows, `chamada-bom-pastor-${new Date().toISOString().slice(0, 10)}.csv`);
+    rows.push([], ["JUSTIFICATIVAS"], ["Data", "Aluno", "Turma", "Motivo"], ...justificationRows(filteredAttendance, studentMap));
+    downloadCSV(rows, `chamada-bom-pastor-${selectedYear}-${localDateString()}.csv`);
   }
 
   function handleExportXLSX() {
@@ -401,7 +444,7 @@ export default function Reports() {
       }
       wsGeral['!cols'] = colWidths;
 
-      XLSX.utils.book_append_sheet(wb, wsGeral, "GERAL");
+      XLSX.utils.book_append_sheet(wb, wsGeral, worksheetName("GERAL", wb.SheetNames));
 
       // Agrupar por turma e criar abas individuais
       const byTurma = new Map<string, typeof rel>();
@@ -467,7 +510,7 @@ export default function Reports() {
 
         // Nome da aba limitado a 31 caracteres
         const sheetName = turma.length > 31 ? turma.slice(0, 28) + "..." : turma;
-        XLSX.utils.book_append_sheet(wb, wsTurma, sheetName);
+        XLSX.utils.book_append_sheet(wb, wsTurma, worksheetName(sheetName, wb.SheetNames));
       });
 
     } else {
@@ -528,10 +571,13 @@ export default function Reports() {
       }
       ws['!cols'] = colWidths;
 
-      XLSX.utils.book_append_sheet(wb, ws, "Relatório");
+      XLSX.utils.book_append_sheet(wb, ws, worksheetName("Relatório", wb.SheetNames));
     }
 
-    downloadXLSX(wb, `chamada-bom-pastor-${new Date().toISOString().slice(0, 10)}.xlsx`);
+    const reasons = XLSX.utils.aoa_to_sheet([["Data", "Aluno", "Turma", "Motivo"], ...justificationRows(filteredAttendance, studentMap)]);
+    reasons["!cols"] = [{ wch: 12 }, { wch: 30 }, { wch: 25 }, { wch: 80 }];
+    XLSX.utils.book_append_sheet(wb, reasons, worksheetName("Justificativas", wb.SheetNames));
+    downloadXLSX(wb, `chamada-bom-pastor-${selectedYear}-${localDateString()}.xlsx`);
   }
 
   function handleExportPDF() {
@@ -556,7 +602,7 @@ export default function Reports() {
       );
 
     const dateHeaders = allDates
-      .map((d) => `<th style="padding:4px 6px;border:1px solid #e2e8f0;font-size:10px;white-space:nowrap">${d.slice(5)}</th>`)
+      .map((d) => `<th style="padding:4px 6px;border:1px solid #e2e8f0;font-size:10px;white-space:nowrap">${escapeHtml(d)}</th>`)
       .join("");
 
     function buildTableRows(list: typeof allRel) {
@@ -572,8 +618,8 @@ export default function Reports() {
         const pct = t > 0 ? `${((p / t) * 100).toFixed(0)}%` : "-";
         const pctColor = t > 0 && (p / t) >= 0.75 ? "#16a34a" : t > 0 && (p / t) >= 0.5 ? "#d97706" : "#dc2626";
         return `<tr>
-          <td style="padding:6px 8px;border:1px solid #e2e8f0;font-size:12px;white-space:nowrap">${s.name}</td>
-          <td style="padding:6px 8px;border:1px solid #e2e8f0;font-size:11px;color:#64748b">${s.class_name}</td>
+          <td style="padding:6px 8px;border:1px solid #e2e8f0;font-size:12px;white-space:nowrap">${escapeHtml(s.name)}</td>
+          <td style="padding:6px 8px;border:1px solid #e2e8f0;font-size:11px;color:#64748b">${escapeHtml(s.class_name)}</td>
           ${cells}
           <td style="padding:6px 8px;border:1px solid #e2e8f0;text-align:center;font-size:12px;font-weight:700;color:${pctColor}">${pct}</td>
         </tr>`;
@@ -592,7 +638,7 @@ export default function Reports() {
       byParoquia.forEach((pStudents, paroquia) => {
         bodyContent += `<div style="margin-top:28px">
           <div style="background:#1e3a5f;color:#fff;padding:8px 14px;border-radius:6px 6px 0 0;font-size:13px;font-weight:700;letter-spacing:.5px">
-            ⛪ PARÓQUIA: ${paroquia.toUpperCase()}
+            ⛪ PARÓQUIA: ${escapeHtml(paroquia.toUpperCase())}
           </div>`;
         const byTurma = new Map<string, typeof allRel>();
         pStudents.forEach((s) => {
@@ -605,7 +651,7 @@ export default function Reports() {
           const tPct = tT > 0 ? `${((tP / tT) * 100).toFixed(0)}%` : "-";
           bodyContent += `<div style="margin-top:10px">
             <div style="background:#e0e7ef;padding:5px 12px;font-size:11px;font-weight:700;color:#1e3a5f;border-left:4px solid #1e3a5f">
-              TURMA: ${turma} &nbsp;&nbsp; (${tStudents.length} alunos &nbsp;•&nbsp; média: ${tPct})
+              TURMA: ${escapeHtml(turma)} &nbsp;&nbsp; (${tStudents.length} alunos &nbsp;•&nbsp; média: ${tPct})
             </div>
             <table style="border-collapse:collapse;width:100%;margin-bottom:4px">
               <thead><tr>
@@ -637,18 +683,20 @@ export default function Reports() {
       </table>`;
     }
 
+    const reasonsHtml = justificationRows(filteredAttendance, studentMap).map((row) => `<tr>${row.map((value) => `<td>${escapeHtml(value)}</td>`).join("")}</tr>`).join("");
     const html = `<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
-<title>Relatório de Presenças - ${turmaLabel}</title>
-<style>body{font-family:Arial,sans-serif;color:#1e293b;padding:20px}h1{font-size:18px;margin-bottom:2px}p.sub{font-size:12px;color:#64748b;margin:2px 0 12px}th{text-align:left}@media print{button{display:none}}</style>
+<title>Relatório de Presenças - ${escapeHtml(turmaLabel)}</title>
+<style>body{font-family:Arial,sans-serif;color:#1e293b;padding:20px}h1{font-size:18px;margin-bottom:2px}p.sub{font-size:12px;color:#64748b;margin:2px 0 12px}th{text-align:left}.justifications{border-collapse:collapse;width:100%}.justifications td,.justifications th{padding:8px;border:1px solid #ddd;white-space:pre-wrap;overflow-wrap:anywhere}thead{display:table-header-group}tr{break-inside:avoid}@media print{button{display:none}@page{size:landscape;margin:12mm}}</style>
 </head><body>
 <h1>Relatório de Presenças - Catequese Bom Pastor</h1>
-<p class="sub">Turma: <strong>${turmaLabel}</strong> &nbsp;|&nbsp; Gerado em: ${new Date().toLocaleString("pt-BR")}</p>
+<p class="sub">Turma: <strong>${escapeHtml(turmaLabel)}</strong> &nbsp;|&nbsp; Gerado em: ${new Date().toLocaleString("pt-BR")}</p>
 <p class="sub" style="margin-bottom:12px"><strong>Legenda:</strong> P = Presente &nbsp; FJ = Falta Justificada &nbsp; FN = Falta Não Justificada</p>
 ${bodyContent}
+<h2>Justificativas</h2><table class="justifications"><thead><tr><th>Data</th><th>Aluno</th><th>Turma</th><th>Motivo</th></tr></thead><tbody>${reasonsHtml || '<tr><td colspan="4">Nenhuma justificativa neste período.</td></tr>'}</tbody></table>
 <br><button onclick="window.print()">Imprimir / Salvar PDF</button>
 </body></html>`;
     const win = window.open("", "_blank");
-    if (win) { win.document.write(html); win.document.close(); }
+    if (win) { win.opener = null; win.document.write(html); win.document.close(); } else toast.error("Permita abrir a janela de impressão para gerar o PDF.");
   }
 
   function handleExportMassCSV() {
@@ -790,7 +838,7 @@ ${bodyContent}
       }
       wsGeral['!cols'] = colWidthsGeral;
 
-      XLSX.utils.book_append_sheet(wb, wsGeral, "GERAL");
+      XLSX.utils.book_append_sheet(wb, wsGeral, worksheetName("GERAL", wb.SheetNames));
 
       // Abas por turma
       const byTurma = new Map<string, typeof sorted>();
@@ -852,7 +900,7 @@ ${bodyContent}
         wsTurma['!cols'] = colWidthsTurma;
 
         const sheetName = turma.length > 31 ? turma.slice(0, 28) + "..." : turma;
-        XLSX.utils.book_append_sheet(wb, wsTurma, sheetName);
+        XLSX.utils.book_append_sheet(wb, wsTurma, worksheetName(sheetName, wb.SheetNames));
       });
 
     } else {
@@ -911,7 +959,7 @@ ${bodyContent}
       }
       ws['!cols'] = colWidths;
 
-      XLSX.utils.book_append_sheet(wb, ws, "Relatório");
+      XLSX.utils.book_append_sheet(wb, ws, worksheetName("Relatório", wb.SheetNames));
     }
 
     const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
@@ -922,9 +970,11 @@ ${bodyContent}
     if (exportingAnnual || massStudentIds.length === 0) return;
     setExportingAnnual(true);
     try {
-      const year = new Date().getFullYear();
-      const { data: allRecords } = await db.from("mass_attendance").select("student_id, date")
-        .in("student_id", massStudentIds).gte("date", `${year}-01-01`).lte("date", `${year}-12-31`);
+      const year = Number(massMonth.slice(0, 4));
+      const result = archive ? { data: archive.massAttendance, error: null } : { data: await readAllRows<any>((from, to) => db.from("mass_attendance").select("student_id, date")
+        .in("student_id", massStudentIds).gte("date", `${year}-01-01`).lte("date", `${year}-12-31`).order("id").range(from, to)), error: null };
+      if (result.error) throw result.error;
+      const allRecords = result.data;
       const monthsAttended: Record<string, Set<string>> = {};
       (allRecords ?? []).forEach((r: any) => {
         if (!monthsAttended[r.student_id]) monthsAttended[r.student_id] = new Set();
@@ -987,16 +1037,18 @@ ${bodyContent}
       }
       const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
       downloadCSV(rows, `missas-anual-${year}${suffix}.csv`);
-    } finally { setExportingAnnual(false); }
+    } catch { toast.error("Não foi possível gerar o relatório anual. Tente novamente."); } finally { setExportingAnnual(false); }
   }
 
   async function handleExportAnnualMassXLSX() {
     if (exportingAnnual || massStudentIds.length === 0) return;
     setExportingAnnual(true);
     try {
-      const year = new Date().getFullYear();
-      const { data: allRecords } = await db.from("mass_attendance").select("student_id, date")
-        .in("student_id", massStudentIds).gte("date", `${year}-01-01`).lte("date", `${year}-12-31`);
+      const year = Number(massMonth.slice(0, 4));
+      const result = archive ? { data: archive.massAttendance, error: null } : { data: await readAllRows<any>((from, to) => db.from("mass_attendance").select("student_id, date")
+        .in("student_id", massStudentIds).gte("date", `${year}-01-01`).lte("date", `${year}-12-31`).order("id").range(from, to)), error: null };
+      if (result.error) throw result.error;
+      const allRecords = result.data;
       const monthsAttended: Record<string, Set<string>> = {};
       (allRecords ?? []).forEach((r: any) => {
         if (!monthsAttended[r.student_id]) monthsAttended[r.student_id] = new Set();
@@ -1067,7 +1119,7 @@ ${bodyContent}
         }
         wsGeral['!cols'] = colWidthsGeral;
 
-        XLSX.utils.book_append_sheet(wb, wsGeral, "GERAL");
+        XLSX.utils.book_append_sheet(wb, wsGeral, worksheetName("GERAL", wb.SheetNames));
 
         // Abas por turma
         const byTurma = new Map<string, typeof sorted>();
@@ -1129,7 +1181,7 @@ ${bodyContent}
           wsTurma['!cols'] = colWidthsTurma;
 
           const sheetName = turma.length > 31 ? turma.slice(0, 28) + "..." : turma;
-          XLSX.utils.book_append_sheet(wb, wsTurma, sheetName);
+          XLSX.utils.book_append_sheet(wb, wsTurma, worksheetName(sheetName, wb.SheetNames));
         });
 
       } else {
@@ -1185,17 +1237,33 @@ ${bodyContent}
         }
         ws['!cols'] = colWidths;
 
-        XLSX.utils.book_append_sheet(wb, ws, "Relatório");
+        XLSX.utils.book_append_sheet(wb, ws, worksheetName("Relatório", wb.SheetNames));
       }
 
       const suffix = isAdmin && selectedMassEtapa !== "all" ? `-${selectedMassEtapa.replace(/\s+/g, "-")}` : "";
       downloadXLSX(wb, `missas-anual-${year}${suffix}.xlsx`);
-    } finally { setExportingAnnual(false); }
+    } catch { toast.error("Não foi possível gerar o relatório anual. Tente novamente."); } finally { setExportingAnnual(false); }
   }
 
   return (
     <div className="pb-24">
       <PageHeader title="Relatórios" subtitle="Histórico detalhado de presenças" />
+      <div className="mx-4 mb-4 space-y-3 rounded-lg border border-border bg-card p-4">
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="min-w-32 flex-1">
+            <label htmlFor="report-year" className="mb-1 block text-xs font-semibold text-muted-foreground">Ano das presenças</label>
+            <select id="report-year" value={selectedYear} onChange={(e) => { setSelectedYear(e.target.value); setSelectedDate(""); }} className="w-full rounded-md border border-input bg-background p-2 text-sm">
+              {!archive && <option value="all">Todos os anos</option>}
+              {reportYears.map((year) => <option key={year} value={year}>{year}</option>)}
+            </select>
+          </div>
+          <Button variant="outline" onClick={downloadYearArchive} disabled={selectedYear === "all" || exportingArchive}><Download className="mr-2 h-4 w-4" />{exportingArchive ? "Gerando..." : "Guardar arquivo anual"}</Button>
+          <Button variant="outline" onClick={() => archiveInput.current?.click()}>Abrir arquivo anual</Button>
+          <input ref={archiveInput} type="file" accept=".json,application/json" className="hidden" aria-label="Arquivo anual de presenças" onChange={(e) => void openArchive(e.target.files?.[0])} />
+        </div>
+        {archive ? <div className="flex items-center justify-between gap-3 text-sm"><span>Arquivo de {archive.year} • consulta sem alterações</span><Button size="sm" variant="ghost" onClick={() => { setArchive(null); setSelectedYear(String(new Date().getFullYear())); setSelectedDate(""); setSelectedClass("all"); setMassMonth(localMonthString()); }}>Voltar aos dados atuais</Button></div>
+          : <p className="text-xs text-muted-foreground">Guarde uma cópia antes de mudar as turmas. O arquivo preserva presenças e justificativas e poderá ser aberto aqui posteriormente.</p>}
+      </div>
 
       {alertStudents.length > 0 && (
         <div className="mx-4 mb-4 rounded-lg border border-destructive/30 bg-destructive/10 p-3">
@@ -1208,7 +1276,7 @@ ${bodyContent}
       )}
 
       <div className="px-4 mb-4 flex gap-2">
-        {(["presencas", "pendentes", ...(massMonitoringEnabled ? ["missas" as const] : [])] as Tab[]).map((tab) => {
+        {(["presencas", ...(!archive ? ["pendentes" as const] : []), ...(massMonitoringEnabled ? ["missas" as const] : [])] as Tab[]).map((tab) => {
           const labels: Record<Tab, string> = { presencas: "Presenças", pendentes: "Pendentes", missas: "Missas" };
           const badge = tab === "pendentes" ? pendingList.length : tab === "missas" && isMassCurrentMonth ? massNonCompliant.length : 0;
           return (
@@ -1361,7 +1429,7 @@ ${bodyContent}
                     {!selectedDate && <td className="py-3 pr-2 text-muted-foreground">{a.date}</td>}
                     <td className={cn("py-3 font-medium", STATUS_COLORS[a.status])}>{STATUS_LABELS[a.status] ?? a.status}</td>
                     <td className="py-3">
-                      <button onClick={() => handleDeleteAttendance(a.id, studentName, a.date)} disabled={deleteMutation.isPending}
+                      <button onClick={() => handleDeleteAttendance(a.id, studentName, a.date)} disabled={!!archive || deleteMutation.isPending}
                         className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors opacity-0 group-hover:opacity-100 focus:opacity-100">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
@@ -1571,7 +1639,7 @@ ${bodyContent}
                     {recs.map((r) => (
                       <div key={r.id} className="flex items-center justify-between">
                         <span className="text-xs text-muted-foreground">{format(new Date(r.date + "T12:00:00"), "dd/MM/yyyy (EEE)", { locale: ptBR })}</span>
-                        <button onClick={() => handleDeleteMass(r.id, s.name, r.date)} disabled={deleteMassMutation.isPending}
+                        <button onClick={() => handleDeleteMass(r.id, s.name, r.date)} disabled={!!archive || deleteMassMutation.isPending}
                           className="p-1 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors">
                           <Trash2 className="h-3 w-3" />
                         </button>

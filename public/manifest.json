@@ -2,13 +2,14 @@
   "name": "Catequese Bom Pastor",
   "short_name": "Catequese",
   "description": "Controle de presença dos catequizandos",
-  "start_url": "/",
+  "start_url": "./",
+  "scope": "./",
   "display": "standalone",
   "background_color": "#f6f8fb",
   "theme_color": "#1E4A80",
   "icons": [
     {
-      "src": "/favicon.ico",
+      "src": "favicon.ico",
       "sizes": "64x64",
       "type": "image/x-icon"
     }
