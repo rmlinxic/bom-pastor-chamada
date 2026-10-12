@@ -1249,7 +1249,7 @@ ${bodyContent}
   }
 
   return (
-    <div className="pb-24">
+    <div>
       <PageHeader title="Relatórios" subtitle="Histórico detalhado de presenças" />
       <div className="mx-4 mb-4 space-y-3 rounded-lg border border-border bg-card p-4">
         <div className="flex flex-wrap items-end gap-3">

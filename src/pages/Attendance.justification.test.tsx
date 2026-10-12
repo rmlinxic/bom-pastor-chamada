@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { localDateString } from "@/lib/dates";
 import { MemoryRouter } from "react-router-dom";
@@ -6,6 +6,7 @@ const mocks = vi.hoisted(() => ({
   records: [] as { student_id: string; status: string; justification_reason: string | null }[],
   pending: [] as { student_id: string; date: string; reason: string }[],
   mutate: vi.fn(),
+  reject: vi.fn(),
   students: [{ id: "student", name: "Ana", class_name: "Primeira Etapa", paroquia_id: "parish" }],
   studentsError: false,
 }));
@@ -14,6 +15,7 @@ vi.mock("@/hooks/useAttendance", () => ({
   useAttendanceByDate: () => ({ data: mocks.records }),
   usePendingJustifications: () => ({ data: mocks.pending }),
   useSaveAttendance: () => ({ mutate: mocks.mutate, isPending: false }),
+  useRejectJustification: () => ({ mutate: mocks.reject, isPending: false }),
 }));
 import Attendance from "./Attendance";
 function renderAttendance(route = "/chamada") { return render(<MemoryRouter initialEntries={[route]}><Attendance /></MemoryRouter>); }
@@ -61,7 +63,7 @@ describe("attendance justification display", () => {
     expect(within(row).getByText("Presente")).toBeInTheDocument();
     expect(within(row).getByText("Consulta médica", { exact: false })).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Salvar Alterações" }));
-    expect(mocks.mutate).toHaveBeenCalledWith([{ student_id: "student", date: localDateString(), status: "presente" }], expect.objectContaining({ onSuccess: expect.any(Function) }));
+    expect(mocks.mutate).toHaveBeenCalledWith([{ student_id: "student", date: localDateString(), status: "presente", explicit_status: true }], expect.objectContaining({ onSuccess: expect.any(Function) }));
   });
 
   it("opens the selected date and saves only the linked class and parish", () => {
@@ -70,7 +72,7 @@ describe("attendance justification display", () => {
     expect(screen.queryByRole("button", { name: /Bruno/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Carla/ })).not.toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Salvar Chamada" }));
-    expect(mocks.mutate).toHaveBeenCalledWith([{ student_id: "student", date: "2026-10-01", status: "presente" }], expect.any(Object));
+    expect(mocks.mutate).toHaveBeenCalledWith([{ student_id: "student", date: "2026-10-01", status: "presente", explicit_status: false }], expect.any(Object));
   });
 
   it("does not save when loading the roster failed", () => {
@@ -78,5 +80,32 @@ describe("attendance justification display", () => {
     renderAttendance();
     expect(screen.getByRole("alert")).toHaveTextContent("Não foi possível carregar");
     expect(screen.getByRole("button", { name: "Salvar Chamada" })).toBeDisabled();
+  });
+
+  it("lets the catechist explicitly refuse a saved reason on the selected day", () => {
+    mocks.records = [{ student_id: "student", status: "falta_justificada", justification_reason: "Consulta médica" }];
+    renderAttendance();
+    fireEvent.click(screen.getByRole("button", { name: "Recusar justificativa" }));
+    expect(mocks.reject).toHaveBeenCalledWith({ studentId: "student", date: localDateString() }, expect.objectContaining({ onSuccess: expect.any(Function) }));
+  });
+
+  it("does not keep already-saved edits explicit when another child is edited later", () => {
+    mocks.students.push({ id: "two", name: "Bruno", class_name: "Primeira Etapa", paroquia_id: "parish" });
+    mocks.records = [{ student_id: "student", status: "presente", justification_reason: null }, { student_id: "two", status: "presente", justification_reason: null }];
+    const view = renderAttendance();
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: /Ana Primeira Etapa/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Ana Primeira Etapa/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar Alterações" }));
+    act(() => mocks.mutate.mock.calls[0][1].onSuccess());
+    mocks.records = [{ student_id: "student", status: "falta_nao_justificada", justification_reason: null }, { student_id: "two", status: "presente", justification_reason: null }];
+    view.rerender(<MemoryRouter><Attendance /></MemoryRouter>);
+    fireEvent.click(screen.getByRole("button", { name: "Editar" }));
+    fireEvent.click(screen.getByRole("button", { name: /Bruno Primeira Etapa/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Salvar Alterações" }));
+    expect(mocks.mutate.mock.calls[1][0]).toEqual([
+      { student_id: "student", date: localDateString(), status: "falta_nao_justificada", explicit_status: false },
+      { student_id: "two", date: localDateString(), status: "falta_nao_justificada", explicit_status: true },
+    ]);
   });
 });

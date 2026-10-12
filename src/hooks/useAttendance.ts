@@ -140,53 +140,19 @@ export function useSaveAttendance() {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: async (
-      records: { student_id: string; date: string; status: string }[]
+      records: { student_id: string; date: string; status: string; explicit_status?: boolean }[]
     ) => {
       if (records.length === 0) return 0;
 
-      const { error } = await supabase.from("attendance").upsert(records, {
-        onConflict: "student_id,date",
-      });
-      if (error) throw error;
-
-      const absences = records.filter(
-        (r) => r.status === "falta_nao_justificada"
-      );
-      if (absences.length === 0) return 0;
-
-      // Match each student/date pair so batches spanning several dates cannot
-      // apply a justification to a different attendance record.
-      const dates = [...new Set(absences.map((record) => record.date))];
+      // Preserve fresh server values for rows not explicitly edited. Saving a
+      // stale roster must not undo another catechist's refusal or a new reason.
       let autoJustified = 0;
-      for (const date of dates) {
-        const studentIds = absences
-          .filter((record) => record.date === date)
-          .map((record) => record.student_id);
-        const { data: pending, error: pendingError } = await db
-          .from("pending_justifications")
-          .select("*")
-          .in("student_id", studentIds)
-          .eq("date", date);
-        if (pendingError) throw pendingError;
-
-        for (const pj of pending ?? []) {
-          const { error: updateError } = await supabase
-            .from("attendance")
-            .update({
-              status: "falta_justificada",
-              justification_reason: pj.reason,
-            })
-            .eq("student_id", pj.student_id)
-            .eq("date", pj.date);
-          if (updateError) throw updateError;
-
-          const { error: deleteError } = await db
-            .from("pending_justifications")
-            .delete()
-            .eq("id", pj.id);
-          if (deleteError) throw deleteError;
-          autoJustified += 1;
-        }
+      for (let offset = 0; offset < records.length; offset += 100) {
+        const { data: count, error } = await db.rpc("save_catechesis_attendance", {
+          records: records.slice(offset, offset + 100).map((record) => ({ ...record, explicit_status: record.explicit_status !== false })),
+        });
+        if (error) throw error;
+        autoJustified += Number(count) || 0;
       }
       return autoJustified;
     },
@@ -231,23 +197,38 @@ export function useDeleteAttendance() {
   });
 }
 
+export function useRejectJustification() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ studentId, date }: { studentId: string; date: string }) => {
+      const { error } = await db.rpc("reject_public_justification", { student_id: studentId, absence_date: date });
+      if (error) throw error;
+    },
+    onSuccess: () => toast.success("Justificativa recusada."),
+    onError: () => toast.error("Não foi possível recusar a justificativa. Tente novamente."),
+    onSettled: () => {
+      for (const key of ["attendance", "student-history", "attendance-all", "dashboard-stats", "pending-justifications", "pending-center"]) queryClient.invalidateQueries({ queryKey: [key] });
+    },
+  });
+}
+
 export function useSubmitJustification() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ studentName, guardianContact, paroquiaId, date, reason }: {
-      studentName: string;
-      guardianContact: string;
+    mutationFn: async ({ studentId, className, paroquiaId, date, reason }: {
+      studentId: string;
+      className: string;
       paroquiaId: string;
       date: string;
       reason: string;
     }): Promise<{ pending: boolean }> => {
-      // The server verifies the supplied name/contact without exposing student
-      // identities, match results, or attendance status to the public caller.
-      const { error } = await db.rpc("submit_public_justification", {
-        student_name: studentName,
-        guardian_contact: guardianContact,
-        paroquia_id: paroquiaId,
-        date,
+      // Public selection reveals names/classes only; all writes remain server
+      // validated and the receipt never discloses attendance or rejection state.
+      const { error } = await db.rpc("submit_selected_public_justification", {
+        student_id: studentId,
+        parish_id: paroquiaId,
+        class_name: className,
+        absence_date: date,
         reason,
       });
       if (error) throw new Error("Não foi possível enviar a justificativa. Tente novamente.");
@@ -257,7 +238,7 @@ export function useSubmitJustification() {
       for (const key of ["attendance", "student-history", "attendance-all", "dashboard-stats", "pending-justifications", "pending-center"]) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }
-      toast.success("Solicitação recebida. A justificativa será processada após a conferência dos dados informados.");
+      toast.success("Justificativa enviada.");
     },
     onError: (err: Error) => toast.error(err.message || "Erro ao enviar justificativa."),
   });

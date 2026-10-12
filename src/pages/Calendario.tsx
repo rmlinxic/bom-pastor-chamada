@@ -327,7 +327,7 @@ export default function Calendario() {
   });
 
   return (
-    <div className="min-h-screen bg-background pb-24">
+    <div className="bg-background">
       <div className="container max-w-2xl mx-auto px-4 pt-6 space-y-5">
 
         {/* Header */}

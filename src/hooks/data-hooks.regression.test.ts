@@ -19,7 +19,7 @@ vi.mock("@tanstack/react-query", () => ({
   useMutation: (options: unknown) => options,
   useQueryClient: () => ({ invalidateQueries: mocks.invalidateQueries }),
 }));
-import { useAttendanceByDate, useAllAttendance, useSaveAttendance, useSubmitJustification, usePendingJustifications } from "./useAttendance";
+import { useAttendanceByDate, useAllAttendance, useSaveAttendance, useSubmitJustification, usePendingJustifications, useRejectJustification } from "./useAttendance";
 import { useDeleteStudent, useStudents } from "./useStudents";
 import { useAllDocumentos, useDocumentosStudent } from "./useDocumentos";
 import { useCreateCatequista, useUpdateCatequista, useDeactivateCatequista } from "./useCatequistas";
@@ -43,6 +43,8 @@ const absence = (student_id = "student", date = "2026-10-12") => ({ student_id, 
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mocks.from.mockReset();
+  mocks.rpc.mockReset();
   mocks.studentData = null;
   mocks.auth.user.paroquia_id = "parish";
   mocks.auth.isAdmin = false;
@@ -101,46 +103,44 @@ describe("data hook regressions", () => {
     expect(query.refetchInterval).toBe(30_000);
   });
 
-  it("preserves pending justification when applying it fails", async () => {
-    response();
-    response([{ id: "pending", student_id: "student", date: "2026-10-12", reason: "Sick" }]);
+  it("reports an atomic application failure without client queue mutation", async () => {
     const error = { message: "update failed" };
-    response(null, error);
+    mocks.rpc.mockResolvedValueOnce({ data: null, error });
     const mutation = useSaveAttendance() as unknown as MutationOptions;
     await expect(mutation.mutationFn([absence()])).rejects.toEqual(error);
-    expect(mocks.from).toHaveBeenCalledTimes(3);
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
-  it("reports a pending lookup failure rather than claiming a successful save", async () => {
-    response();
-    const error = { message: "lookup failed" };
-    response(null, error);
-    await expect((useSaveAttendance() as unknown as MutationOptions).mutationFn([absence()])).rejects.toEqual(error);
+  it("does not call the server for an empty roster", async () => {
+    await expect((useSaveAttendance() as unknown as MutationOptions).mutationFn([])).resolves.toBe(0);
+    expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it("reports cleanup failure after applying a justification", async () => {
-    response();
-    response([{ id: "pending", student_id: "student", date: "2026-10-12", reason: "Sick" }]);
-    response();
-    const error = { message: "delete failed" };
-    response(null, error);
-    await expect((useSaveAttendance() as unknown as MutationOptions).mutationFn([absence()])).rejects.toEqual(error);
-    expect(mocks.from).toHaveBeenCalledTimes(4);
+  it("sends the explicit present status to the server without mutating the queue directly", async () => {
+    mocks.rpc.mockResolvedValue({ data: 0, error: null });
+    await expect((useSaveAttendance() as unknown as MutationOptions).mutationFn([{ ...absence(), status: "presente" }])).resolves.toBe(0);
+    expect(mocks.rpc).toHaveBeenCalledWith("save_catechesis_attendance", { records: [{ ...absence(), status: "presente", explicit_status: true }] });
+    expect(mocks.from).not.toHaveBeenCalled();
   });
 
   it("matches pending justifications by date for mixed-date batches", async () => {
-    response();
-    const first = response([{ id: "p1", student_id: "one", date: "2026-10-12", reason: "Sick" }]);
-    response();
-    response();
-    const second = response([{ id: "p2", student_id: "two", date: "2026-10-13", reason: "Travel" }]);
-    response();
-    response();
+    mocks.rpc.mockResolvedValueOnce({ data: 2, error: null });
     await expect((useSaveAttendance() as unknown as MutationOptions).mutationFn([absence("one"), absence("two", "2026-10-13")])).resolves.toBe(2);
-    expect(first.eq).toHaveBeenCalledWith("date", "2026-10-12");
-    expect(first.in).toHaveBeenCalledWith("student_id", ["one"]);
-    expect(second.eq).toHaveBeenCalledWith("date", "2026-10-13");
-    expect(second.in).toHaveBeenCalledWith("student_id", ["two"]);
+    expect(mocks.rpc).toHaveBeenCalledWith("save_catechesis_attendance", { records: [{ ...absence("one"), explicit_status: true }, { ...absence("two", "2026-10-13"), explicit_status: true }] });
+  });
+
+  it("bounds large atomic application batches", async () => {
+    mocks.rpc.mockResolvedValue({ data: 0, error: null });
+    const records = Array.from({ length: 201 }, (_, i) => absence(`student-${i}`));
+    await expect((useSaveAttendance() as unknown as MutationOptions).mutationFn(records)).resolves.toBe(0);
+    expect(mocks.rpc.mock.calls.map((call) => call[1].records.length)).toEqual([100, 100, 1]);
+  });
+
+  it("distinguishes inherited statuses from intentional staff changes", async () => {
+    mocks.rpc.mockResolvedValue({ data: 0, error: null });
+    const records = [{ ...absence("one"), status: "falta_justificada", explicit_status: false }, { ...absence("two"), explicit_status: true }];
+    await (useSaveAttendance() as unknown as MutationOptions).mutationFn(records);
+    expect(mocks.rpc).toHaveBeenCalledWith("save_catechesis_attendance", { records });
   });
 
   it("refreshes persisted attendance even when a later request fails", () => {
@@ -218,13 +218,24 @@ describe("data hook regressions", () => {
     expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["attendance-all"] });
   });
 
-  it("submits public justifications through the private-match RPC without querying students", async () => {
+  it("submits the selected public student without reading private student data", async () => {
     mocks.rpc.mockResolvedValue({ data: { success: true }, error: null });
-    const input = { studentName: "Ana", guardianContact: "41999999999", paroquiaId: "parish", date: "2026-10-12", reason: "Consulta médica" };
+    const input = { studentId: "student", className: "Primeira Etapa", paroquiaId: "parish", date: "2026-10-12", reason: "Consulta médica" };
     const mutation = useSubmitJustification() as unknown as { mutationFn: (payload: typeof input) => Promise<unknown> };
     await expect(mutation.mutationFn(input)).resolves.toEqual({ pending: true });
-    expect(mocks.rpc).toHaveBeenCalledWith("submit_public_justification", { student_name: "Ana", guardian_contact: "41999999999", paroquia_id: "parish", date: "2026-10-12", reason: "Consulta médica" });
+    expect(mocks.rpc).toHaveBeenCalledWith("submit_selected_public_justification", { student_id: "student", class_name: "Primeira Etapa", parish_id: "parish", absence_date: "2026-10-12", reason: "Consulta médica" });
     expect(mocks.from).not.toHaveBeenCalled();
+  });
+
+  it("refuses a justification through the authenticated atomic RPC", async () => {
+    mocks.rpc.mockResolvedValue({ data: { success: true }, error: null });
+    const mutation = useRejectJustification() as unknown as { mutationFn: (input: { studentId: string; date: string }) => Promise<void>; onSettled: () => void };
+    await mutation.mutationFn({ studentId: "student", date: "2026-10-10" });
+    expect(mocks.rpc).toHaveBeenCalledWith("reject_public_justification", { student_id: "student", absence_date: "2026-10-10" });
+    expect(mocks.from).not.toHaveBeenCalled();
+    mutation.onSettled();
+    expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["pending-center"] });
+    expect(mocks.invalidateQueries).toHaveBeenCalledWith({ queryKey: ["attendance"] });
   });
 
   it("uses authenticated account-management for create, update and deactivation", async () => {

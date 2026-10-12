@@ -137,7 +137,7 @@ export default function CoordinadorView() {
   };
 
   return (
-    <div className="pb-24">
+    <div>
       <PageHeader title="Painel do Coordenador" subtitle={parishes.find((p) => p.id === paroquiaId)?.nome ?? user?.paroquia_nome ?? "Paróquia"} />
 
       <div className="px-4 space-y-4">

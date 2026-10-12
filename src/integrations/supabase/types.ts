@@ -12,6 +12,31 @@ export type Database = {
   __InternalSupabase: {
     PostgrestVersion: "14.1"
   }
+  graphql_public: {
+    Tables: {
+      [_ in never]: never
+    }
+    Views: {
+      [_ in never]: never
+    }
+    Functions: {
+      graphql: {
+        Args: {
+          extensions?: Json
+          operationName?: string
+          query?: string
+          variables?: Json
+        }
+        Returns: Json
+      }
+    }
+    Enums: {
+      [_ in never]: never
+    }
+    CompositeTypes: {
+      [_ in never]: never
+    }
+  }
   public: {
     Tables: {
       activity_log: {
@@ -464,6 +489,63 @@ export type Database = {
         }
         Relationships: []
       }
+      rejected_public_justifications: {
+        Row: {
+          created_at: string
+          date: string
+          rejected_by: string
+          student_id: string
+        }
+        Insert: {
+          created_at?: string
+          date: string
+          rejected_by: string
+          student_id: string
+        }
+        Update: {
+          created_at?: string
+          date?: string
+          rejected_by?: string
+          student_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "rejected_public_justifications_rejected_by_fkey"
+            columns: ["rejected_by"]
+            isOneToOne: false
+            referencedRelation: "catequistas"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "rejected_public_justifications_student_id_fkey"
+            columns: ["student_id"]
+            isOneToOne: false
+            referencedRelation: "students"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      staff_login_attempts: {
+        Row: {
+          account_fingerprint: string
+          attempted_at: string
+          id: number
+          ip_fingerprint: string
+        }
+        Insert: {
+          account_fingerprint: string
+          attempted_at?: string
+          id?: never
+          ip_fingerprint: string
+        }
+        Update: {
+          account_fingerprint?: string
+          attempted_at?: string
+          id?: never
+          ip_fingerprint?: string
+        }
+        Relationships: []
+      }
       students: {
         Row: {
           active: boolean
@@ -533,6 +615,10 @@ export type Database = {
       }
     }
     Functions: {
+      apply_pending_justifications_for_attendance: {
+        Args: { absence_date: string; student_ids: string[] }
+        Returns: number
+      }
       can_access_student: { Args: { p_student: string }; Returns: boolean }
       can_access_student_values: {
         Args: { p_class: string; p_parish: string; p_teacher: string }
@@ -542,6 +628,10 @@ export type Database = {
       can_read_catequista: { Args: { p_teacher: string }; Returns: boolean }
       can_view_parish: { Args: { p_parish: string }; Returns: boolean }
       cleanup_expired_tokens: { Args: never; Returns: undefined }
+      consume_staff_login_attempt: {
+        Args: { p_client_ip: string; p_username: string }
+        Returns: boolean
+      }
       current_catequista_id: { Args: never; Returns: string }
       is_admin: { Args: never; Returns: boolean }
       is_coordinator: { Args: never; Returns: boolean }
@@ -549,10 +639,29 @@ export type Database = {
         Args: { p_ip?: string; p_success: boolean; p_username: string }
         Returns: undefined
       }
+      public_justification_classes: {
+        Args: { parish_id: string }
+        Returns: {
+          class_name: string
+        }[]
+      }
+      public_justification_students: {
+        Args: { parish_id: string; stage: string }
+        Returns: {
+          class_name: string
+          id: string
+          name: string
+        }[]
+      }
+      reject_public_justification: {
+        Args: { absence_date: string; student_id: string }
+        Returns: Json
+      }
       reset_password_by_email: {
         Args: { p_email: string; p_new_password_hash: string }
         Returns: Json
       }
+      save_catechesis_attendance: { Args: { records: Json }; Returns: number }
       student_belongs_to_parish: {
         Args: { p_parish: string; p_student: string }
         Returns: boolean
@@ -564,6 +673,16 @@ export type Database = {
           paroquia_id: string
           reason: string
           student_name: string
+        }
+        Returns: Json
+      }
+      submit_selected_public_justification: {
+        Args: {
+          absence_date: string
+          class_name: string
+          parish_id: string
+          reason: string
+          student_id: string
         }
         Returns: Json
       }
@@ -695,6 +814,9 @@ export type CompositeTypes<
     : never
 
 export const Constants = {
+  graphql_public: {
+    Enums: {},
+  },
   public: {
     Enums: {},
   },

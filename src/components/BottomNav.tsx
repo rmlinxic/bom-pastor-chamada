@@ -11,6 +11,7 @@ import {
 import { useLocation, useNavigate } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useFixedBottomHeight } from "@/hooks/useFixedBottomHeight";
 
 const CATECHIST_TABS = [
   { path: "/", icon: Home, label: "Início" },
@@ -49,6 +50,7 @@ const COORDINATOR_TABS = [
 ];
 
 export default function BottomNav() {
+  const navRef = useFixedBottomHeight<HTMLElement>("--app-bottom-nav-height");
   const location = useLocation();
   const navigate = useNavigate();
   const { user, isAdmin, isCoordinator, isCatequista } = useAuth();
@@ -90,7 +92,7 @@ export default function BottomNav() {
       : "py-3 px-1";
 
   return (
-    <nav className="safe-bottom fixed bottom-0 left-0 right-0 z-50 border-t border-border/80 bg-card/95 shadow-[0_-12px_32px_-24px_hsl(var(--foreground)/0.35)] backdrop-blur-xl">
+    <nav ref={navRef} aria-label="Navegação principal" className="safe-bottom fixed bottom-0 left-0 right-0 z-50 border-t border-border/80 bg-card/95 shadow-[0_-12px_32px_-24px_hsl(var(--foreground)/0.35)] backdrop-blur-xl">
       <div
         className="mx-auto grid w-full max-w-6xl items-center px-1"
         style={{ gridTemplateColumns: `repeat(${tabCount}, minmax(0, 1fr))` }}

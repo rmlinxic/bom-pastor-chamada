@@ -32,7 +32,9 @@ O login usa usuário e senha, validados no servidor. A Edge Function emite uma s
 
 No encerramento de ano, a coordenação escolhe o catequista de cada etapa/subturma. Antes das mudanças, o app inicia o download de um arquivo JSON com o ano, as turmas, os alunos, as chamadas e as missas. As presenças permanecem no banco. Os relatórios permitem abrir um arquivo histórico em modo de leitura; o arquivo guarda os nomes e as turmas da época. Guarde-o em local de acesso controlado, pois contém dados de crianças e responsáveis. A interface não consegue confirmar que o navegador salvou o download.
 
-A justificativa pública pede paróquia, nome completo do aluno e contato cadastrado do responsável. Não oferece uma lista pública de crianças. O envio é validado por uma função limitada no banco; detalhes de implantação estão no guia de segurança.
+A justificativa pública permite escolher comunidade, etapa e nome do catequizando, sem telefone obrigatório. Por decisão do responsável, os nomes e turmas ficam disponíveis no portal; os demais dados continuam protegidos. O envio é aceito por padrão para uma falta, ou guardado até a chamada. O catequista pode recusá-lo na página de chamada, e um reenvio anônimo não desfaz essa recusa. Detalhes de permissões e validação estão no guia de segurança.
+
+O espaço inferior das páginas considera a altura real da navegação e da barra de salvar a chamada, incluindo a área segura do celular. A rolagem reserva espaço para que os últimos itens possam aparecer acima dessas barras.
 
 ## Configuração e publicação
 
@@ -43,4 +45,4 @@ A justificativa pública pede paróquia, nome completo do aluno e contato cadast
 
 A pasta `supabase/migrations` contém alterações históricas, mas ainda não oferece um baseline completo e validado para criar um banco vazio. Não execute um reset ou todas as migrações às cegas para configurar produção.
 
-O workflow `.github/workflows/deploy.yml` usa `npm ci`, valida o código e publica `dist` no GitHub Pages após um push em `main` ou execução manual. Configure os secrets de Actions `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`. O deploy do site é separado das migrações SQL, da Edge Function e das configurações Auth/SMTP.
+O workflow `.github/workflows/deploy.yml` compila e publica `dist` no GitHub Pages após um push em `main` ou execução manual. Execute `npm run check` antes da publicação. Configure os secrets de Actions `VITE_SUPABASE_URL` e `VITE_SUPABASE_PUBLISHABLE_KEY`. O deploy do site é separado das migrações SQL, da Edge Function e das configurações Auth/SMTP.

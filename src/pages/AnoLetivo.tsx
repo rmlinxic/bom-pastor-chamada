@@ -145,7 +145,7 @@ export default function AnoLetivo() {
   const processing = processarAno.isPending;
 
   return (
-    <div className="pb-24">
+    <div>
       <PageHeader title="Encerramento de Ano" subtitle={`${anoAtual} → ${anoAtual + 1}`} />
       <div className="px-4 space-y-4">
         <p className="text-center text-sm text-muted-foreground">Passo {step} de 3</p>

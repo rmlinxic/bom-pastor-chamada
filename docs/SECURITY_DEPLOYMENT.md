@@ -34,7 +34,9 @@ O calendário histórico sem `paroquia_id` é global: a migração permite leitu
 
 ## Justificativa pública e arquivos históricos
 
-O visitante não lê listas de alunos nem escreve diretamente nas tabelas. O RPC de justificativa valida nome completo, contato normalizado cadastrado, paróquia, tamanho dos campos e intervalo de datas. A resposta é neutra para não revelar correspondências. Existe limite de tentativas por contato/paróquia; isso não equivale a CAPTCHA nem comprova que o solicitante controla o telefone. Para uma prova de identidade do responsável, será necessária verificação adicional por canal confirmado.
+Por decisão explícita do responsável, o portal público permite selecionar comunidade, etapa e catequizando sem telefone cadastrado. Os RPCs de seleção expõem somente IDs, nomes e turmas de catequizandos ativos da comunidade escolhida; contatos, presenças, documentos e motivos continuam privados. Essa escolha torna os nomes e o vínculo com comunidade/turma públicos e não comprova a identidade de quem envia a justificativa. O navegador anônimo continua sem leitura ou escrita direta nas tabelas privadas.
+
+As justificativas são aceitas por padrão: o RPC valida comunidade, turma, aluno ativo, motivo, intervalo de datas e limite de cinco envios por aluno/comunidade/hora. Justifica uma falta não justificada ou guarda o motivo para aplicação ao salvar a chamada; não altera uma presença, um motivo já justificado ou uma solicitação já pendente. O recibo é neutro. O catequista pode usar **Recusar justificativa** na chamada. A recusa é atômica e deixa um marcador privado que impede um reenvio anônimo de desfazê-la. O processamento automático da fila também ocorre por RPC autenticado, em transação, verificando esse marcador. O antigo RPC que exigia nome/telefone deixou de ser executável pelo navegador.
 
 Arquivos JSON de histórico e exportações de justificativas contêm dados de crianças e responsáveis. Armazene-os em local restrito, compartilhe somente com pessoas autorizadas e siga a política de retenção da paróquia. Abrir um JSON em modo de leitura não torna seus dados públicos nem substitui proteção do arquivo fora do app.
 

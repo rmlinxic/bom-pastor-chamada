@@ -198,7 +198,7 @@ export default function Dashboard() {
   const isCatequistaOnly = isCatequista && !isCoordinator;
 
   return (
-    <div className="pb-24">
+    <div>
       <PageHeader title="Catequese Bom Pastor" subtitle={scopeLabel} />
 
       <div className="mx-4 mb-5 rounded-2xl bg-primary p-5 text-primary-foreground shadow-[0_18px_36px_-24px_hsl(var(--primary))] sm:mx-6 sm:p-6">

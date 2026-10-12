@@ -65,7 +65,7 @@ export default function PendingCenter() {
   }
 
   return (
-    <div className="pb-28">
+    <div>
       <PageHeader title="Central de pendências" subtitle={scopeLabel} />
       <div className="space-y-4 px-4 sm:px-6">
         <div className="flex flex-wrap items-center justify-between gap-3">

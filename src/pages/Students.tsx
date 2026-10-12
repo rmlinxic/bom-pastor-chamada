@@ -145,7 +145,7 @@ export default function Students() {
     setExpandedId((prev) => (prev === id ? null : id));
 
   return (
-    <div className="pb-24">
+    <div>
       <PageHeader title="Catequizandos" subtitle="Gerencie os catequizandos" />
       {targetStudentId && <div className="mx-4 mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"><p>Cadastro selecionado pela central de pendências.</p><Link to="/alunos" className="mt-2 inline-flex text-primary underline">Ver todos os catequizandos</Link>{!isLoading && filtered.length === 0 && <p className="mt-2">Cadastro indisponível nesta visualização.</p>}</div>}
 

@@ -139,7 +139,7 @@ export default function Admin() {
   };
 
   return (
-    <div className="pb-24">
+    <div>
       <PageHeader title="Painel Admin" subtitle="Gerencie paróquias, catequistas e coordenadores" />
 
       <Tabs defaultValue="usuarios" className="px-4">

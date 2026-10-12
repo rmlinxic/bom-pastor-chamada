@@ -54,6 +54,8 @@
     --font-body: "Avenir Next", Avenir, "Segoe UI Variable", "Segoe UI", sans-serif;
     --shadow-soft: 0 16px 40px -28px hsl(212 62% 20% / 0.45);
     --shadow-card: 0 12px 30px -22px hsl(212 62% 20% / 0.38);
+    --app-bottom-nav-height: calc(4.5rem + env(safe-area-inset-bottom, 0px));
+    --app-bottom-action-height: 0px;
   }
 
 }
@@ -71,6 +73,10 @@
       linear-gradient(180deg, hsl(var(--primary) / 0.035), transparent 18rem),
       linear-gradient(90deg, transparent 0, hsl(var(--primary) / 0.018) 50%, transparent 100%);
     font-feature-settings: "ss01" 1, "cv02" 1;
+  }
+
+  html {
+    scroll-padding-bottom: calc(var(--app-bottom-nav-height) + var(--app-bottom-action-height) + 1.5rem);
   }
 
   ::selection {
@@ -94,6 +100,11 @@
 
   .app-shell {
     @apply mx-auto min-h-[100dvh] w-full max-w-6xl;
+    padding-bottom: calc(var(--app-bottom-nav-height) + var(--app-bottom-action-height) + 1.5rem);
+  }
+
+  .bottom-action-bar {
+    bottom: var(--app-bottom-nav-height);
   }
 
   .surface-card {

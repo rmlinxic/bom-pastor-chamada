@@ -8,10 +8,11 @@ import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import PageHeader from "@/components/PageHeader";
+import BottomActionBar from "@/components/BottomActionBar";
 import { Link, useSearchParams } from "react-router-dom";
 import { parseLocalDate } from "@/lib/dates";
 import { useStudents } from "@/hooks/useStudents";
-import { useAttendanceByDate, useSaveAttendance, usePendingJustifications } from "@/hooks/useAttendance";
+import { useAttendanceByDate, useSaveAttendance, usePendingJustifications, useRejectJustification } from "@/hooks/useAttendance";
 
 type Status = "presente" | "falta_justificada" | "falta_nao_justificada";
 
@@ -37,6 +38,7 @@ export default function Attendance() {
   const { data: existingAttendance = [], isLoading: attendanceLoading, isError: attendanceError } = useAttendanceByDate(dateStr);
   const { data: pendingJustifications = [] } = usePendingJustifications();
   const saveMutation = useSaveAttendance();
+  const rejectMutation = useRejectJustification();
 
   const [statuses, setStatuses] = useState<Record<string, Status>>({});
   const [search, setSearch] = useState("");
@@ -78,8 +80,9 @@ export default function Attendance() {
       student_id: s.id,
       date: dateStr,
       status: getStatus(s.id),
+      explicit_status: statuses[s.id] !== undefined,
     }));
-    saveMutation.mutate(records, { onSuccess: () => setEditando(false) });
+    saveMutation.mutate(records, { onSuccess: () => { setEditando(false); setStatuses({}); } });
   };
 
   // Busca em tempo real
@@ -89,7 +92,7 @@ export default function Attendance() {
     return students.filter((s) => s.name.toLowerCase().includes(q));
   }, [students, search]);
 
-  const bloqueado = jaRegistrada && !editando;
+  const bloqueado = (jaRegistrada && !editando) || saveMutation.isPending;
 
   // Resumo da chamada já salva (apenas para os catequizandos deste perfil)
   const resumo = useMemo(() => {
@@ -101,7 +104,7 @@ export default function Attendance() {
   }, [myExistingAttendance, jaRegistrada]);
 
   return (
-    <div className="pb-24">
+    <div>
       <PageHeader title="Chamada" subtitle="Registre a presença dos catequizandos" />
 
       {classFilter && <div className="mx-4 mb-3 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"><p className="font-semibold">Turma selecionada: {classFilter}</p><p className="mt-1 text-muted-foreground">Ao salvar, somente os catequizandos desta turma e paróquia serão registrados.</p><Link className="mt-2 inline-flex text-primary underline" to="/chamada">Limpar filtro de turma</Link></div>}
@@ -190,12 +193,12 @@ export default function Attendance() {
             (record) => record.student_id === student.id && record.date === dateStr
           )?.reason?.trim();
           return (
+            <article key={student.id} className="rounded-lg border border-border bg-card shadow-sm">
             <button
-              key={student.id}
               onClick={() => !bloqueado && toggleStatus(student.id)}
               disabled={bloqueado}
               className={cn(
-                "flex w-full items-center justify-between rounded-lg border border-border bg-card p-4 shadow-sm transition-all",
+                "flex w-full items-center justify-between rounded-lg bg-card p-4 transition-all",
                 student.id === studentFocus && "ring-2 ring-primary",
                 bloqueado ? "opacity-70 cursor-default" : "active:scale-[0.98]"
               )}
@@ -218,6 +221,12 @@ export default function Attendance() {
                 <Icon className="h-3.5 w-3.5" />{config.label}
               </span>
             </button>
+            {(savedReason || pendingReason) && <div className="px-4 pb-4"><Button variant="outline" size="sm" className="text-destructive" disabled={rejectMutation.isPending || studentsError || attendanceError} onClick={() => {
+              rejectMutation.mutate({ studentId: student.id, date: dateStr }, { onSuccess: () => setStatuses((current) => {
+                const next = { ...current }; delete next[student.id]; return next;
+              }) });
+            }}>Recusar justificativa</Button></div>}
+            </article>
           );
         })}
 
@@ -231,7 +240,7 @@ export default function Attendance() {
 
       {/* Botão salvar - só aparece se não bloqueado */}
       {students.length > 0 && !bloqueado && (
-        <div className="fixed bottom-16 left-0 right-0 z-40 border-t border-border bg-card p-4 safe-bottom">
+        <BottomActionBar>
           <Button
             onClick={handleSave}
             disabled={saveMutation.isPending || studentsLoading || attendanceLoading || studentsError || attendanceError}
@@ -239,7 +248,7 @@ export default function Attendance() {
           >
             {saveMutation.isPending ? "Salvando..." : jaRegistrada ? "Salvar Alterações" : "Salvar Chamada"}
           </Button>
-        </div>
+        </BottomActionBar>
       )}
     </div>
   );

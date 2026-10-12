@@ -158,7 +158,7 @@ export default function Missas() {
 
   if (massMonitoringPaused) {
     return (
-      <div className="pb-24">
+      <div>
         <PageHeader title="Missas" subtitle="Monitoramento desativado" />
         <div className="mx-4 rounded-xl border border-border bg-card p-5 text-center sm:mx-6">
           <Church className="mx-auto h-8 w-8 text-muted-foreground" />
@@ -190,7 +190,7 @@ export default function Missas() {
     : "";
 
   return (
-    <div className="pb-24">
+    <div>
       <PageHeader title="Missas" subtitle={`Presenças na missa - ${subtitle}`} />
 
       {/* Filtro de etapa para coordenador/admin */}
