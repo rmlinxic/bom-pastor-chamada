@@ -210,7 +210,7 @@ export default function Reports() {
     XLSX.writeFile(wb, filename);
   }
 
-  function buildStudentMap(source: typeof attendance) {
+  function buildStudentMap(source: readonly (typeof attendance)[number][]) {
     const map: Record<string, { name: string; class_name: string; paroquia_nome: string }> = {};
     students.forEach((s) => {
       map[s.id] = { name: s.name, class_name: s.class_name, paroquia_nome: (s as any).paroquia_nome ?? "Sem paróquia" };
@@ -693,10 +693,13 @@ export default function Reports() {
 <p class="sub" style="margin-bottom:12px"><strong>Legenda:</strong> P = Presente &nbsp; FJ = Falta Justificada &nbsp; FN = Falta Não Justificada</p>
 ${bodyContent}
 <h2>Justificativas</h2><table class="justifications"><thead><tr><th>Data</th><th>Aluno</th><th>Turma</th><th>Motivo</th></tr></thead><tbody>${reasonsHtml || '<tr><td colspan="4">Nenhuma justificativa neste período.</td></tr>'}</tbody></table>
-<br><button onclick="window.print()">Imprimir / Salvar PDF</button>
+<br><button id="print-report">Imprimir / Salvar PDF</button>
 </body></html>`;
     const win = window.open("", "_blank");
-    if (win) { win.opener = null; win.document.write(html); win.document.close(); } else toast.error("Permita abrir a janela de impressão para gerar o PDF.");
+    if (win) {
+      win.opener = null; win.document.write(html); win.document.close();
+      win.document.getElementById?.("print-report")?.addEventListener("click", () => win.print());
+    } else toast.error("Permita abrir a janela de impressão para gerar o PDF.");
   }
 
   function handleExportMassCSV() {

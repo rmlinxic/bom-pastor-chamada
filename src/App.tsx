@@ -56,7 +56,7 @@ function AppLayout() {
             <LogOut className="h-3.5 w-3.5" />
             Sair
           </button>
-          <Link to="/esqueci-senha" className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold">Alterar senha</Link>
+          <Link to="/redefinir-senha" className="rounded-lg border border-border bg-card px-3 py-1.5 text-xs font-semibold">Alterar senha</Link>
         </div>
       )}
 

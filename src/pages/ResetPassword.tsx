@@ -15,14 +15,15 @@ export default function ResetPassword() {
   const [isLoading, setIsLoading] = useState(false);
   const [isRecoveryMode, setIsRecoveryMode] = useState(false);
   const [isCheckingMode, setIsCheckingMode] = useState(true);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [needsCurrentPassword, setNeedsCurrentPassword] = useState(false);
 
   useEffect(() => {
     // Check initial session (user may have already landed with a recovery token)
     const checkSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
       if (session?.user) {
-        setUserEmail(session.user.email || null);
+        setNeedsCurrentPassword(session.user.app_metadata?.password_scheme === "staff_hmac_v1");
         setIsRecoveryMode(true);
       }
       setIsCheckingMode(false);
@@ -34,7 +35,7 @@ export default function ResetPassword() {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "PASSWORD_RECOVERY" || (event === "SIGNED_IN" && session)) {
         setIsRecoveryMode(true);
-        setUserEmail(session?.user?.email || null);
+        setNeedsCurrentPassword(session?.user?.app_metadata?.password_scheme === "staff_hmac_v1");
         setIsCheckingMode(false);
       }
     });
@@ -61,14 +62,14 @@ export default function ResetPassword() {
       toast.error("As senhas não coincidem.");
       return;
     }
-    if (!userEmail) {
-      toast.error("Não foi possível identificar o usuário. Tente novamente.");
+    if (needsCurrentPassword && !currentPassword) {
+      toast.error("Informe sua senha atual.");
       return;
     }
 
     setIsLoading(true);
     try {
-      const { error } = await confirmPasswordReset(password);
+      const { error } = await confirmPasswordReset(password, currentPassword);
 
       if (error) {
         toast.error(error);
@@ -94,7 +95,7 @@ export default function ResetPassword() {
         <div className="public-panel flex max-w-sm flex-col items-center gap-4 text-center">
           <Loader2 className="h-8 w-8 animate-spin text-primary" />
           <p className="text-sm text-muted-foreground">
-            Verificando link de redefinição...
+            Verificando acesso...
           </p>
         </div>
       </div>
@@ -112,22 +113,22 @@ export default function ResetPassword() {
             </div>
             <p className="brand-kicker mb-2">Catequese Bom Pastor</p>
             <h1 className="text-center text-3xl font-bold tracking-[-0.035em] text-foreground">
-              Link Inválido
+              Acesso necessário
             </h1>
             <p className="text-sm text-muted-foreground text-center mt-1">
-              O link de redefinição expirou ou é inválido
+              Entre na sua conta para alterar a senha
             </p>
           </div>
 
           <div className="rounded-lg border border-destructive/30 bg-destructive/10 px-4 py-3 mb-6">
             <p className="text-sm text-destructive text-center font-medium">
-              Link inválido ou expirado. Solicite um novo link de redefinição.
+              Seu acesso não está disponível. Entre novamente ou procure o administrador.
             </p>
           </div>
 
           <div className="flex flex-col items-center gap-3">
             <a
-              href="#/esqueci-senha"
+              href="#/login"
               className="text-sm font-medium text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
             >
               Solicitar novo link
@@ -163,6 +164,10 @@ export default function ResetPassword() {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
+          {needsCurrentPassword && <div className="space-y-1.5">
+            <Label htmlFor="current-password">Senha atual</Label>
+            <Input id="current-password" type="password" autoComplete="current-password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} required disabled={isLoading} />
+          </div>}
           {/* Nova senha */}
           <div className="space-y-1.5">
             <Label htmlFor="password">Nova senha</Label>
@@ -172,6 +177,7 @@ export default function ResetPassword() {
                 id="password"
                 type="password"
                 required
+                autoComplete="new-password"
                 className="h-12 text-base pl-10"
                 placeholder="Escolha sua senha"
                 value={password}
@@ -191,6 +197,7 @@ export default function ResetPassword() {
                 id="confirmPassword"
                 type="password"
                 required
+                autoComplete="new-password"
                 className="h-12 text-base pl-10"
                 placeholder="Repita a nova senha"
                 value={confirmPwd}

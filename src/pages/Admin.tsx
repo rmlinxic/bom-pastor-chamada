@@ -14,7 +14,7 @@ import PageHeader from "@/components/PageHeader";
 import { cn } from "@/lib/utils";
 import {
   useCatequistas, useCreateCatequista, useUpdateCatequista,
-  useDeactivateCatequista, useInviteCatequista, type Catequista,
+  useDeactivateCatequista, type Catequista,
 } from "@/hooks/useCatequistas";
 import { useParoquias, useCreateParoquia, useToggleParoquia } from "@/hooks/useParoquias";
 import { toast } from "sonner";
@@ -51,7 +51,6 @@ export default function Admin() {
   const createMutation = useCreateCatequista();
   const updateMutation = useUpdateCatequista();
   const deactivateMutation = useDeactivateCatequista();
-  const inviteMutation = useInviteCatequista();
   const createParoquiaMutation = useCreateParoquia();
   const toggleParoquiaMutation = useToggleParoquia();
 
@@ -86,7 +85,7 @@ export default function Admin() {
   };
 
   const handleSave = async () => {
-    if (!form.name.trim() || !form.username.trim() || !form.email.trim()) return;
+    if (!form.name.trim() || !form.username.trim() || (!editingId && !form.password)) return;
     setSaving(true);
     try {
       // Monta etapa final: "Primeira Etapa" ou "Primeira Etapa A"
@@ -113,7 +112,6 @@ export default function Admin() {
         is_coordenador: form.role === "coordenador" ? true : form.is_coordenador,
       };
       if (editingId) {
-        if (!catequistas.find((c) => c.id === editingId)?.auth_user_id) await inviteMutation.mutateAsync({ id: editingId, email: form.email });
         await updateMutation.mutateAsync({ id: editingId, ...payload, newPassword: form.password || undefined });
       }
       else await createMutation.mutateAsync({ ...payload });
@@ -174,7 +172,7 @@ export default function Admin() {
                           <span className={cn("shrink-0 text-xs px-2 py-0.5 rounded-full font-medium", badge.cls)}>{badge.label}</span>
                         </div>
                         <p className="text-xs text-muted-foreground font-mono">@{c.username}</p>
-                        <p className="mt-1 text-xs text-muted-foreground">{c.auth_user_id ? c.email : "Acesso por e-mail pendente: edite o cadastro para enviar o convite."}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">{c.auth_user_id ? c.email : "O acesso será atualizado no próximo login."}</p>
                         {c.paroquia_nome ? (
                           <div className="flex items-center gap-1.5 mt-1"><Building2 className="h-3.5 w-3.5 text-muted-foreground" /><span className="text-xs text-muted-foreground">{c.paroquia_nome}</span></div>
                         ) : (c.role === "catequista" || c.role === "coordenador") ? (
@@ -400,7 +398,7 @@ export default function Admin() {
             )}
 
             <Button className="w-full h-11" onClick={handleSave}
-              disabled={saving || !form.name.trim() || !form.username.trim() || !form.email.trim()}>
+              disabled={saving || !form.name.trim() || !form.username.trim() || (!editingId && !form.password)}>
               {saving
                 ? <span className="flex items-center gap-2"><span className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary-foreground" />Salvando...</span>
                 : editingId ? "Salvar alterações" : "Criar usuário"}

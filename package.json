@@ -13,7 +13,7 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:edge": "node --test supabase/functions/account-management/account-management.test.mjs"
+    "test:edge": "node --test supabase/functions/account-management/account-management.test.mjs supabase/functions/staff-login/staff-login.test.mjs"
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.14",
@@ -40,7 +40,6 @@
     "recharts": "^2.15.4",
     "sonner": "^1.7.4",
     "tailwind-merge": "^2.6.0",
-    "tailwindcss-animate": "^1.0.7",
     "xlsx": "https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz"
   },
   "devDependencies": {
@@ -62,6 +61,7 @@
     "typescript": "^5.8.3",
     "typescript-eslint": "^8.38.0",
     "vite": "^7.3.7",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.11",
+    "tailwindcss-animate": "^1.0.7"
   }
 }

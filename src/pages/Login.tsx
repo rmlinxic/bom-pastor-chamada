@@ -43,19 +43,19 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-1.5">
-            <Label htmlFor="username">E-mail</Label>
+            <Label htmlFor="username">Usuário</Label>
             <Input
               id="username"
-              type="email"
+              type="text"
               autoComplete="username"
-              placeholder="Seu e-mail cadastrado"
+              placeholder="Nome de usuário"
               value={username}
               onChange={(e) => setUsername(e.target.value)}
               className="h-12 text-base"
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              maxLength={254}
+              maxLength={64}
               required
             />
           </div>
@@ -63,12 +63,6 @@ export default function Login() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label htmlFor="password">Senha</Label>
-              <a
-                href="#/esqueci-senha"
-                className="text-xs text-primary hover:text-primary/80 underline underline-offset-2 transition-colors"
-              >
-                Esqueci minha senha
-              </a>
             </div>
             <PasswordInput
               value={password}
@@ -102,6 +96,7 @@ export default function Login() {
             )}
           </Button>
         </form>
+        <p className="mt-4 text-center text-xs text-muted-foreground">Esqueceu sua senha? Procure o administrador.</p>
 
         <p className="mt-8 border-t border-border/70 pt-6 text-center text-xs text-muted-foreground">
           Você é pai ou responsável?{" "}

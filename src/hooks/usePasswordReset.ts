@@ -1,25 +1,25 @@
 import { supabase } from "@/integrations/supabase/client";
 import { assertPasswordProvided } from "@/lib/credentials";
 
-/** Auth supplies rate limiting and a verified email link; no public account lookup. */
-export async function requestPasswordReset(email: string): Promise<{ error: string | null }> {
-  try {
-    const { error } = await supabase.auth.resetPasswordForEmail(email.trim().toLowerCase(), {
-      redirectTo: new URL(`${import.meta.env.BASE_URL}#/redefinir-senha`, window.location.origin).href,
-    });
-    return { error: error ? "Não foi possível solicitar o e-mail. Aguarde e tente novamente." : null };
-  } catch {
-    return { error: "Não foi possível solicitar o e-mail. Tente novamente." };
-  }
+/** Recovery by email is intentionally on standby until an email service exists. */
+export async function requestPasswordReset(_email: string): Promise<{ error: string | null }> {
+  return { error: "A recuperação por e-mail está em espera. Procure o administrador." };
 }
 
-export async function confirmPasswordReset(newPassword: string): Promise<{ error: string | null }> {
+export async function confirmPasswordReset(password: string, currentPassword?: string): Promise<{ error: string | null }> {
   try {
-    assertPasswordProvided(newPassword);
+    assertPasswordProvided(password);
     const { data: { user }, error: identityError } = await supabase.auth.getUser();
-    if (identityError || !user) return { error: "O link expirou. Solicite um novo e-mail." };
-    const { error } = await supabase.auth.updateUser({ password: newPassword });
-    return { error: error ? error.message : null };
+    if (identityError || !user) return { error: "Entre na sua conta para alterar a senha." };
+    const { data, error } = await supabase.functions.invoke("account-management", { body: { action: "set_password", password, ...(currentPassword ? { currentPassword } : {}) } });
+    if (error) {
+      if (error.context instanceof Response) {
+        const result = await error.context.clone().json().catch(() => null);
+        if (typeof result?.error === "string") return { error: result.error };
+      }
+      return { error: "Não foi possível alterar a senha. Confira sua senha atual e tente novamente." };
+    }
+    return { error: typeof data?.error === "string" ? data.error : null };
   } catch (error) {
     return { error: error instanceof Error ? error.message : "Não foi possível alterar a senha." };
   }

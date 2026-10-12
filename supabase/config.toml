@@ -7,7 +7,7 @@ enable_signup = false
 minimum_password_length = 6
 
 [auth.email]
-enable_signup = false
+enable_signup = true
 enable_confirmations = true
 double_confirm_changes = true
 secure_password_change = true
@@ -22,3 +22,7 @@ verify_enabled = true
 verify_jwt = false
 # The function validates the Bearer JWT with Auth.getUser before any service use.
 # This also supports projects using modern asymmetric Auth signing keys.
+
+[functions.staff-login]
+verify_jwt = false
+# Public password login validates credentials and applies server-side rate limits.

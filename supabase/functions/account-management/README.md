@@ -28,3 +28,5 @@ Auth and profile writes span separate services and are not transactional. Explic
 Run `node --test supabase/functions/account-management/account-management.test.mjs` for policy validation and mocked Auth trust-boundary checks. Tests transpile TypeScript using the project's installed compiler; no network or database writes occur. Run `deno check supabase/functions/account-management/index.ts` in a Deno-enabled environment before deploying. SDK imports are pinned to `@supabase/supabase-js@2.112.0`, matching the installed project SDK.
 
 Official API references: [inviteUserByEmail](https://supabase.com/docs/reference/javascript/auth-admin-inviteuserbyemail), [updateUserById](https://supabase.com/docs/reference/javascript/auth-admin-updateuserbyid), [getUser](https://supabase.com/docs/reference/javascript/auth-getuser).
+
+Email recovery/invitation is on standby. Active actions are create, update, deactivate, set_mass_monitoring and set_password. Login uses staff-login; new identities are confirmed private addresses and never send emails. Server secrets APP_SERVICE_KEY, APP_PUBLISHABLE_KEY and durable APP_PASSWORD_PEPPER are required.

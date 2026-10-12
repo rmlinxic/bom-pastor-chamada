@@ -4,10 +4,11 @@ import { toast } from "sonner";
 import { assertPasswordProvided } from "@/lib/credentials";
 
 const db = supabase as any;
-function requiredEmail(value: string | null | undefined): string {
+function optionalEmail(value: string | null | undefined): string | null {
   const email = value?.trim().toLowerCase() ?? "";
+  if (!email) return null;
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
-    throw new Error("Informe um e-mail válido para a conta de acesso.");
+    throw new Error("Informe um e-mail de contato válido ou deixe em branco.");
   }
   return email;
 }
@@ -97,18 +98,18 @@ export function useCreateCatequista() {
       paroquia_id: string | null;
       is_coordenador: boolean;
     }) => {
-      if (input.password) assertPasswordProvided(input.password);
+      assertPasswordProvided(input.password ?? "");
       await manageAccount({
         action: "create",
         ...input,
         name: input.name.trim(),
         username: input.username.toLowerCase().trim(),
-        email: requiredEmail(input.email),
+        email: optionalEmail(input.email),
       });
     },
     onSuccess: () => {
       invalidateAccounts(qc);
-      toast.success("Usuário criado! Convite enviado por e-mail.");
+      toast.success("Usuário criado com sucesso!");
     },
     onError: (err: Error) => toast.error(err.message || "Erro ao criar usuário."),
   });
@@ -134,7 +135,7 @@ export function useUpdateCatequista() {
         ...input,
         name: input.name.trim(),
         username: input.username.toLowerCase().trim(),
-        email: requiredEmail(input.email),
+        email: optionalEmail(input.email),
       });
     },
     onSuccess: () => {
@@ -156,17 +157,5 @@ export function useDeactivateCatequista() {
       toast.success("Usuário removido.");
     },
     onError: (err: Error) => toast.error(err.message || "Erro ao remover usuário."),
-  });
-}
-
-export function useInviteCatequista() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: async (input: { id: string; email: string }) => {
-      const { error } = await supabase.functions.invoke("account-management", { body: { action: "admin_invite", ...input } });
-      if (error) throw error;
-    },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["catequistas"] }); toast.success("Convite de acesso enviado por e-mail."); },
-    onError: () => toast.error("Não foi possível enviar o convite. Verifique o e-mail e a configuração de envio."),
   });
 }

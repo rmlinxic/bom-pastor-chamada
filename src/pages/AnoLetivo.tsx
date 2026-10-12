@@ -12,6 +12,7 @@ import { useToast } from "@/hooks/use-toast";
 import { ETAPAS, nomeTurma, parseTurma, proximaEtapa } from "@/lib/etapas";
 import { localMonthString, shiftMonth } from "@/lib/dates";
 import { downloadAttendanceArchive } from "@/lib/attendance-archive";
+import { readAllRows } from "@/lib/query-pages";
 
 const db = supabase as any;
 type Catequista = { id: string; name: string; etapa: string | null };
@@ -40,12 +41,10 @@ export default function AnoLetivo() {
     queryKey: ["ano-letivo-planejamento", paroquiaId],
     queryFn: async () => {
       const [cats, students] = await Promise.all([
-        db.from("catequistas").select("id, name, etapa, paroquia_id, role, active").eq("paroquia_id", paroquiaId).eq("active", true).eq("role", "catequista"),
-        db.from("students").select("*").eq("paroquia_id", paroquiaId),
+        readAllRows<Catequista>((from, to) => db.from("catequistas").select("id, name, etapa, paroquia_id, role, active").eq("paroquia_id", paroquiaId).eq("active", true).eq("role", "catequista").order("id").range(from, to)),
+        readAllRows<Student>((from, to) => db.from("students").select("*").eq("paroquia_id", paroquiaId).order("id").range(from, to)),
       ]);
-      if (cats.error) throw cats.error;
-      if (students.error) throw students.error;
-      return { catequistas: (cats.data ?? []) as Catequista[], students: (students.data ?? []) as Student[] };
+      return { catequistas: cats, students };
     },
     enabled: !!paroquiaId,
   });
@@ -75,20 +74,22 @@ export default function AnoLetivo() {
       if (ano?.encerrado_em) throw new Error("Este ano catequético já foi encerrado.");
 
       // A fresh snapshot includes inactive students and the full year's records.
-      const { data: freshStudents, error: studentsError } = await db.from("students").select("*").eq("paroquia_id", paroquiaId);
-      if (studentsError) throw studentsError;
-      const allStudents = (freshStudents ?? []) as Student[];
+      const allStudents = await readAllRows<Student>((from, to) => db.from("students").select("*").eq("paroquia_id", paroquiaId).order("id").range(from, to));
       const studentIds = allStudents.map((student) => student.id);
       const start = `${anoAtual}-01-01`;
       const end = `${anoAtual}-12-31`;
-      const [attendanceResult, massResult] = studentIds.length ? await Promise.all([
-        db.from("attendance").select("*").in("student_id", studentIds).gte("date", start).lte("date", end),
-        db.from("mass_attendance").select("*").in("student_id", studentIds).gte("date", start).lte("date", end),
-      ]) : [{ data: [], error: null }, { data: [], error: null }];
-      if (attendanceResult.error) throw attendanceResult.error;
-      if (massResult.error) throw massResult.error;
-      const attendance = (attendanceResult.data ?? []) as Attendance[];
-      const massAttendance = (massResult.data ?? []) as Attendance[];
+      async function readYearRecords(table: "attendance" | "mass_attendance") {
+        const records: Attendance[] = [];
+        // Bound filter URLs as well as response pages for large parishes.
+        for (let offset = 0; offset < studentIds.length; offset += 200) {
+          const ids = studentIds.slice(offset, offset + 200);
+          records.push(...await readAllRows<Attendance>((from, to) => db.from(table).select("*").in("student_id", ids).gte("date", start).lte("date", end).order("id").range(from, to)));
+        }
+        return records;
+      }
+      const [attendance, massAttendance] = await Promise.all([
+        readYearRecords("attendance"), readYearRecords("mass_attendance"),
+      ]);
       const aptos: { id: string; novaEtapa: string; catequistaId: string }[] = [];
       const pendentes: { student_id: string; faltas_nao_justificadas: number; meses_sem_missa: number; score_faltas: number; destino_class_name: string; destino_catequista_id: string }[] = [];
       for (const student of allStudents.filter((student) => student.active)) {

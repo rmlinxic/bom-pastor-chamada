@@ -24,7 +24,7 @@ interface AuthContextType {
   isAdmin: boolean;
   isCoordinator: boolean;
   isCatequista: boolean;
-  login: (email: string, password: string) => Promise<{ error: string | null }>;
+  login: (username: string, password: string) => Promise<{ error: string | null }>;
   setMassMonitoring: (enabled: boolean) => Promise<{ error: string | null }>;
   logout: () => void;
 }
@@ -115,12 +115,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [user, logout]);
 
-  const login = useCallback(async (email: string, password: string) => {
+  const login = useCallback(async (username: string, password: string) => {
     const attempt = ++loginAttempt.current;
     signingIn.current = true;
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({ email: email.trim().toLowerCase(), password });
-      if (error || !data.user) return { error: "E-mail ou senha incorretos, ou conta ainda não confirmada." };
+      const { data: tokens, error: loginError } = await supabase.functions.invoke("staff-login", { body: { username: username.trim().toLowerCase(), password } });
+      if (loginError || typeof tokens?.access_token !== "string" || typeof tokens?.refresh_token !== "string") return { error: "Usuário ou senha incorretos, ou limite de tentativas atingido." };
+      if (attempt !== loginAttempt.current) return { error: "A tentativa de login foi cancelada." };
+      const { data, error } = await supabase.auth.setSession({ access_token: tokens.access_token, refresh_token: tokens.refresh_token });
+      if (error || !data.user) return { error: "Não foi possível verificar sua sessão." };
       const profile = await readProfile(data.user.id);
       if (attempt !== loginAttempt.current) return { error: "A tentativa de login foi cancelada." };
       if (!profile) {

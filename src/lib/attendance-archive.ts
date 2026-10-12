@@ -8,11 +8,24 @@ export interface AttendanceArchiveInput {
 }
 
 export function buildAttendanceArchive(input: AttendanceArchiveInput) {
+  const students = input.students.map((entry) => {
+    const student = record(entry);
+    const parish = student.paroquias ? record(student.paroquias) : null;
+    return { id: student.id, name: student.name, class_name: student.class_name,
+      paroquia_id: student.paroquia_id ?? null, paroquia_nome: student.paroquia_nome ?? parish?.nome ?? null,
+      catequista_id: student.catequista_id ?? null, active: student.active };
+  });
+  const catequistas = input.catequistas.map((entry) => {
+    const teacher = record(entry);
+    return { id: teacher.id, name: teacher.name, etapa: teacher.etapa, paroquia_id: teacher.paroquia_id };
+  });
   return {
     format: "bom-pastor-attendance-archive",
     version: 1,
     exportedAt: new Date().toISOString(),
     ...input,
+    students,
+    catequistas,
   };
 }
 

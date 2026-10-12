@@ -229,7 +229,7 @@ describe("data hook regressions", () => {
 
   it("uses authenticated account-management for create, update and deactivation", async () => {
     mocks.invoke.mockResolvedValue({ data: { id: "account" }, error: null });
-    const profile = { name: " Maria ", username: "MARIA", email: "MARIA@example.com", etapa: "Primeira Etapa", role: "catequista", paroquia_id: "parish", is_coordenador: false };
+    const profile = { password: "a", name: " Maria ", username: "MARIA", email: "MARIA@example.com", etapa: "Primeira Etapa", role: "catequista", paroquia_id: "parish", is_coordenador: false };
     const create = useCreateCatequista() as unknown as { mutationFn: (input: typeof profile) => Promise<void> };
     await create.mutationFn(profile);
     expect(mocks.invoke).toHaveBeenCalledWith("account-management", { body: { action: "create", ...profile, name: "Maria", username: "maria", email: "maria@example.com" } });
@@ -241,9 +241,9 @@ describe("data hook regressions", () => {
     expect(mocks.from).not.toHaveBeenCalled();
   });
 
-  it("requires an email before creating an account", async () => {
+  it("requires a chosen password before creating an account", async () => {
     const mutation = useCreateCatequista() as unknown as { mutationFn: (input: object) => Promise<void> };
-    await expect(mutation.mutationFn({ name: "Maria", username: "maria", email: "", role: "catequista" })).rejects.toThrow("e-mail válido");
+    await expect(mutation.mutationFn({ name: "Maria", username: "maria", email: "", role: "catequista" })).rejects.toThrow("Informe uma senha.");
     expect(mocks.invoke).not.toHaveBeenCalled();
   });
 

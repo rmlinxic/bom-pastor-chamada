@@ -1,11 +1,11 @@
-import { execFileSync } from 'node:child_process';
+import { projectKeys } from './project-security.mjs';
 import { createClient } from '@supabase/supabase-js';
 const projectRef = process.env.SUPABASE_PROJECT_REF;
 const email = process.env.ADMIN_EMAIL;
 const profileId = process.env.ADMIN_PROFILE_ID;
 if (!projectRef || !email || !profileId) throw new Error('Defina SUPABASE_PROJECT_REF, ADMIN_EMAIL e ADMIN_PROFILE_ID.');
-const keys = JSON.parse(execFileSync('supabase', ['projects', 'api-keys', '--project-ref', projectRef, '--output', 'json'], { encoding: 'utf8' }));
-const key = keys.find((entry) => entry.name === 'service_role')?.api_key;
+const keys = await projectKeys();
+const key = keys.find((entry) => entry.type === 'secret')?.api_key;
 if (!key) throw new Error('Credencial de servidor indisponível.');
 const client = createClient(`https://${projectRef}.supabase.co`, key, { auth: { persistSession: false, autoRefreshToken: false } });
 const { data: profile, error: profileError } = await client.from('catequistas').select('id,role,active,auth_user_id').eq('id', profileId).single();

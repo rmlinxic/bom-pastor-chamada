@@ -125,7 +125,7 @@ export default function CoordinadorView() {
   };
 
   const handleCreateCatequista = async () => {
-    if (!catForm.name.trim() || !catForm.username.trim() || !catForm.email.trim()) return;
+    if (!catForm.name.trim() || !catForm.username.trim() || !catForm.password) return;
     setSaving(true);
     try {
       const etapaFinal = nomeTurma(catForm.etapa, catForm.turma || undefined);
@@ -407,7 +407,7 @@ export default function CoordinadorView() {
                 saving ||
                 !catForm.name.trim() ||
                 !catForm.username.trim() ||
-                !catForm.email.trim()
+                !catForm.password
               }
             >
               {saving ? (

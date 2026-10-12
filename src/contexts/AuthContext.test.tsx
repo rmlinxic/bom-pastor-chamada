@@ -2,15 +2,15 @@ import { act, renderHook, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({
-  getUser: vi.fn(), signIn: vi.fn(), signOut: vi.fn(), from: vi.fn(), clear: vi.fn(),
+  getUser: vi.fn(), signIn: vi.fn(), invoke: vi.fn(), signOut: vi.fn(), from: vi.fn(), clear: vi.fn(),
   listener: null as ((event: string, session: object | null) => unknown) | null,
   unsubscribe: vi.fn(), select: vi.fn(), eq: vi.fn(), maybeSingle: vi.fn(),
   initSessionMeta: vi.fn(), clearSessionMeta: vi.fn(),
 }));
 vi.mock("@/integrations/supabase/client", () => ({ isAuthCallback: false, supabase: {
-  from: mocks.from,
+  from: mocks.from, functions: { invoke: mocks.invoke },
   auth: {
-    getUser: mocks.getUser, signInWithPassword: mocks.signIn, signOut: mocks.signOut,
+    getUser: mocks.getUser, setSession: mocks.signIn, signOut: mocks.signOut,
     onAuthStateChange: (listener: typeof mocks.listener) => { mocks.listener = listener; return { data: { subscription: { unsubscribe: mocks.unsubscribe } } }; },
   },
 } }));
@@ -45,6 +45,7 @@ beforeEach(() => {
   mocks.from.mockReturnValue(query); mocks.select.mockReturnValue(query); mocks.eq.mockReturnValue(query);
   mocks.maybeSingle.mockResolvedValue({ data: profile, error: null });
   mocks.getUser.mockResolvedValue({ data: { user: { id: "verified-auth-id" } }, error: null });
+  mocks.invoke.mockResolvedValue({ data: { access_token: "access", refresh_token: "refresh" }, error: null });
   mocks.signIn.mockResolvedValue({ data: { user: { id: "verified-auth-id" } }, error: null });
   mocks.signOut.mockResolvedValue({ error: null });
 });
@@ -100,7 +101,8 @@ describe("verified Auth identity and profile", () => {
     await act(async () => { response = await result.current.login(" MARIA@example.com ", "password8"); });
     expect(response.error).toMatch(/não está autorizada/);
     expect(result.current.user).toBeNull();
-    expect(mocks.signIn).toHaveBeenCalledWith({ email: "maria@example.com", password: "password8" });
+    expect(mocks.invoke).toHaveBeenCalledWith("staff-login", { body: { username: "maria@example.com", password: "password8" } });
+    expect(mocks.signIn).toHaveBeenCalledWith({ access_token: "access", refresh_token: "refresh" });
     expect(mocks.eq).toHaveBeenCalledWith("active", true);
     expect(mocks.signOut).toHaveBeenCalledWith({ scope: "local" });
   });

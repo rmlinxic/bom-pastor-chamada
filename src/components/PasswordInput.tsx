@@ -39,7 +39,6 @@ export default function PasswordInput({
           placeholder={placeholder}
           disabled={disabled}
           autoComplete={autoComplete}
-          maxLength={128}
           className={cn("pr-10", className)}
         />
         <button

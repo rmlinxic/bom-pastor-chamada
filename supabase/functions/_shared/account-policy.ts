@@ -1,12 +1,12 @@
 export type Role = "admin" | "catequista" | "coordenador";
 export type Account = { id: string; role: Role; paroquia_id: string | null; is_coordenador: boolean; active: boolean; auth_user_id: string | null; email?: string | null };
-export type ProfileInput = { name: string; username: string; email: string; role: Role; etapa: string | null; paroquia_id: string | null; is_coordenador: boolean };
+export type ProfileInput = { name: string; username: string; email: string | null; role: Role; etapa: string | null; paroquia_id: string | null; is_coordenador: boolean };
 export type Action =
   | { action: "set_mass_monitoring"; enabled: boolean }
-  | ({ action: "create"; password?: string } & ProfileInput)
+  | { action: "set_password"; password: string; currentPassword?: string }
+  | ({ action: "create"; password: string } & ProfileInput)
   | ({ action: "update"; id: string; newPassword?: string } & ProfileInput)
-  | { action: "deactivate"; id: string }
-  | { action: "admin_invite"; id: string; email: string };
+  | { action: "deactivate"; id: string };
 export class ActionError extends Error {
   constructor(public status: number, message: string) { super(message); }
 }
@@ -18,9 +18,10 @@ function text(value: unknown, label: string, max: number): string {
 function id(value: unknown): string {
   const result = text(value, "Identificador", 36);
   if (!uuid.test(result)) throw new ActionError(400, "Identificador inválido.");
-  return result;
+  return result.toLowerCase();
 }
-function email(value: unknown): string {
+function email(value: unknown): string | null {
+  if (value == null || value === "") return null;
   const result = text(value, "E-mail", 254).toLowerCase();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(result)) throw new ActionError(400, "E-mail inválido.");
   return result;
@@ -38,8 +39,12 @@ export function parseAction(value: unknown): Action {
     if (typeof input.enabled !== "boolean") throw new ActionError(400, "Preferência inválida.");
     return { action, enabled: input.enabled };
   }
+  if (action === "set_password") {
+    const chosenPassword = password(input.password);
+    if (!chosenPassword) throw new ActionError(400, "Informe a nova senha.");
+    return { action, password: chosenPassword, currentPassword: password(input.currentPassword) };
+  }
   if (action === "deactivate") return { action, id: id(input.id) };
-  if (action === "admin_invite") return { action, id: id(input.id), email: email(input.email) };
   if (action !== "create" && action !== "update") throw new ActionError(400, "Ação inválida.");
   if (!["admin", "catequista", "coordenador"].includes(String(input.role))) throw new ActionError(400, "Perfil inválido.");
   if (typeof input.is_coordenador !== "boolean") throw new ActionError(400, "Perfil de coordenação inválido.");
@@ -53,12 +58,16 @@ export function parseAction(value: unknown): Action {
     is_coordenador: role === "coordenador" || input.is_coordenador,
   };
   if (role !== "admin" && !profile.paroquia_id) throw new ActionError(400, "Selecione uma paróquia.");
-  return action === "create"
-    ? { action, ...profile, password: password(input.password) }
-    : { action, ...profile, id: id(input.id), newPassword: password(input.newPassword) };
+  if (action === "create") {
+    const chosenPassword = password(input.password);
+    if (!chosenPassword) throw new ActionError(400, "Informe a senha da nova conta.");
+    return { action, ...profile, password: chosenPassword };
+  }
+  return { action, ...profile, id: id(input.id), newPassword: password(input.newPassword) };
 }
 export function authorizeAction(caller: Account, action: Action, target?: Account): void {
   if (!caller.active || !caller.auth_user_id) throw new ActionError(403, "Acesso não autorizado.");
+  if (action.action === "set_password") return;
   if (action.action === "set_mass_monitoring") {
     if (caller.role !== "catequista") throw new ActionError(403, "Preferência disponível apenas para catequistas.");
     return;
@@ -68,10 +77,10 @@ export function authorizeAction(caller: Account, action: Action, target?: Accoun
     return;
   }
   const coordinator = caller.role === "coordenador" || (caller.role === "catequista" && caller.is_coordenador);
-  if (!coordinator || !caller.paroquia_id || action.action === "admin_invite") throw new ActionError(403, "Acesso não autorizado.");
+  if (!coordinator || !caller.paroquia_id) throw new ActionError(403, "Acesso não autorizado.");
   if (target && (target.paroquia_id !== caller.paroquia_id || target.role !== "catequista" || target.is_coordenador || target.id === caller.id)) throw new ActionError(403, "Usuário fora do seu escopo de gerenciamento.");
-  if (action.action === "update" && target && action.email !== target.email?.trim().toLowerCase()) {
-    throw new ActionError(403, "Coordenadores não podem alterar o e-mail de acesso de outro usuário.");
+  if (action.action === "update" && target && action.email !== (target.email?.trim().toLowerCase() || null)) {
+    throw new ActionError(403, "Coordenadores não podem alterar o contato de e-mail de outro usuário.");
   }
   if (action.action === "create" || action.action === "update") {
     if (action.role !== "catequista" || action.is_coordenador || action.paroquia_id !== caller.paroquia_id || (action.action === "update" && action.newPassword)) throw new ActionError(403, "Coordenadores só podem gerenciar catequistas da própria paróquia, sem alterar privilégios ou senhas.");

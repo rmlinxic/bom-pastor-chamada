@@ -21,8 +21,10 @@ const teachers = [{ id: "ana", name: "Ana", etapa: "Primeira Etapa A" }, { id: "
 const students = [{ id: "student", name: "Aluno", class_name: "Primeira Etapa A", catequista_id: "ana", active: true }, { id: "inactive", name: "Antigo", class_name: "Primeira Etapa A", catequista_id: "ana", active: false }];
 const year = new Date().getFullYear();
 
-function setup({ loadingError = false, closed = false, archiveError = false, studentsError = false } = {}) {
+function setup({ loadingError = false, closed = false, archiveError = false, studentsError = false, largeArchive = false } = {}) {
   let studentReads = 0;
+  const fixtureStudents = largeArchive ? [...students, ...Array.from({ length: 999 }, (_, index) => ({ ...students[1], id: `inactive-${index}` }))] : students;
+  const archiveRecords = largeArchive ? Array.from({ length: 1001 }, (_, index) => ({ id: `record-${index}`, student_id: "inactive", date: `${year}-01-10`, status: "presente" })) : null;
   mocks.archive.mockImplementation(() => {
     mocks.events.push("archive");
     if (archiveError) throw new Error("download failed");
@@ -32,6 +34,9 @@ function setup({ loadingError = false, closed = false, archiveError = false, stu
     let writing = false;
     let lower = "";
     let upper = "9999";
+    let rangeFrom = 0;
+    let rangeTo = 999;
+    let filterIds: string[] | undefined;
     const records = [
       { student_id: "inactive", date: `${year}-01-10`, status: "presente" },
       { student_id: "student", date: `${year - 1}-01-10`, status: "falta_nao_justificada" },
@@ -39,7 +44,9 @@ function setup({ loadingError = false, closed = false, archiveError = false, stu
     const query = {
       select: vi.fn().mockReturnThis(),
       eq: vi.fn().mockReturnThis(),
-      in: vi.fn().mockReturnThis(),
+      in: vi.fn((_column: string, ids: string[]) => { filterIds = ids; return query; }),
+      order: vi.fn().mockReturnThis(),
+      range: vi.fn((from: number, to: number) => { rangeFrom = from; rangeTo = to; return query; }),
       maybeSingle: vi.fn().mockReturnThis(),
       gte: vi.fn((_column: string, value: string) => { lower = value; return query; }),
       lte: vi.fn((_column: string, value: string) => { upper = value; return query; }),
@@ -49,9 +56,11 @@ function setup({ loadingError = false, closed = false, archiveError = false, stu
       then: (resolve: (value: unknown) => unknown) => {
         const result = writing ? { data: null, error: null }
           : table === "catequistas" ? { data: teachers, error: loadingError ? new Error("unavailable") : null }
-          : table === "students" ? { data: students, error: studentsError && readNumber > 1 ? new Error("students unavailable") : null }
+          : table === "students" ? { data: fixtureStudents.slice(rangeFrom, rangeTo + 1), error: studentsError && readNumber > 1 ? new Error("students unavailable") : null }
           : table === "anos_catequeticos" ? { data: closed ? { encerrado_em: `${year}-01-01` } : null, error: null }
-          : { data: table === "attendance" ? records.filter((record) => record.date >= lower && record.date <= upper) : [], error: null };
+          : { data: (archiveRecords ?? (table === "attendance" ? records : []))
+            .filter((record) => record.date >= lower && record.date <= upper && (!filterIds || filterIds.includes(record.student_id)))
+            .slice(rangeFrom, rangeTo + 1), error: null };
         return Promise.resolve(result).then(resolve);
       },
     };
@@ -80,6 +89,19 @@ describe("academic year transition", () => {
     expect(mocks.write).toHaveBeenCalledWith("catequistas", { etapa: "Primeira Etapa A" });
     expect(mocks.write).toHaveBeenCalledWith("catequistas", { etapa: "Segunda Etapa A" });
     expect(mocks.from).not.toHaveBeenCalledWith("promocoes_pendentes");
+  });
+  it("archives every student and attendance/mass row beyond the 1000-row response cap", async () => {
+    setup({ largeArchive: true });
+    await closeYear();
+    await waitFor(() => expect(mocks.archive).toHaveBeenCalled());
+    const archive = mocks.archive.mock.calls[0][0];
+    expect(archive.students).toHaveLength(1001);
+    expect(archive.students.some((student: { id: string }) => student.id === "inactive-998")).toBe(true);
+    expect(archive.attendance).toHaveLength(1001);
+    expect(archive.massAttendance).toHaveLength(1001);
+    expect(archive.attendance.some((record: { id: string }) => record.id === "record-1000")).toBe(true);
+    expect(archive.massAttendance.some((record: { id: string }) => record.id === "record-1000")).toBe(true);
+    expect(mocks.events[0]).toBe("archive");
   });
   it("accepts a different destination teacher and blocks duplicate or missing assignments", async () => {
     setup();
