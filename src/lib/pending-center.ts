@@ -1,5 +1,6 @@
 import type { CatequistaUser } from "@/contexts/AuthContext";
 import type { Tables } from "@/integrations/supabase/types";
+import { isCatechesisSaturday } from "@/lib/dates";
 
 export type PendingScope = { kind: "own" } | { kind: "all" } | { kind: "paroquia"; paroquia_id: string } | { kind: "etapa"; etapa: string; paroquia_id?: string };
 export type PendingUser = Pick<CatequistaUser, "id" | "role" | "is_coordenador" | "etapa" | "paroquia_id">;
@@ -55,7 +56,7 @@ export function buildPendingCenter(input: { user: PendingUser; scope: PendingSco
   const details = (student: PendingStudent): StudentDetails => ({ student_id: student.id, name: student.name, class_name: student.class_name, paroquia_id: student.paroquia_id, paroquia_nome: student.paroquias?.nome ?? null });
   const recorded = new Set(input.attendance.filter((record) => record.date === input.date).map((record) => record.student_id));
   const groups = new Map<string, PendingCenterData["attendanceGroups"][number]>();
-  for (const student of students) {
+  for (const student of isCatechesisSaturday(input.date) ? students : []) {
     const id = JSON.stringify([student.paroquia_id, student.class_name]);
     const group = groups.get(id) ?? { id, paroquia_id: student.paroquia_id, paroquia_nome: student.paroquias?.nome ?? null, class_name: student.class_name, total: 0, recorded: 0, missing: 0, status: "unstarted" };
     group.total++;

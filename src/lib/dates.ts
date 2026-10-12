@@ -12,6 +12,19 @@ export function parseLocalDate(value: string): Date | null {
   return localDateString(date) === value ? date : null;
 }
 
+/** Catechesis and attendance calls are held on Saturdays. */
+export function isCatechesisSaturday(date: string): boolean {
+  return parseLocalDate(date)?.getDay() === 6;
+}
+
+/** Most recent catechesis date in the local calendar, including today when Saturday. */
+export function latestCatechesisSaturday(now = new Date()): string {
+  const date = new Date(now.getTime());
+  date.setHours(0, 0, 0, 0);
+  date.setDate(date.getDate() - ((date.getDay() + 1) % 7));
+  return localDateString(date);
+}
+
 export function localMonthString(date = new Date()): string {
   return localDateString(date).slice(0, 7);
 }

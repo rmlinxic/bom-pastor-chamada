@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { localDateString, localMonthString, monthDateRange, shiftMonth, parseLocalDate } from "./dates";
+import { isCatechesisSaturday, latestCatechesisSaturday, localDateString, localMonthString, monthDateRange, shiftMonth, parseLocalDate } from "./dates";
 
 describe("datas de calendário", () => {
   it("aceita datas reais e rejeita dias que transbordam para outro mês", () => {
@@ -10,6 +10,20 @@ describe("datas de calendário", () => {
     const date = new Date(2026, 9, 31, 23, 30);
     expect(localDateString(date)).toBe("2026-10-31");
     expect(localMonthString(date)).toBe("2026-10");
+  });
+
+  it("identifica apenas sábados válidos para catequese", () => {
+    expect(isCatechesisSaturday("2026-10-10")).toBe(true);
+    for (const value of ["2026-10-11", "2026-10-12", "2026-10-09", "2026-02-31", "invalid"]) expect(isCatechesisSaturday(value)).toBe(false);
+  });
+
+  it("encontra o sábado local mais recente, incluindo hoje, sem alterar a data recebida", () => {
+    const saturday = new Date(2026, 9, 10, 23, 30);
+    expect(latestCatechesisSaturday(saturday)).toBe("2026-10-10");
+    expect(saturday.getHours()).toBe(23);
+    expect(latestCatechesisSaturday(new Date(2026, 9, 11, 0, 15))).toBe("2026-10-10");
+    expect(latestCatechesisSaturday(new Date(2026, 9, 12, 23, 50))).toBe("2026-10-10");
+    expect(latestCatechesisSaturday(new Date(2027, 0, 1, 12))).toBe("2026-12-26");
   });
 
   it("navega entre anos e calcula meses de durações diferentes", () => {

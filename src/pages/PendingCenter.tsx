@@ -5,7 +5,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useParoquias } from "@/hooks/useParoquias";
 import { usePendingCenter } from "@/hooks/usePendingCenter";
 import { DOCUMENT_LABELS, type PendingScope } from "@/lib/pending-center";
-import { localDateString, parseLocalDate } from "@/lib/dates";
+import { latestCatechesisSaturday, isCatechesisSaturday, parseLocalDate } from "@/lib/dates";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -30,11 +30,13 @@ function displayDate(date: string) { return parseLocalDate(date)?.toLocaleDateSt
 export default function PendingCenter() {
   const { user, isAdmin, isCoordinator, isCatequista } = useAuth();
   const [params, setParams] = useSearchParams();
-  const today = localDateString();
+  const latestSaturday = latestCatechesisSaturday();
+  const firstSaturday = latestCatechesisSaturday(new Date(Number(latestSaturday.slice(0, 4)), 0, 7));
   const [date, setDate] = useState(() => {
     const requested = params.get("date") ?? "";
-    return parseLocalDate(requested) && requested <= today && requested.slice(0, 4) === today.slice(0, 4) ? requested : today;
+    return isCatechesisSaturday(requested) && requested >= firstSaturday && requested <= latestSaturday ? requested : latestSaturday;
   });
+  const [dateError, setDateError] = useState<string | null>(null);
   const [category, setCategory] = useState<Category>("attendanceGroups");
   const [search, setSearch] = useState("");
   const [limit, setLimit] = useState(30);
@@ -78,9 +80,14 @@ export default function PendingCenter() {
           </div>
         )}
         <div className="surface-card rounded-xl p-4">
-          <Label htmlFor="pending-date">Data para conferir chamadas</Label>
-          <Input id="pending-date" type="date" min={`${today.slice(0, 4)}-01-01`} max={today} value={date} className="mt-2 max-w-xs" onChange={(e) => { const value = e.target.value; if (!value || (parseLocalDate(value) && value <= today && value.slice(0, 4) === today.slice(0, 4))) { setDate(value); setLimit(30); } }} />
-          <p className="mt-2 text-xs leading-relaxed text-muted-foreground">As chamadas consideram os catequizandos ativos no cadastro atual. Confira se houve encontro na data escolhida. Justificativas, documentos e decisões mostram todas as pendências, independentemente dessa data.</p>
+          <Label htmlFor="pending-date">Sábado para conferir chamadas</Label>
+          <Input id="pending-date" type="date" min={firstSaturday} max={latestSaturday} step={7} value={date} aria-invalid={!!dateError} aria-describedby={dateError ? "pending-date-error" : "pending-date-help"} className="mt-2 max-w-xs" onChange={(e) => {
+            const value = e.target.value;
+            if (!value || (isCatechesisSaturday(value) && value >= firstSaturday && value <= latestSaturday)) { setDate(value); setDateError(null); setLimit(30); }
+            else setDateError("Escolha um sábado até o último sábado disponível.");
+          }} />
+          {dateError && <p id="pending-date-error" role="alert" className="mt-2 text-sm text-destructive">{dateError}</p>}
+          <p id="pending-date-help" className="mt-2 text-xs leading-relaxed text-muted-foreground">A catequese acontece todos os sábados. As chamadas consideram os catequizandos ativos no cadastro atual e abrem no último sábado. Justificativas, documentos e decisões mostram todas as pendências, independentemente desse sábado.</p>
         </div>
         {!date ? <p role="status" className="rounded-xl border border-border p-5">Selecione uma data para consultar a central.</p> : query.isPending ? <p role="status" className="rounded-xl border border-border p-5">Carregando pendências...</p> : query.isError ? <div role="alert" className="rounded-xl border border-destructive/30 bg-destructive/5 p-5"><p className="font-semibold">Não foi possível carregar as pendências.</p><p className="mt-1 text-sm">Tente atualizar novamente. Nenhuma pendência foi considerada resolvida.</p></div> : data && <>
           <p aria-live="polite" className="text-sm text-muted-foreground">{total} {total === 1 ? "item para conferir" : "itens para conferir"} · {data.studentsCount} catequizandos nesta visualização</p>

@@ -23,12 +23,12 @@ describe("pending center loading", () => {
     const attendance = response([]), documents = response([]), pending = response([]);
     const tables = { students, attendance, documentos_catequizando: documents, pending_justifications: pending };
     mocks.from.mockImplementation((table: keyof typeof tables) => tables[table]);
-    const result = await loadPendingCenter(mocks.auth.user!, "2026-10-12", { kind: "all" });
+    const result = await loadPendingCenter(mocks.auth.user!, "2026-10-10", { kind: "all" });
     expect(result.studentsCount).toBe(1);
     expect(students.eq).toHaveBeenCalledWith("active", true);
     expect(students.or).toHaveBeenCalledWith('catequista_id.eq."teacher",and(catequista_id.is.null,class_name.eq."Quarta Etapa A",paroquia_id.eq."parish")');
     for (const query of [attendance, documents, pending]) expect(query.in).toHaveBeenCalledWith("student_id", ["a"]);
-    expect(attendance.eq).toHaveBeenCalledWith("date", "2026-10-12");
+    expect(attendance.eq).toHaveBeenCalledWith("date", "2026-10-10");
     expect(pending.eq).not.toHaveBeenCalled();
     expect(mocks.from).not.toHaveBeenCalledWith("promocoes_pendentes");
     expect(students.select).toHaveBeenCalledWith("id,name,class_name,catequista_id,paroquia_id,active,paroquias(nome)");
@@ -50,7 +50,7 @@ describe("pending center loading", () => {
       }
       return query;
     });
-    const result = await loadPendingCenter(mocks.auth.user!, "2026-10-12", { kind: "all" });
+    const result = await loadPendingCenter(mocks.auth.user!, "2026-10-10", { kind: "all" });
     expect(result.studentsCount).toBe(1001);
     expect(students.range.mock.calls).toEqual([[0, 999], [1000, 1999]]);
     expect(documentQueries.flatMap((query) => query.range.mock.calls)).toContainEqual([1000, 1999]);
@@ -62,16 +62,16 @@ describe("pending center loading", () => {
   it("propagates student and later dependent page failures", async () => {
     const error = { message: "failed page" };
     mocks.from.mockReturnValue(response([], error));
-    await expect(loadPendingCenter(mocks.auth.user!, "2026-10-12", { kind: "own" })).rejects.toEqual(error);
+    await expect(loadPendingCenter(mocks.auth.user!, "2026-10-10", { kind: "own" })).rejects.toEqual(error);
     const students = response([student("a")]), pending = response();
-    pending.range.mockResolvedValueOnce({ data: Array.from({ length: 1000 }, (_, i) => ({ id: `${i}`, student_id: "a", date: "2026-10-12", reason: "Consulta" })), error: null }).mockResolvedValueOnce({ data: null, error });
+    pending.range.mockResolvedValueOnce({ data: Array.from({ length: 1000 }, (_, i) => ({ id: `${i}`, student_id: "a", date: "2026-10-10", reason: "Consulta" })), error: null }).mockResolvedValueOnce({ data: null, error });
     mocks.from.mockImplementation((table: string) => table === "students" ? students : table === "pending_justifications" ? pending : response());
-    await expect(loadPendingCenter(mocks.auth.user!, "2026-10-12", { kind: "own" })).rejects.toEqual(error);
+    await expect(loadPendingCenter(mocks.auth.user!, "2026-10-10", { kind: "own" })).rejects.toEqual(error);
   });
 
   it("does not request related tables for an empty scope", async () => {
     mocks.from.mockReturnValue(response());
-    expect((await loadPendingCenter(mocks.auth.user!, "2026-10-12", { kind: "own" })).studentsCount).toBe(0);
+    expect((await loadPendingCenter(mocks.auth.user!, "2026-10-10", { kind: "own" })).studentsCount).toBe(0);
     expect(mocks.from).toHaveBeenCalledTimes(1);
   });
 
@@ -79,7 +79,7 @@ describe("pending center loading", () => {
     mocks.auth.user!.role = "coordenador";
     const students = response([student("a")]), promotions = response();
     mocks.from.mockImplementation((table: string) => table === "students" ? students : table === "promocoes_pendentes" ? promotions : response());
-    await loadPendingCenter(mocks.auth.user!, "2026-10-12", { kind: "etapa", etapa: "Quarta Etapa A", paroquia_id: "parish" });
+    await loadPendingCenter(mocks.auth.user!, "2026-10-10", { kind: "etapa", etapa: "Quarta Etapa A", paroquia_id: "parish" });
     expect(students.eq).toHaveBeenCalledWith("paroquia_id", "parish");
     expect(students.eq).toHaveBeenCalledWith("class_name", "Quarta Etapa A");
     expect(promotions.is).toHaveBeenCalledWith("decisao", null);
@@ -91,12 +91,19 @@ describe("pending center loading", () => {
     expect(mocks.from).not.toHaveBeenCalled();
   });
 
+  it("rejects valid weekdays before requesting any data", async () => {
+    for (const date of ["2026-10-09", "2026-10-11", "2026-10-12"]) {
+      await expect(loadPendingCenter(mocks.auth.user!, date, { kind: "own" })).rejects.toThrow("somente aos sábados");
+    }
+    expect(mocks.from).not.toHaveBeenCalled();
+  });
+
   it("isolates cache by identity, role, authority, scope, date and refreshes every 30 seconds", () => {
-    const query = usePendingCenter("2026-10-12", { kind: "own" }) as unknown as QueryOptions;
-    expect(query.queryKey).toEqual(["pending-center", "teacher", "catequista", false, "parish", "Quarta Etapa A", false, false, { kind: "own" }, "2026-10-12"]);
+    const query = usePendingCenter("2026-10-10", { kind: "own" }) as unknown as QueryOptions;
+    expect(query.queryKey).toEqual(["pending-center", "teacher", "catequista", false, "parish", "Quarta Etapa A", false, false, { kind: "own" }, "2026-10-10"]);
     expect(query.refetchInterval).toBe(30_000);
     expect(query.enabled).toBe(true);
     mocks.auth.user = null;
-    expect((usePendingCenter("2026-10-12", { kind: "own" }) as unknown as QueryOptions).enabled).toBe(false);
+    expect((usePendingCenter("2026-10-10", { kind: "own" }) as unknown as QueryOptions).enabled).toBe(false);
   });
 });

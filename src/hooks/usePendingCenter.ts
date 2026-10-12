@@ -2,6 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useAuth } from "@/contexts/AuthContext";
 import { supabase } from "@/integrations/supabase/client";
 import { readAllRows } from "@/lib/query-pages";
+import { isCatechesisSaturday, parseLocalDate } from "@/lib/dates";
 import { buildPendingCenter, canReviewPromotions, scopePendingStudents, type PendingScope, type PendingUser, type PendingStudent, type PendingAttendance, type PendingDocuments, type PendingJustification, type PendingPromotion } from "@/lib/pending-center";
 
 const ID_CHUNK_SIZE = 100;
@@ -11,8 +12,8 @@ function ownFilter(user: PendingUser) {
 }
 
 export async function loadPendingCenter(user: PendingUser, date: string, scope: PendingScope) {
-  const timestamp = Date.parse(`${date}T12:00:00Z`);
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || Number.isNaN(timestamp) || new Date(timestamp).toISOString().slice(0, 10) !== date) throw new Error("Selecione uma data válida.");
+  if (!parseLocalDate(date)) throw new Error("Selecione uma data válida.");
+  if (!isCatechesisSaturday(date)) throw new Error("As pendências de chamada estão disponíveis somente aos sábados.");
   let query = supabase.from("students").select("id,name,class_name,catequista_id,paroquia_id,active,paroquias(nome)").eq("active", true);
   if (user.role !== "admin") {
     query = canReviewPromotions(user) && user.paroquia_id ? query.eq("paroquia_id", user.paroquia_id) : query.or(ownFilter(user));

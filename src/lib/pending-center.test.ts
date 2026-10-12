@@ -6,7 +6,7 @@ const coordinator = { ...teacher, role: "coordenador" as const };
 const admin = { ...teacher, role: "admin" as const };
 const student = (id: string, overrides: Partial<PendingStudent> = {}): PendingStudent => ({ id, name: id, class_name: "Quarta Etapa A", catequista_id: "teacher", paroquia_id: "parish", active: true, paroquias: { nome: "Paróquia" }, ...overrides });
 const promotion = (id: string, overrides: Partial<PendingPromotion> = {}): PendingPromotion => ({ id, student_id: "a", ano_catequetico: 2025, decisao: null, destino_class_name: "Quinta Etapa", score_faltas: 5, faltas_nao_justificadas: 4, meses_sem_missa: 1, ...overrides });
-const input = () => ({ user: coordinator, scope: { kind: "all" as const }, date: "2026-10-12", students: [student("a"), student("b")], attendance: [], documents: [], justifications: [], promotions: [] });
+const input = () => ({ user: coordinator, scope: { kind: "all" as const }, date: "2026-10-10", students: [student("a"), student("b")], attendance: [], documents: [], justifications: [], promotions: [] });
 
 describe("pending center derivation", () => {
   it("intersects every requested scope with authority and excludes inactive students", () => {
@@ -25,12 +25,16 @@ describe("pending center derivation", () => {
   });
 
   it("counts unique roster and student/date attendance separately per parish/class", () => {
-    const result = buildPendingCenter({ ...input(), user: admin, students: [student("a"), student("a"), student("b"), student("c", { class_name: "Quarta Etapa B" }), student("d", { paroquia_id: "other", paroquias: { nome: "Outra" } })], attendance: [{ student_id: "a", date: "2026-10-12" }, { student_id: "a", date: "2026-10-12" }, { student_id: "b", date: "2026-10-11" }] });
+    const result = buildPendingCenter({ ...input(), user: admin, students: [student("a"), student("a"), student("b"), student("c", { class_name: "Quarta Etapa B" }), student("d", { paroquia_id: "other", paroquias: { nome: "Outra" } })], attendance: [{ student_id: "a", date: "2026-10-10" }, { student_id: "a", date: "2026-10-10" }, { student_id: "b", date: "2026-10-09" }] });
     expect(result.studentsCount).toBe(4);
     expect(result.attendanceGroups).toHaveLength(3);
     expect(result.attendanceGroups.find((g) => g.class_name === "Quarta Etapa A" && g.paroquia_id === "parish")).toMatchObject({ total: 2, recorded: 1, missing: 1, status: "partial" });
     expect(result.attendanceGroups.find((g) => g.class_name === "Quarta Etapa B")).toMatchObject({ recorded: 0, missing: 1, status: "unstarted" });
-    expect(buildPendingCenter({ ...input(), attendance: [{ student_id: "a", date: "2026-10-12" }, { student_id: "b", date: "2026-10-12" }] }).attendanceGroups).toEqual([]);
+    expect(buildPendingCenter({ ...input(), attendance: [{ student_id: "a", date: "2026-10-10" }, { student_id: "b", date: "2026-10-10" }] }).attendanceGroups).toEqual([]);
+    const weekday = buildPendingCenter({ ...input(), date: "2026-10-12", attendance: [], justifications: [{ id: "weekday-justification", student_id: "a", date: "2026-10-12", reason: "Consulta" }] });
+    expect(weekday.attendanceGroups).toEqual([]);
+    expect(weekday.justifications.map((item) => item.id)).toEqual(["weekday-justification"]);
+    expect(weekday.documents).toHaveLength(2);
   });
 
   it("matches current fourth-stage and Crisma document requirements only", () => {
