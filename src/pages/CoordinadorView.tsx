@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Users, BarChart2, GraduationCap, CheckCircle, XCircle,
   AlertTriangle, ChevronDown, ChevronUp, Loader2,
@@ -14,20 +14,25 @@ import PageHeader from "@/components/PageHeader";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/contexts/AuthContext";
 import { cn } from "@/lib/utils";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { useParoquias } from "@/hooks/useParoquias";
 import { useToast } from "@/hooks/use-toast";
 import { proximaEtapa, ETAPAS, nomeTurma } from "@/lib/etapas";
 import { useCreateCatequista } from "@/hooks/useCatequistas";
+import { applyPromotionDecision, promotionAppliesToYear } from "@/lib/promotion-decision";
 
 const db = supabase as any;
 
 export default function CoordinadorView() {
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
+  const [params] = useSearchParams();
+  const { data: parishes = [] } = useParoquias();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const { toast } = useToast();
-  const paroquiaId = user?.paroquia_id;
-  const anoAtual = new Date().getFullYear();
+  const paroquiaId = isAdmin && params.get("paroquia") ? params.get("paroquia") : user?.paroquia_id;
+  const requestedYear = params.get("ano");
+  const anoAtual = requestedYear && /^\d{4}$/.test(requestedYear) && Number(requestedYear) >= 2000 ? Number(requestedYear) : new Date().getFullYear();
 
   // ---------- stats gerais ----------
   const { data: stats } = useQuery({
@@ -51,56 +56,41 @@ export default function CoordinadorView() {
   });
 
   // ---------- promoções manuais pendentes ----------
-  const { data: pendentes = [], isLoading: loadingPendentes } = useQuery({
+  const { data: pendentes = [], isLoading: loadingPendentes, isError: errorPendentes } = useQuery({
     queryKey: ["promocoes-pendentes", paroquiaId, anoAtual],
     queryFn: async () => {
-      const { data } = await db
+      const { data, error } = await db
         .from("promocoes_pendentes")
-        .select("id, student_id, faltas_nao_justificadas, meses_sem_missa, score_faltas, decisao, ano_catequetico, destino_class_name, destino_catequista_id, students(name, class_name, catequista_id, catequistas(etapa))")
+        .select("id, student_id, faltas_nao_justificadas, meses_sem_missa, score_faltas, decisao, ano_catequetico, destino_class_name, destino_catequista_id, students(name, class_name, ano_catequetico, catequista_id, catequistas(etapa))")
         .eq("paroquia_id", paroquiaId)
         .eq("ano_catequetico", anoAtual)
         .is("decisao", null);
+      if (error) throw error;
       return (data ?? []) as any[];
     },
     enabled: !!paroquiaId,
   });
+  const focusedPromotion = params.get("promocao");
+  useEffect(() => {
+    if (focusedPromotion && pendentes.some((item) => item.id === focusedPromotion)) document.getElementById(`promocao-${focusedPromotion}`)?.scrollIntoView?.({ block: "center" });
+  }, [focusedPromotion, pendentes]);
 
   const decisionMutation = useMutation({
-    mutationFn: async ({ id, studentId, decisao, etapaAtual, catequistaEtapa }: {
+    mutationFn: async ({ id, studentId, decisao }: {
       id: string;
       studentId: string;
       decisao: "promovido" | "retido";
-      etapaAtual: string;
-      catequistaEtapa: string | null;
     }) => {
-      const { data: planned, error: plannedError } = await db.from("promocoes_pendentes")
-        .select("destino_class_name,destino_catequista_id,ano_catequetico,decisao").eq("id", id).eq("paroquia_id", paroquiaId).single();
-      if (plannedError) throw plannedError;
-      if (planned.decisao) throw new Error("Esta decisão já foi registrada.");
-      if (decisao === "promovido") {
-        const { error } = await db.from("students").update({
-          class_name: planned.destino_class_name ?? proximaEtapa(etapaAtual),
-          catequista_id: planned.destino_catequista_id ?? null,
-          ano_catequetico: planned.ano_catequetico + 1,
-        }).eq("id", studentId).eq("paroquia_id", paroquiaId);
-        if (error) throw error;
-      }
-      const { error: decisionError } = await db.from("promocoes_pendentes").update({
-        decisao, decidido_por: user!.id, decidido_em: new Date().toISOString(),
-      }).eq("id", id).eq("paroquia_id", paroquiaId);
-      if (decisionError) throw decisionError;
-      const { error: logError } = await db.from("activity_log").insert({
-        catequista_id: user!.id, acao: "decisao_promocao", detalhes: { promocao_id: id, decisao, paroquia_id: paroquiaId },
-      });
-      if (logError) throw logError;
+      if (!user || !paroquiaId) throw new Error("Selecione uma paróquia autorizada.");
+      await applyPromotionDecision(supabase, { id, studentId, decision: decisao, parishId: paroquiaId, staffId: user.id });
     },
     onSuccess: (_, vars) => {
-      qc.invalidateQueries({ queryKey: ["promocoes-pendentes"] });
-      qc.invalidateQueries({ queryKey: ["students"] });
-      qc.invalidateQueries({ queryKey: ["dashboard-stats"] });
       toast({ title: vars.decisao === "promovido" ? "Aluno promovido ✓" : "Aluno retido na etapa atual" });
     },
-    onError: () => toast({ title: "Não foi possível registrar a decisão.", variant: "destructive" }),
+    onSettled: () => {
+      for (const key of ["promocoes-pendentes", "students", "dashboard-stats", "pending-center"]) qc.invalidateQueries({ queryKey: [key] });
+    },
+    onError: (error) => toast({ title: "Não foi possível concluir a decisão.", description: error instanceof Error ? error.message : "Atualize e confira o cadastro antes de repetir.", variant: "destructive" }),
   });
 
   const [expandedStats, setExpandedStats] = useState(false);
@@ -148,7 +138,7 @@ export default function CoordinadorView() {
 
   return (
     <div className="pb-24">
-      <PageHeader title="Painel do Coordenador" subtitle={user?.paroquia_nome ?? "Paróquia"} />
+      <PageHeader title="Painel do Coordenador" subtitle={parishes.find((p) => p.id === paroquiaId)?.nome ?? user?.paroquia_nome ?? "Paróquia"} />
 
       <div className="px-4 space-y-4">
         {/* Cards de resumo */}
@@ -197,8 +187,9 @@ export default function CoordinadorView() {
             <Loader2 className="h-4 w-4 animate-spin" /> Verificando promoções pendentes...
           </div>
         )}
+        {errorPendentes && <p role="alert" className="rounded-lg border border-destructive/30 p-4 text-sm text-destructive">Não foi possível carregar as decisões pendentes. Atualize a página para tentar novamente.</p>}
 
-        {!loadingPendentes && pendentes.length > 0 && (
+        {!loadingPendentes && !errorPendentes && pendentes.length > 0 && (
           <div className="rounded-lg border border-warning/40 bg-warning/5 p-4">
             <div className="flex items-center gap-2 mb-1">
               <AlertTriangle className="h-5 w-5 text-warning" />
@@ -210,10 +201,10 @@ export default function CoordinadorView() {
             <div className="space-y-3">
               {pendentes.map((p: any) => {
                 const etapaAtual = p.students?.class_name ?? "";
-                const catEquistaEtapa = p.students?.catequistas?.etapa ?? null;
                 const novaEtapa = p.destino_class_name ?? proximaEtapa(etapaAtual);
+                const applicable = promotionAppliesToYear(p.students?.ano_catequetico ?? null, p.ano_catequetico);
                 return (
-                  <div key={p.id} className="rounded-lg border border-border bg-card p-3">
+                  <div id={`promocao-${p.id}`} key={p.id} className={cn("rounded-lg border border-border bg-card p-3", focusedPromotion === p.id && "ring-2 ring-primary")}>
                     <div className="flex items-start justify-between gap-2 mb-1">
                       <div>
                         <p className="font-semibold text-sm">{p.students?.name ?? "-"}</p>
@@ -226,17 +217,18 @@ export default function CoordinadorView() {
                         <p className="text-muted-foreground">{p.faltas_nao_justificadas} NJ · {p.meses_sem_missa} meses s/ missa</p>
                       </div>
                     </div>
+                    {!applicable && <p className="mt-2 text-xs text-destructive">O ano do cadastro não corresponde a esta pendência. Revise com a administração antes de decidir.</p>}
                     <div className="flex gap-2 mt-2">
                       <Button size="sm" variant="outline"
                         className="flex-1 border-success/50 text-success hover:bg-success/10"
-                        onClick={() => decisionMutation.mutate({ id: p.id, studentId: p.student_id, decisao: "promovido", etapaAtual, catequistaEtapa: catEquistaEtapa })}
-                        disabled={decisionMutation.isPending}>
+                        onClick={() => decisionMutation.mutate({ id: p.id, studentId: p.student_id, decisao: "promovido" })}
+                        disabled={decisionMutation.isPending || !applicable}>
                         <CheckCircle className="h-3.5 w-3.5 mr-1" /> Promover para {novaEtapa}
                       </Button>
                       <Button size="sm" variant="outline"
                         className="flex-1 border-destructive/50 text-destructive hover:bg-destructive/10"
-                        onClick={() => decisionMutation.mutate({ id: p.id, studentId: p.student_id, decisao: "retido", etapaAtual, catequistaEtapa: catEquistaEtapa })}
-                        disabled={decisionMutation.isPending}>
+                        onClick={() => decisionMutation.mutate({ id: p.id, studentId: p.student_id, decisao: "retido" })}
+                        disabled={decisionMutation.isPending || !applicable}>
                         <XCircle className="h-3.5 w-3.5 mr-1" /> Reter
                       </Button>
                     </div>

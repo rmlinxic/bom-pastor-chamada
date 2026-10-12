@@ -3,6 +3,15 @@ export function localDateString(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
 }
 
+/** Parse a real local calendar date without UTC shifts or date overflow. */
+export function parseLocalDate(value: string): Date | null {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+  const [year, month, day] = value.split("-").map(Number);
+  if (year < 1000) return null;
+  const date = new Date(year, month - 1, day);
+  return localDateString(date) === value ? date : null;
+}
+
 export function localMonthString(date = new Date()): string {
   return localDateString(date).slice(0, 7);
 }

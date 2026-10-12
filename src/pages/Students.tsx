@@ -1,4 +1,5 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   Plus, Search, Edit, Trash2, ChevronDown, ChevronUp,
   CheckCircle, XCircle, AlertTriangle, Clock, Upload, Download, FileCheck,
@@ -44,6 +45,9 @@ function requiresDocs(className: string) {
 }
 
 export default function Students() {
+  const [params] = useSearchParams();
+  const targetStudentId = params.get("student");
+  const openDocuments = params.get("documentos") === "1";
   const { data: students = [], isLoading } = useStudents();
   const { data: attendance = [] } = useAllAttendance();
   const { data: documentos = [] } = useAllDocumentos();
@@ -56,10 +60,21 @@ export default function Students() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [docStudent, setDocStudent] = useState<any>(null);
   const csvInputRef = useRef<HTMLInputElement>(null);
+  const handledDocument = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (!openDocuments || !targetStudentId || handledDocument.current === targetStudentId) return;
+    const student = students.find((item) => item.id === targetStudentId);
+    if (student && requiresDocs(student.class_name ?? "")) {
+      handledDocument.current = targetStudentId;
+      setDocStudent(student);
+    }
+  }, [students, openDocuments, targetStudentId]);
 
   const filtered = students.filter((s) =>
-    s.name.toLowerCase().includes(search.toLowerCase()) ||
-    s.class_name?.toLowerCase().includes(search.toLowerCase())
+    (!targetStudentId || s.id === targetStudentId) &&
+    (s.name.toLowerCase().includes(search.toLowerCase()) ||
+    s.class_name?.toLowerCase().includes(search.toLowerCase()))
   );
 
   const handleDelete = (id: string, name: string) => {
@@ -132,6 +147,7 @@ export default function Students() {
   return (
     <div className="pb-24">
       <PageHeader title="Catequizandos" subtitle="Gerencie os catequizandos" />
+      {targetStudentId && <div className="mx-4 mb-4 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"><p>Cadastro selecionado pela central de pendências.</p><Link to="/alunos" className="mt-2 inline-flex text-primary underline">Ver todos os catequizandos</Link>{!isLoading && filtered.length === 0 && <p className="mt-2">Cadastro indisponível nesta visualização.</p>}</div>}
 
       <div className="px-4 mb-4 flex gap-2">
         <div className="relative flex-1">

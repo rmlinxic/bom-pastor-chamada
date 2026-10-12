@@ -109,6 +109,7 @@ export function useDeletePendingJustification() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pending-justifications"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-center"] });
       toast.success("Justificativa pendente removida.");
     },
     onError: () => toast.error("Erro ao remover justificativa."),
@@ -128,6 +129,7 @@ export function useUpdatePendingJustification() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pending-justifications"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-center"] });
       toast.success("Justificativa atualizada com sucesso.");
     },
     onError: () => toast.error("Erro ao atualizar justificativa."),
@@ -199,7 +201,7 @@ export function useSaveAttendance() {
     },
     // The upsert may have succeeded before a later request failed.
     onSettled: () => {
-      for (const key of ["attendance", "attendance-all", "dashboard-stats", "pending-justifications", "student-history"]) {
+      for (const key of ["attendance", "attendance-all", "dashboard-stats", "pending-justifications", "student-history", "pending-center"]) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }
     },
@@ -222,6 +224,7 @@ export function useDeleteAttendance() {
       queryClient.invalidateQueries({ queryKey: ["attendance"] });
       queryClient.invalidateQueries({ queryKey: ["dashboard-stats"] });
       queryClient.invalidateQueries({ queryKey: ["student-history"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-center"] });
       toast.success("Registro apagado.");
     },
     onError: () => toast.error("Erro ao apagar registro."),
@@ -251,7 +254,7 @@ export function useSubmitJustification() {
       return { pending: true };
     },
     onSuccess: () => {
-      for (const key of ["attendance", "student-history", "attendance-all", "dashboard-stats", "pending-justifications"]) {
+      for (const key of ["attendance", "student-history", "attendance-all", "dashboard-stats", "pending-justifications", "pending-center"]) {
         queryClient.invalidateQueries({ queryKey: [key] });
       }
       toast.success("Solicitação recebida. A justificativa será processada após a conferência dos dados informados.");

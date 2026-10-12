@@ -8,6 +8,8 @@ import { Input } from "@/components/ui/input";
 import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import PageHeader from "@/components/PageHeader";
+import { Link, useSearchParams } from "react-router-dom";
+import { parseLocalDate } from "@/lib/dates";
 import { useStudents } from "@/hooks/useStudents";
 import { useAttendanceByDate, useSaveAttendance, usePendingJustifications } from "@/hooks/useAttendance";
 
@@ -20,11 +22,19 @@ const statusConfig: Record<Status, { icon: typeof Check; label: string; classNam
 };
 
 export default function Attendance() {
-  const [date, setDate] = useState<Date>(new Date());
+  const [params, setParams] = useSearchParams();
+  const date = parseLocalDate(params.get("date") ?? "") ?? new Date();
   const dateStr = format(date, "yyyy-MM-dd");
   // useStudents já filtra pelo perfil do catequista logado (apenas seus catequizandos)
-  const { data: students = [] } = useStudents();
-  const { data: existingAttendance = [] } = useAttendanceByDate(dateStr);
+  const { data: visibleStudents = [], isLoading: studentsLoading, isError: studentsError } = useStudents();
+  const classFilter = params.get("turma");
+  const parishFilter = params.get("paroquia");
+  const studentFocus = params.get("student");
+  const students = useMemo(() => visibleStudents.filter((student) =>
+    (!classFilter || student.class_name === classFilter) &&
+    (!parishFilter || (parishFilter === "none" ? student.paroquia_id == null : student.paroquia_id === parishFilter))
+  ), [visibleStudents, classFilter, parishFilter]);
+  const { data: existingAttendance = [], isLoading: attendanceLoading, isError: attendanceError } = useAttendanceByDate(dateStr);
   const { data: pendingJustifications = [] } = usePendingJustifications();
   const saveMutation = useSaveAttendance();
 
@@ -33,7 +43,7 @@ export default function Attendance() {
   const [calOpen, setCalOpen] = useState(false);
 
   // Reseta marcações ao trocar data
-  useEffect(() => { setStatuses({}); }, [dateStr]);
+  useEffect(() => { setStatuses({}); }, [dateStr, classFilter, parishFilter]);
 
   // Detecta se já existe chamada registrada para os catequizandos DESTE perfil nesse dia
   // (filtra existingAttendance apenas pelos IDs dos catequizandos do usuário atual)
@@ -44,8 +54,9 @@ export default function Attendance() {
   );
 
   const jaRegistrada = myExistingAttendance.length > 0;
+  const chamadaParcial = jaRegistrada && new Set(myExistingAttendance.map((record) => record.student_id)).size < students.length;
   const [editando, setEditando] = useState(false);
-  useEffect(() => { setEditando(false); }, [dateStr]);
+  useEffect(() => { setEditando(false); }, [dateStr, classFilter, parishFilter]);
 
   const getStatus = (studentId: string): Status => {
     if (statuses[studentId]) return statuses[studentId];
@@ -93,6 +104,9 @@ export default function Attendance() {
     <div className="pb-24">
       <PageHeader title="Chamada" subtitle="Registre a presença dos catequizandos" />
 
+      {classFilter && <div className="mx-4 mb-3 rounded-lg border border-primary/30 bg-primary/5 p-3 text-sm"><p className="font-semibold">Turma selecionada: {classFilter}</p><p className="mt-1 text-muted-foreground">Ao salvar, somente os catequizandos desta turma e paróquia serão registrados.</p><Link className="mt-2 inline-flex text-primary underline" to="/chamada">Limpar filtro de turma</Link></div>}
+      {(studentsError || attendanceError) && <p role="alert" className="mx-4 mb-3 text-sm text-destructive">Não foi possível carregar a chamada. Atualize a página antes de salvar.</p>}
+
       {/* Seletor de data */}
       <div className="px-4 mb-3">
         <Popover open={calOpen} onOpenChange={setCalOpen}>
@@ -106,7 +120,7 @@ export default function Attendance() {
             <Calendar
               mode="single"
               selected={date}
-              onSelect={(d) => { if (d) { setDate(d); setCalOpen(false); } }}
+              onSelect={(d) => { if (d) { const next = new URLSearchParams(params); next.set("date", format(d, "yyyy-MM-dd")); setParams(next); setCalOpen(false); } }}
               initialFocus
               className="p-3 pointer-events-auto"
             />
@@ -123,7 +137,7 @@ export default function Attendance() {
           <Info className={cn("h-5 w-5 mt-0.5 shrink-0", editando ? "text-warning" : "text-primary")} />
           <div className="flex-1 min-w-0">
             <p className={cn("font-semibold text-sm", editando ? "text-warning" : "text-primary")}>
-              {editando ? "Modo de edição - salve para confirmar" : "Chamada já registrada neste dia"}
+              {editando ? "Modo de edição - salve para confirmar" : chamadaParcial ? "Chamada parcial: faltam registros nesta turma" : "Chamada já registrada neste dia"}
             </p>
             {resumo && !editando && (
               <p className="text-xs text-muted-foreground mt-0.5">
@@ -182,6 +196,7 @@ export default function Attendance() {
               disabled={bloqueado}
               className={cn(
                 "flex w-full items-center justify-between rounded-lg border border-border bg-card p-4 shadow-sm transition-all",
+                student.id === studentFocus && "ring-2 ring-primary",
                 bloqueado ? "opacity-70 cursor-default" : "active:scale-[0.98]"
               )}
             >
@@ -209,7 +224,7 @@ export default function Attendance() {
         {filteredStudents.length === 0 && search && (
           <p className="py-8 text-center text-muted-foreground">Nenhum catequizando encontrado para "{search}".</p>
         )}
-        {students.length === 0 && (
+        {students.length === 0 && !studentsLoading && !studentsError && (
           <p className="py-8 text-center text-muted-foreground">Nenhum catequizando cadastrado. Cadastre catequizandos na aba "Catequizandos".</p>
         )}
       </div>
@@ -219,7 +234,7 @@ export default function Attendance() {
         <div className="fixed bottom-16 left-0 right-0 z-40 border-t border-border bg-card p-4 safe-bottom">
           <Button
             onClick={handleSave}
-            disabled={saveMutation.isPending}
+            disabled={saveMutation.isPending || studentsLoading || attendanceLoading || studentsError || attendanceError}
             className="w-full h-12 text-base font-semibold"
           >
             {saveMutation.isPending ? "Salvando..." : jaRegistrada ? "Salvar Alterações" : "Salvar Chamada"}

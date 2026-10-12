@@ -136,7 +136,7 @@ export default function AnoLetivo() {
       navigate("/coordenador");
     },
     onSettled: () => {
-      for (const key of ["students", "promocoes-pendentes", "catequistas", "catequistas-paroquia", "coord-stats", "ano-letivo-planejamento"]) qc.invalidateQueries({ queryKey: [key] });
+      for (const key of ["students", "promocoes-pendentes", "catequistas", "catequistas-paroquia", "coord-stats", "ano-letivo-planejamento", "pending-center"]) qc.invalidateQueries({ queryKey: [key] });
     },
     onError: (error) => {
       toast({ title: "Não foi possível concluir o encerramento.", description: error instanceof Error && error.message === "Este ano catequético já foi encerrado." ? error.message : "Confira o arquivo e os dados antes de repetir: algumas alterações podem ter sido salvas.", variant: "destructive" });

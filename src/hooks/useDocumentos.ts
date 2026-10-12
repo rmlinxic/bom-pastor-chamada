@@ -83,6 +83,7 @@ export function useSaveDocumentos() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["documentos"] });
       queryClient.invalidateQueries({ queryKey: ["documentos-student"] });
+      queryClient.invalidateQueries({ queryKey: ["pending-center"] });
       toast.success("Documentos atualizados!");
     },
     onError: () => toast.error("Erro ao salvar documentos."),

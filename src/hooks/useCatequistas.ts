@@ -26,7 +26,7 @@ async function manageAccount(body: Record<string, unknown>): Promise<void> {
 }
 
 function invalidateAccounts(qc: ReturnType<typeof useQueryClient>) {
-  for (const key of ["catequistas", "catequistas-paroquia", "students", "dashboard-stats", "coord-stats"]) {
+  for (const key of ["catequistas", "catequistas-paroquia", "students", "dashboard-stats", "coord-stats", "pending-center"]) {
     qc.invalidateQueries({ queryKey: [key] });
   }
 }

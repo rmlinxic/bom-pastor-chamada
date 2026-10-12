@@ -33,6 +33,7 @@ const NotFound = lazy(() => import("./pages/NotFound"));
 const CoordinadorView = lazy(() => import("./pages/CoordinadorView"));
 const AnoLetivo = lazy(() => import("./pages/AnoLetivo"));
 const Calendario = lazy(() => import("./pages/Calendario"));
+const PendingCenter = lazy(() => import("./pages/PendingCenter"));
 
 const PUBLIC_PATHS = ["/justificativa", "/login", "/esqueci-senha", "/redefinir-senha"];
 
@@ -69,6 +70,7 @@ function AppLayout() {
           <Route path="/redefinir-senha" element={<ResetPassword />} />
           <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
           <Route path="/chamada" element={<ProtectedRoute><Attendance /></ProtectedRoute>} />
+          <Route path="/pendencias" element={<ProtectedRoute><PendingCenter /></ProtectedRoute>} />
           <Route path="/alunos" element={<ProtectedRoute><Students /></ProtectedRoute>} />
           <Route path="/relatorios" element={<ProtectedRoute><Reports /></ProtectedRoute>} />
           <Route path="/missas" element={<ProtectedRoute><Missas /></ProtectedRoute>} />

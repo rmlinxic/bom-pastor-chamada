@@ -20,6 +20,7 @@ import {
 import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Tooltip } from "recharts";
 import { Switch } from "@/components/ui/switch";
 import { toast } from "sonner";
+import PendingCenterSummary from "@/components/PendingCenterSummary";
 
 const db = supabase as any;
 import { localMonthString } from "@/lib/dates";
@@ -51,7 +52,7 @@ export default function Dashboard() {
   const { data: catequistas = [] } = useCatequistas();
 
   // ---------- estado de filtro ----------
-  const defaultScope: Scope = isAdmin ? { kind: "all" } : { kind: "own" };
+  const defaultScope: Scope = isAdmin ? { kind: "all" } : isCoordinator && user?.paroquia_id ? { kind: "paroquia", paroquia_id: user.paroquia_id } : { kind: "own" };
   const [scope, setScope] = useState<Scope>(defaultScope);
 
   const [selParoquia, setSelParoquia] = useState<string>("all");
@@ -79,7 +80,7 @@ export default function Dashboard() {
       if (selEtapa === "own") setScope({ kind: "own" });
       else if (selEtapa === "paroquia") setScope(myParoquia ? { kind: "paroquia", paroquia_id: myParoquia } : { kind: "own" });
       else if (selEtapa !== "all") setScope({ kind: "etapa", etapa: selEtapa, paroquia_id: myParoquia ?? undefined });
-      else setScope({ kind: "own" });
+      else setScope(myParoquia ? { kind: "paroquia", paroquia_id: myParoquia } : { kind: "own" });
     }
   }, [selParoquia, selEtapa, isAdmin, isCoordinator, user?.paroquia_id]);
 
@@ -298,6 +299,8 @@ export default function Dashboard() {
           )}
         </div>
       )}
+
+      <PendingCenterSummary scope={scope} />
 
       {/* Cards */}
       <div className="grid grid-cols-2 gap-3 px-4 sm:grid-cols-4 sm:px-6">

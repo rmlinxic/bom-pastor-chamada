@@ -8,7 +8,7 @@ const db = supabase as any;
 
 function invalidateStudentQueries(queryClient: ReturnType<typeof useQueryClient>) {
   // Student names, ownership and active status also affect reports and counters.
-  for (const key of ["students", "dashboard-stats", "attendance", "attendance-all", "pending-justifications", "paroquia-mass-student-ids", "mass-attendance", "documentos", "documentos-student"]) {
+  for (const key of ["students", "dashboard-stats", "attendance", "attendance-all", "pending-justifications", "paroquia-mass-student-ids", "mass-attendance", "documentos", "documentos-student", "pending-center"]) {
     queryClient.invalidateQueries({ queryKey: [key] });
   }
 }

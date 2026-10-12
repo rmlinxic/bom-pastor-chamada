@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { X, FileCheck, FileX } from "lucide-react";
+import { FileCheck, FileX } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { useDocumentosStudent, useSaveDocumentos } from "@/hooks/useDocumentos";
 
@@ -30,7 +31,7 @@ function resolveDocList(className: string) {
 }
 
 export default function DocumentosModal({ student, onClose }: Props) {
-  const { data: saved, isLoading } = useDocumentosStudent(student.id);
+  const { data: saved, isLoading, isError } = useDocumentosStudent(student.id);
   const saveMutation = useSaveDocumentos();
   const docs = resolveDocList(student.class_name);
 
@@ -65,32 +66,18 @@ export default function DocumentosModal({ student, onClose }: Props) {
   const allDone = docs.every((d) => checked[d.key]);
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
-      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
-    >
-      <div className="w-full max-w-sm rounded-xl bg-background shadow-xl border border-border animate-in fade-in zoom-in-95 duration-200">
+    <Dialog open onOpenChange={(open) => { if (!open) onClose(); }}>
+      <DialogContent className="z-[60] flex max-h-[calc(100dvh-2rem)] max-w-sm flex-col gap-0 overflow-hidden p-0">
         {/* Header */}
-        <div className="flex items-center justify-between p-4 border-b border-border">
-          <div>
-            <p className="font-semibold text-foreground">{student.name}</p>
-            <p className="text-xs text-muted-foreground">{student.class_name}</p>
-          </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
+        <DialogHeader className="shrink-0 border-b border-border p-4 pr-10 text-left"><DialogTitle>{student.name}</DialogTitle><DialogDescription>{student.class_name}</DialogDescription></DialogHeader>
 
         {/* Body */}
-        <div className="p-4">
+        <div className="min-h-0 overflow-y-auto p-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-3">
             Documentos Necessários
           </p>
 
-          {isLoading ? (
+          {isError ? <p role="alert" className="text-sm text-destructive">Não foi possível carregar os documentos. Feche e tente novamente.</p> : isLoading ? (
             <div className="space-y-2">
               {[1, 2, 3, 4].map((i) => (
                 <div key={i} className="h-12 rounded-lg bg-muted animate-pulse" />
@@ -122,7 +109,7 @@ export default function DocumentosModal({ student, onClose }: Props) {
             </div>
           )}
 
-          {allDone && (
+          {allDone && !isLoading && !isError && (
             <p className="mt-3 text-center text-xs text-green-600 dark:text-green-400 font-semibold">
               ✓ Todos os documentos entregues!
             </p>
@@ -130,19 +117,19 @@ export default function DocumentosModal({ student, onClose }: Props) {
         </div>
 
         {/* Footer */}
-        <div className="p-4 border-t border-border flex gap-2">
+        <div className="safe-bottom shrink-0 border-t border-border p-4 flex gap-2">
           <Button variant="outline" className="flex-1" onClick={onClose}>
             Cancelar
           </Button>
           <Button
             className="flex-1"
             onClick={handleSave}
-            disabled={saveMutation.isPending}
+            disabled={saveMutation.isPending || isLoading || isError}
           >
             {saveMutation.isPending ? "Salvando..." : "Salvar"}
           </Button>
         </div>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
